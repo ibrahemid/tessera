@@ -103,6 +103,16 @@ do {
     check(reencoded == edge, "canonical JSON edge re-encode is byte-identical to Go")
 }
 
+// 6b. HChaCha20 known-answer test (localizes subkey-derivation bugs)
+do {
+    let h = dict("hchacha20", V)
+    let key = [UInt8](Data(base64Encoded: h["key_b64"] as! String)!)
+    let nonce = [UInt8](Data(base64Encoded: h["nonce16_b64"] as! String)!)
+    let want = Data(base64Encoded: h["subkey_b64"] as! String)!
+    let got = Data(XChaCha.hchacha20(key: key, nonce16: nonce))
+    check(got == want, "HChaCha20 KAT (draft-irtf-cfrg-xchacha)")
+}
+
 // 7. XChaCha20-Poly1305 AEAD + canonical decode (fixed DEK, no argon2id)
 do {
     let a = dict("aead_payload", V)

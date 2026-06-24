@@ -15,6 +15,7 @@ import (
 	"github.com/ibrahemid/tessera/go/internal/otp"
 	"github.com/ibrahemid/tessera/go/internal/vault"
 	"golang.org/x/crypto/argon2"
+	"golang.org/x/crypto/chacha20"
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
@@ -26,7 +27,33 @@ func main() {
 	steamVectors()
 	argon2Vectors()
 	aeadVector()
+	hchachaVector()
 	vaultVector()
+}
+
+// hchachaVector pins an HChaCha20 known-answer test (draft-irtf-cfrg-xchacha
+// §2.2.1) computed from x/crypto so the Swift HChaCha20 can be asserted directly,
+// localizing a subkey-derivation bug independent of the full AEAD path.
+func hchachaVector() {
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = byte(i)
+	}
+	nonce := []byte{0, 0, 0, 9, 0, 0, 0, 0x4a, 0, 0, 0, 0, 0x31, 0x41, 0x59, 0x27}
+	subkey, err := chacha20.HChaCha20(key, nonce)
+	if err != nil {
+		panic(err)
+	}
+	type v struct {
+		KeyB64    string `json:"key_b64"`
+		NonceB64  string `json:"nonce16_b64"`
+		SubkeyB64 string `json:"subkey_b64"`
+	}
+	emit("hchacha20", v{
+		KeyB64:    base64.StdEncoding.EncodeToString(key),
+		NonceB64:  base64.StdEncoding.EncodeToString(nonce),
+		SubkeyB64: base64.StdEncoding.EncodeToString(subkey),
+	})
 }
 
 // edgeAccount is the nasty-string account whose canonical encoding pins escaping.

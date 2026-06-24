@@ -1,12 +1,14 @@
 package vault
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"testing"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
 	"github.com/ibrahemid/tessera/go/internal/spectest"
+	"golang.org/x/crypto/chacha20poly1305"
 )
 
 type crossVectors struct {
@@ -64,6 +66,40 @@ func TestPinnedEnvelopeNegatives(t *testing.T) {
 	tampered.Payload.CT[len(tampered.Payload.CT)-1] ^= 0x01
 	if _, err := tampered.Open(v.VaultCrossdecrypt.Passphrase); err == nil {
 		t.Error("tampered payload must not decrypt")
+	}
+}
+
+// TestAEADPayloadVector confirms Go opens (and reproduces) the fixed-DEK AEAD
+// vector. Combined with the Swift verifier asserting its seal equals this same
+// ct byte-for-byte, this covers Go-seals/Swift-opens and Swift-seals/Go-opens.
+func TestAEADPayloadVector(t *testing.T) {
+	var raw struct {
+		AEAD struct {
+			DEKB64    string `json:"dek_b64"`
+			NonceB64  string `json:"nonce_b64"`
+			CTB64     string `json:"ct_b64"`
+			Canonical string `json:"expected_canonical_json"`
+		} `json:"aead_payload"`
+	}
+	spectest.Load(t, &raw)
+	dek, _ := base64.StdEncoding.DecodeString(raw.AEAD.DEKB64)
+	nonce, _ := base64.StdEncoding.DecodeString(raw.AEAD.NonceB64)
+	ct, _ := base64.StdEncoding.DecodeString(raw.AEAD.CTB64)
+
+	aead, err := chacha20poly1305.NewX(dek)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, err := aead.Open(nil, nonce, ct, nil)
+	if err != nil {
+		t.Fatalf("Go failed to open the shared AEAD vector: %v", err)
+	}
+	if string(plain) != raw.AEAD.Canonical {
+		t.Errorf("decrypted payload != expected canonical")
+	}
+	// Re-seal deterministically; must equal the pinned ct (so it equals Swift's).
+	if reSealed := aead.Seal(nil, nonce, plain, nil); !bytes.Equal(reSealed, ct) {
+		t.Error("Go re-seal does not reproduce the pinned ciphertext")
 	}
 }
 

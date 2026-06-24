@@ -79,6 +79,14 @@ final class InteropTests: XCTestCase {
         XCTAssertEqual(CanonicalJSON.encode(accounts), edge)
     }
 
+    func testHChaCha20KAT() throws {
+        let h = try vectors()["hchacha20"] as! [String: Any]
+        let key = [UInt8](Data(base64Encoded: h["key_b64"] as! String)!)
+        let nonce = [UInt8](Data(base64Encoded: h["nonce16_b64"] as! String)!)
+        let want = Data(base64Encoded: h["subkey_b64"] as! String)!
+        XCTAssertEqual(Data(XChaCha.hchacha20(key: key, nonce16: nonce)), want)
+    }
+
     func testAEADPayload() throws {
         let a = try vectors()["aead_payload"] as! [String: Any]
         let dek = Data(base64Encoded: a["dek_b64"] as! String)!

@@ -68,6 +68,12 @@
       { "passphrase_b64": "Y29ycmVjdCBob3JzZSBiYXR0ZXJ5IHN0YXBsZQ==", "salt_b64": "dGVzc2VyYS1maXhlZC0xNg==", "key_b64": "HFh0W2gMQ4vfGQNZRNZDZENKo/GmlJYaSK22Ig9Fwds=" }
     ]
   },
+  "hchacha20": {
+    "_status": "PINNED: HChaCha20 KAT (draft-irtf-cfrg-xchacha 2.2.1), computed via x/crypto/chacha20.HChaCha20. Swift HChaCha20 must produce subkey_b64.",
+    "key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+    "nonce16_b64": "AAAACQAAAEoAAAAAMUFZJw==",
+    "subkey_b64": "gkE7Qieye/7TDkJQiod9c6D55NWKdKhTwS7EEybT7Nw="
+  },
   "aead_payload": {
     "_status": "PINNED: XChaCha20-Poly1305 with a FIXED DEK and nonce (no argon2id). Swift must Open this to expected_canonical_json byte-for-byte. Verifies HChaCha20 + ChaChaPoly + canonical-JSON decode locally.",
     "dek_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
