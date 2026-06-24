@@ -154,6 +154,40 @@ do {
     check(threw, "canonical decode rejects duplicate keys")
 }
 
+// 9. Envelope create/open/reseal round-trip (stub argon2; real argon2 in XCTest)
+struct StubArgon2: Argon2idProvider {
+    func deriveKey(passphrase: Data, salt: Data, memoryKiB: UInt32, iterations: UInt32,
+                   parallelism: UInt8, keyLength: Int) throws -> Data {
+        let p = [UInt8](passphrase), s = [UInt8](salt)
+        var out = [UInt8](repeating: 0, count: keyLength)
+        for i in 0..<keyLength {
+            out[i] = (p.isEmpty ? 0 : p[i % p.count]) ^ (s.isEmpty ? 0 : s[i % s.count]) ^ UInt8(i & 0xff)
+        }
+        return Data(out)
+    }
+}
+do {
+    let stub = StubArgon2()
+    let a1 = Account(id: "a", type: .totp, issuer: "X", account: "y",
+                     secret: Data("12345678901234567890".utf8), algorithm: "SHA1", digits: 6, period: 30)
+    var env = try Envelope.create(accounts: [a1], passphrase: "pw", argon2: stub)
+    let opened = try env.open(passphrase: "pw", argon2: stub)
+    check(opened.count == 1 && opened[0].issuer == "X", "Envelope.create + open round-trip")
+
+    var threw = false
+    do { _ = try env.open(passphrase: "wrong", argon2: stub) } catch { threw = true }
+    check(threw, "wrong passphrase rejected (stub)")
+
+    // reseal must preserve a non-passphrase wrap.
+    env.wraps.append(VaultWrap(type: "secure-enclave", kdf: nil, params: nil, salt: nil,
+                               se_key: "AA==", nonce: "AA==", ct: "AA=="))
+    let a2 = Account(id: "b", type: .totp, issuer: "Z", account: "w",
+                     secret: Data("abcdefghij".utf8), algorithm: "SHA1", digits: 6, period: 30)
+    let resealed = try env.reseal(accounts: [a1, a2], passphrase: "pw", argon2: stub)
+    check(resealed.wraps.contains { $0.type == "secure-enclave" }, "reseal preserves secure-enclave wrap")
+    check(try resealed.open(passphrase: "pw", argon2: stub).count == 2, "reseal updates accounts")
+}
+
 print("")
 if failures == 0 { print("ALL SWIFT INTEROP CHECKS PASSED") } else { print("\(failures) CHECK(S) FAILED") }
 exit(failures == 0 ? 0 : 1)

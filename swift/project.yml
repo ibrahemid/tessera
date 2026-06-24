@@ -1,0 +1,42 @@
+# XcodeGen project for the Tessera macOS app.
+# Generate the Xcode project with:  cd swift && xcodegen generate
+# Then open Tessera.xcodeproj. Requires full Xcode (not just Command Line Tools).
+name: Tessera
+options:
+  bundleIdPrefix: com.ibrahemid
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+
+packages:
+  TesseraCore:
+    path: .
+  Argon2Swift:
+    url: https://github.com/tmthecoder/Argon2Swift.git
+    from: 1.0.0
+
+targets:
+  Tessera:
+    type: application
+    platform: macOS
+    sources:
+      - path: App/Sources
+    info:
+      path: App/Resources/Info.plist
+    entitlements:
+      path: App/Resources/Tessera.entitlements
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ibrahemid.tessera
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "6.0"
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_ENTITLEMENTS: App/Resources/Tessera.entitlements
+        GENERATE_INFOPLIST_FILE: NO
+        # Set DEVELOPMENT_TEAM to your Apple Developer team ID before archiving.
+    dependencies:
+      - package: TesseraCore
+        product: TesseraCore
+      - package: Argon2Swift
+        product: Argon2Swift
