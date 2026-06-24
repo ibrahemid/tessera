@@ -40,7 +40,7 @@ Load-bearing decision: **envelope encryption**, not per-method key derivation. A
     {
       "type": "passphrase",
       "kdf": "argon2id",
-      "params": { "m": 65536, "t": 3, "p": 4 },   // pinned; KiB memory, time, parallelism
+      "params": { "v": 1, "m": 131072, "t": 3, "p": 4 },   // pinned; m in KiB (128 MiB), versioned for migration
       "salt":  "<16 random bytes, b64>",
       "nonce": "<24 random bytes, b64>",
       "ct":    "<XChaCha20-Poly1305(DEK), tag appended, b64>"
