@@ -224,6 +224,31 @@ func (w wrap) appendPreserving(existing []wrap) []wrap {
 	return append(out, w)
 }
 
+// UpdateAccounts re-seals the payload with the new account list, reusing the
+// existing DEK (unwrapped via passphrase) so all wraps, including a Mac
+// secure-enclave wrap, are preserved.
+func (e *Envelope) UpdateAccounts(passphrase string, accounts []account.Account) error {
+	for _, a := range accounts {
+		if err := a.Validate(); err != nil {
+			return err
+		}
+	}
+	dek, err := e.unwrapWithPassphrase(passphrase)
+	if err != nil {
+		return err
+	}
+	plain, err := account.CanonicalJSON(accounts)
+	if err != nil {
+		return err
+	}
+	b, err := seal(dek, plain)
+	if err != nil {
+		return err
+	}
+	e.Payload = b
+	return nil
+}
+
 // Marshal serializes the envelope to JSON bytes for storage.
 func (e *Envelope) Marshal() ([]byte, error) {
 	return json.MarshalIndent(e, "", "  ")

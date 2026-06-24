@@ -98,6 +98,34 @@ func TestChangePassphrase(t *testing.T) {
 	}
 }
 
+func TestUpdateAccountsPreservesWrapsAndOpens(t *testing.T) {
+	env, _ := Seal(accounts(), "pw")
+	// Simulate a second (non-passphrase) wrap that must survive an update.
+	env.Wraps = append(env.Wraps, wrap{Type: "secure-enclave", Nonce: []byte("x"), CT: []byte("y")})
+	newAccts := append(accounts(), account.Account{
+		ID: "3", Type: account.TOTP, Issuer: "New", Account: "c@x.com",
+		Secret: []byte("zzzzzzzzzz"), Algorithm: "SHA1", Digits: 6, Period: 30})
+	if err := env.UpdateAccounts("pw", newAccts); err != nil {
+		t.Fatal(err)
+	}
+	got, err := env.Open("pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 {
+		t.Errorf("expected 3 accounts after update, got %d", len(got))
+	}
+	hasSE := false
+	for _, w := range env.Wraps {
+		if w.Type == "secure-enclave" {
+			hasSE = true
+		}
+	}
+	if !hasSE {
+		t.Error("secure-enclave wrap was lost during update")
+	}
+}
+
 func TestBase64URLSecretRejected(t *testing.T) {
 	// A b64-url value with '-'/'_' must fail std-base64 []byte decoding.
 	bad := `{"version":1,"aead":"xchacha20poly1305","wraps":[],"payload":{"nonce":"AA-_","ct":"AA"}}`
