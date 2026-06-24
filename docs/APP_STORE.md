@@ -11,6 +11,54 @@ marked **YOU**.
    build the app or submit (their SwiftPM is broken on this machine).
 2. `brew install xcodegen`, then `cd swift && xcodegen generate`.
 
+## The three Xcode-gated steps (in order)
+
+Each is genuinely gated on Xcode/hardware or your Apple account — not deferred to save effort:
+
+1. **`swift test`** (gated: full Xcode's SwiftPM; the Command Line Tools' SwiftPM is broken here). Validates the Argon2Swift binding + the full Go→Swift passphrase cross-decrypt against the pinned vectors.
+2. **Build/sign the `.app`** (gated: Xcode + your signing identity). SwiftUI/MenuBarExtra/Secure Enclave/ScreenCaptureKit need a real build.
+3. **App Store submission** (gated: your Apple ID + App Store Connect).
+
+### Exact commands
+
+```sh
+brew install xcodegen
+cd swift
+swift test                 # step 1 — expect all InteropTests green
+xcodegen generate          # step 2 — creates Tessera.xcodeproj
+open Tessera.xcodeproj      # set Team, then Product > Archive
+# step 3: Xcode Organizer > Distribute App > App Store Connect > Upload
+```
+
+### Most-likely fix: the Argon2Swift call
+
+argon2id is the one primitive CryptoKit lacks, so it's the single thing most
+likely to need a tweak on first `swift test`. The call lives in
+`swift/App/Sources/Argon2Provider.swift` and `swift/Tests/.../InteropTests.swift`.
+Verified shape:
+
+```swift
+Argon2Swift.hashPasswordBytes(
+    password: passphrase,          // Data — param is `password:`, not `bytes:`
+    salt: Salt(bytes: salt),       // fixed salt for vectors, NOT Salt.newSalt()
+    iterations: 3, memory: 131072, // memory is m_cost in KiB → 128 MiB = 131072, NOT 128
+    parallelism: 4, length: 32,
+    type: .id, version: .V13
+).hashData()                       // raw 32-byte key
+```
+
+Units are already consistent across Go (`argon2.IDKey(..., m=131072, ...)`), the
+spec, and Swift. The pinned **argon2id KAT** (`testvectors.json` → `argon2id`)
+asserts the derived 32-byte DEK byte-for-byte, so `testArgon2idVector` fails fast
+and isolated if the binding or units are wrong — before the full vault decrypt.
+
+## Where the pinned vectors live (CI proves cross-decrypt)
+
+`spec/testvectors.json` (+ `spec/canonical_edge.json`) is the shared source of
+truth. The Go suite, the swiftc verifier (`swift/Tools/verify`), and the XCTest
+suite all run against it. `.github/workflows/ci.yml` runs all three on push once a
+GitHub remote exists, proving Go↔Swift cross-decrypt on every change.
+
 ## Apple setup (YOU — cannot be automated)
 
 1. Enroll in / confirm the Apple Developer Program ($99/yr) and accept the
