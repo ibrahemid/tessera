@@ -1,0 +1,6 @@
+.DS_Store
+go/bin/
+*.o
+.build/
+DerivedData/
+node_modules/
