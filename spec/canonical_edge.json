@@ -1,0 +1,1 @@
+[{"account":"user/name","algorithm":"SHA1","counter":0,"created_at":1700000000,"digits":6,"folder":"","id":"00000000-0000-4000-8000-0000000000ff","issuer":"A\"B\\C\n\tD<e>&f\u2028\u2029\u0001é🔐","period":30,"pinned":false,"secret":"AAEC/v8=","tags":["a\"b","c\\d"],"type":"totp","updated_at":1700000000}]

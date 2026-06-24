@@ -68,6 +68,13 @@
       { "passphrase_b64": "Y29ycmVjdCBob3JzZSBiYXR0ZXJ5IHN0YXBsZQ==", "salt_b64": "dGVzc2VyYS1maXhlZC0xNg==", "key_b64": "HFh0W2gMQ4vfGQNZRNZDZENKo/GmlJYaSK22Ig9Fwds=" }
     ]
   },
+  "aead_payload": {
+    "_status": "PINNED: XChaCha20-Poly1305 with a FIXED DEK and nonce (no argon2id). Swift must Open this to expected_canonical_json byte-for-byte. Verifies HChaCha20 + ChaChaPoly + canonical-JSON decode locally.",
+    "dek_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+    "nonce_b64": "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJC",
+    "ct_b64": "pe7DJ95JGQYvjG3irY1EpvNILYl2rxxTuhQYxRHK7Rc5o56of/Ptaz3WIBTwyWpIdOTn30fSLF2NW/wPzvbJuQGLwOmymaCP7ieSHu8Q5aCP2kB91Cn4i8+AzNAAByjmS+HHTKojCy+zHNuZ7xoCtNog0YqZI9lfg5RqcMRm1WlNoxe33J6Wsyp5PYOLkvvl/bz2iHRZe30NSiBRPC8qqtJZjN6M2m9mpphHAUseazMi2NE+WhIaIdFVVPVyVriAR6peahtS5rVgi4vVgxuc3zQS4Lb1hcIoltCjXqQ/EvekCeohNRTrFSCMHgppdvV17FFBRUj/fKPf9lk0vyTCgqfqdwfNb/qIWAa7k8L6CLiVBfNcDVMxOrtrPmvVorD45rY9OjY6YuUlQzkp/62ul1KokvSNxrQhUyNE827UHTk+4iBJMa6dQ0GTOMlixoPK6mai4qi6rjLkYrnqlVSnm4iRqfuxfcZivleIkVMkdz8aaO+rPsJ6gKPvitzDetDSJpAIbXH1DpnWeOLKfIaqnDmD86UI4PsjKUYIcyRlY22UJUxYGIDeUuvj+gBw220iN8BPbosDoeovMqmsGMFUrGNYw/d/+0hCe7AjiNO4ccjzAjDGuZ7cP+Opl/XYm7jO5FMmk8tazyD6PTK2YEk5JJnCWT/4YVN0TJZUbws249NBLU+6Y2Rrj+guSoYOtYtyzZPMXDYYqtCiPSX4xJflgcbdBgMhy8SxYp7m96Ur0fnx8QZWItZTnjbKTuV6",
+    "expected_canonical_json": "[{\"account\":\"alice@example.com\",\"algorithm\":\"SHA1\",\"counter\":0,\"created_at\":1700000000,\"digits\":6,\"folder\":\"\",\"id\":\"00000000-0000-4000-8000-000000000001\",\"issuer\":\"ACME\",\"period\":30,\"pinned\":false,\"secret\":\"MTIzNDU2Nzg5MDEyMzQ1Njc4OTA=\",\"tags\":[],\"type\":\"totp\",\"updated_at\":1700000000},{\"account\":\"gamer\",\"algorithm\":\"SHA1\",\"counter\":0,\"created_at\":1700000000,\"digits\":5,\"folder\":\"\",\"id\":\"00000000-0000-4000-8000-000000000002\",\"issuer\":\"Steam\",\"period\":30,\"pinned\":false,\"secret\":\"YWJjZGVmZ2hpamtsbW5vcA==\",\"tags\":[],\"type\":\"steam\",\"updated_at\":1700000000}]"
+  },
   "vault_crossdecrypt": {
     "_status": "PINNED: Go-encrypted with the passphrase below; Swift MUST decrypt the envelope to expected_canonical_json (byte-for-byte). Negatives MUST be rejected.",
     "passphrase": "correct horse battery staple",
