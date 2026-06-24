@@ -129,6 +129,23 @@ do {
     check(sealed == ct, "Swift seal reproduces Go ciphertext byte-for-byte")
 }
 
+// 7b. Google migration import
+do {
+    let m = dict("migration", V)
+    var allOK = true
+    for c in arr("cases", m) {
+        let accounts = try Migration.parse(c["uri"] as! String)
+        let want = c["accounts"] as! [[String: Any]]
+        if accounts.count != want.count { allOK = false }
+        for (i, a) in accounts.enumerated() {
+            if a.issuer != (want[i]["issuer"] as! String) { allOK = false }
+            if a.account != (want[i]["account"] as! String) { allOK = false }
+            if Base32.encodeNoPad(a.secret) != (want[i]["secret_b32"] as! String) { allOK = false }
+        }
+    }
+    check(allOK, "Google otpauth-migration import")
+}
+
 // 8. duplicate-key rejection
 do {
     let dup = Data(#"[{"id":"a","id":"b","type":"totp","account":"x","algorithm":"SHA1","secret":"AA==","digits":6,"period":30,"counter":0,"folder":"","issuer":"","pinned":false,"tags":[],"created_at":0,"updated_at":0}]"#.utf8)

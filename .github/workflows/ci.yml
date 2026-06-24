@@ -1,0 +1,40 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: go
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test -race ./...
+
+  swift-interop-verifier:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile TesseraCore + verifier (no SPM)
+        run: swiftc -O swift/Sources/TesseraCore/*.swift swift/Tools/verify/main.swift -o tessera_verify
+      - name: Run shared interop vectors
+        run: ./tessera_verify "${GITHUB_WORKSPACE}/spec"
+
+  swift-spm-tests:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: swift
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run XCTest (argon2id + full vault cross-decrypt)
+        run: swift test
