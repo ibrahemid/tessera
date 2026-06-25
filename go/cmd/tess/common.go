@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
-	"github.com/ibrahemid/tessera/go/internal/otp"
+	"github.com/ibrahemid/tessera/go/internal/code"
 	"github.com/ibrahemid/tessera/go/internal/store"
 	"github.com/ibrahemid/tessera/go/internal/vault"
 	"github.com/spf13/cobra"
@@ -93,20 +93,7 @@ func (s *session) find(query string) (int, error) {
 
 // genCode computes the current code for an account at time t.
 func genCode(a account.Account, t time.Time) (string, error) {
-	alg, err := otp.ParseAlgorithm(a.Algorithm)
-	if err != nil {
-		return "", err
-	}
-	switch a.Type {
-	case account.TOTP:
-		return otp.TOTP(a.Secret, t, a.Period, a.Digits, alg)
-	case account.Steam:
-		return otp.Steam(a.Secret, t)
-	case account.HOTP:
-		return otp.HOTP(a.Secret, uint64(a.Counter), a.Digits, alg)
-	default:
-		return "", fmt.Errorf("unknown account type %q", a.Type)
-	}
+	return code.For(a, t)
 }
 
 func label(a account.Account) string {
@@ -114,6 +101,26 @@ func label(a account.Account) string {
 		return a.Issuer + " (" + a.Account + ")"
 	}
 	return a.Account
+}
+
+// labelText is the primary display name (issuer, else account).
+func labelText(a account.Account) string {
+	if a.Issuer != "" {
+		return a.Issuer
+	}
+	return a.Account
+}
+
+// shortQuery is a convenient query string for an account in hints.
+func shortQuery(a account.Account) string { return labelText(a) }
+
+// padRight pads or ellipsizes s to n runes.
+func padRight(s string, n int) string {
+	r := []rune(s)
+	if len(r) > n {
+		return string(r[:n-1]) + "…"
+	}
+	return s + strings.Repeat(" ", n-len(r))
 }
 
 func newID() string {

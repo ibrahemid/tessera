@@ -5,11 +5,13 @@ import (
 	"strings"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
+	"github.com/ibrahemid/tessera/go/internal/ui"
 	"github.com/spf13/cobra"
 )
 
 func newListCmd() *cobra.Command {
 	var folder, tag string
+	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List accounts (without codes)",
@@ -19,8 +21,25 @@ func newListCmd() *cobra.Command {
 				return err
 			}
 			accts := filterAccounts(s.accounts, folder, tag)
+			if asJSON {
+				type row struct {
+					ID      string   `json:"id"`
+					Issuer  string   `json:"issuer"`
+					Account string   `json:"account"`
+					Type    string   `json:"type"`
+					Folder  string   `json:"folder,omitempty"`
+					Tags    []string `json:"tags,omitempty"`
+					Pinned  bool     `json:"pinned"`
+				}
+				rows := make([]row, 0, len(accts))
+				for _, a := range accts {
+					rows = append(rows, row{a.ID, a.Issuer, a.Account, string(a.Type), a.Folder, a.Tags, a.Pinned})
+				}
+				out(cmd, "%s", mustJSON(rows))
+				return nil
+			}
 			if len(accts) == 0 {
-				out(cmd, "No accounts.")
+				out(cmd, "%s", ui.SubtleStyle.Render("No accounts."))
 				return nil
 			}
 			for _, a := range accts {
@@ -31,16 +50,19 @@ func newListCmd() *cobra.Command {
 				if len(a.Tags) > 0 {
 					meta += " #" + strings.Join(a.Tags, " #")
 				}
+				pin := "  "
 				if a.Pinned {
-					meta += " *"
+					pin = ui.AccentStyle.Render("★ ")
 				}
-				out(cmd, "%s  %-30s  [%s]", a.ID[:8], label(a), meta)
+				out(cmd, "%s%s %s  %s", pin, ui.Monogram(a.Issuer+a.Account, labelText(a)),
+					ui.IssuerStyle.Render(padRight(label(a), 34)), ui.SubtleStyle.Render(meta))
 			}
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&folder, "folder", "", "filter by folder")
 	cmd.Flags().StringVar(&tag, "tag", "", "filter by tag")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "output JSON")
 	return cmd
 }
 

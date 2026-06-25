@@ -28,7 +28,7 @@ func newRootCmd() *cobra.Command {
 		SilenceErrors: true,
 		// With no subcommand, print current codes for all accounts.
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCodeAll(cmd)
+			return runCodeAll(cmd, false)
 		},
 	}
 	root.PersistentFlags().StringVar(&vaultPath, "vault", "", "vault file path (default $TESSERA_VAULT or ~/.local/share/tessera/vault.json)")
@@ -38,6 +38,7 @@ func newRootCmd() *cobra.Command {
 		newAddCmd(),
 		newListCmd(),
 		newCodeCmd(),
+		newWatchCmd(),
 		newImportCmd(),
 		newExportCmd(),
 		newRemoveCmd(),

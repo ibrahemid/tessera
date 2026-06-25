@@ -29,10 +29,16 @@ tess vault init                      # create an encrypted vault
 tess add "otpauth://totp/ACME:me@x.com?secret=JBSWY3DPEHPK3PXP&issuer=ACME"
 tess add --qr ~/Desktop/code.png     # from a QR image
 tess import --migration "otpauth-migration://offline?data=..."
-tess                                 # print current codes
-tess code acme                       # code for a single account
+tess                                 # print current codes (colored, with countdown bars)
+tess watch                           # live TUI: countdown bars, search (/), copy (enter/c), q to quit
+tess code acme -c                    # code for one account, copied to the clipboard
+tess code --json                     # machine-readable output for scripts
+tess list --json
 tess export --uri acme               # otpauth URI (cleartext secret)
+tess completion zsh > ...            # shell completions (bash/zsh/fish)
 ```
+
+Colored output auto-disables when piped or when `NO_COLOR` is set.
 
 Vault path: `$TESSERA_VAULT` or `~/.local/share/tessera/vault.json`. For scripting, set `TESSERA_PASSPHRASE` to avoid the prompt.
 
