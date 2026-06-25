@@ -13,6 +13,7 @@ final class AppModel: ObservableObject {
     @Published var now = Date()
     @Published var errorMessage: String?
     @Published var vaultExists: Bool
+    @Published var lastImportSkipped = 0
 
     private let store = VaultStore()
     private let argon2 = Argon2Reference()
@@ -115,20 +116,60 @@ final class AppModel: ObservableObject {
 
     func addAccount(_ account: Account) { mutate { $0.append(stamped(account)) } }
 
-    func importMigration(_ uri: String) {
+    /// Bulk import: accepts one or many lines, each an otpauth:// or
+    /// otpauth-migration:// URI. Skips duplicates. Reports the count via status.
+    @discardableResult
+    func importText(_ text: String) -> Int {
+        var added = 0
         run {
-            let imported = try Migration.parse(uri).map { stamped($0) }
             try requireMutable()
-            try persist(accounts + imported)
+            var parsed: [Account] = []
+            for raw in text.split(whereSeparator: \.isNewline) {
+                let line = raw.trimmingCharacters(in: .whitespaces)
+                if line.isEmpty || line.hasPrefix("#") { continue }
+                if line.hasPrefix("otpauth-migration://") {
+                    parsed.append(contentsOf: try Migration.parse(line))
+                } else if line.hasPrefix("otpauth://") {
+                    parsed.append(try OTPAuth.parse(line))
+                } else {
+                    throw AccountError.invalid("not an otpauth or otpauth-migration link")
+                }
+            }
+            if parsed.isEmpty { throw AccountError.invalid("nothing to import") }
+
+            var seen = Set(accounts.map(dedupeKey))
+            var next = accounts
+            for var a in parsed {
+                let key = dedupeKey(a)
+                if seen.contains(key) { continue }
+                seen.insert(key)
+                a = stamped(a)
+                try a.validate()
+                next.append(a)
+                added += 1
+            }
+            guard added > 0 else { lastImportSkipped = parsed.count; return }
+            lastImportSkipped = parsed.count - added
+            try persist(next)
+        }
+        return added
+    }
+
+    /// Open a text file (one URI per line) and bulk-import it.
+    func importFromFile() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.plainText, .text]
+        panel.allowsOtherFileTypes = true
+        panel.message = "Choose a file with one otpauth:// link per line."
+        if panel.runModal() == .OK, let url = panel.url,
+           let text = try? String(contentsOf: url, encoding: .utf8) {
+            importText(text)
         }
     }
 
-    func importOTPAuth(_ uri: String) {
-        run {
-            let a = stamped(try OTPAuth.parse(uri))
-            try requireMutable()
-            try persist(accounts + [a])
-        }
+    private func dedupeKey(_ a: Account) -> String {
+        [String(describing: a.type), a.issuer.lowercased(), a.account.lowercased(),
+         Base32.encodeNoPad(a.secret)].joined(separator: "|")
     }
 
     func remove(_ account: Account) { mutate { $0.removeAll { $0.id == account.id } } }

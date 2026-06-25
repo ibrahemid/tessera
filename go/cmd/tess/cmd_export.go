@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 
+	"github.com/ibrahemid/tessera/go/internal/base32x"
 	"github.com/ibrahemid/tessera/go/internal/otpauth"
 	"github.com/ibrahemid/tessera/go/internal/store"
 	"github.com/spf13/cobra"
@@ -11,18 +12,25 @@ import (
 func newExportCmd() *cobra.Command {
 	var (
 		asURI    bool
+		asSecret bool
 		filePath string
 	)
 	cmd := &cobra.Command{
 		Use:   "export [query]",
-		Short: "Export accounts as otpauth URIs, or copy the encrypted vault file",
-		Args:  cobra.MaximumNArgs(1),
+		Short: "Export accounts as otpauth URIs or base32 secrets, or copy the encrypted vault",
+		Long: `Export account data (CLEARTEXT secrets — handle with care):
+
+  tess export --uri                 # all accounts as otpauth:// URIs (bulk backup / migrate)
+  tess export --uri github          # one account's otpauth URI
+  tess export --secret github       # just the base32 secret (the raw key)
+  tess export --file backup.json    # an encrypted copy of the whole vault (safe to store)`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if filePath != "" {
 				return exportEncrypted(cmd, filePath)
 			}
-			if !asURI {
-				return fmt.Errorf("use --uri to print otpauth URIs or --file <path> to copy the encrypted vault")
+			if !asURI && !asSecret {
+				return fmt.Errorf("use --uri, --secret, or --file (see `tess export --help`)")
 			}
 			s, err := openSession()
 			if err != nil {
@@ -37,13 +45,18 @@ func newExportCmd() *cobra.Command {
 				accts = accts[idx : idx+1]
 			}
 			for _, a := range accts {
-				out(cmd, "%s", otpauth.Format(a))
+				if asSecret {
+					out(cmd, "%s", base32x.EncodeNoPad(a.Secret))
+				} else {
+					out(cmd, "%s", otpauth.Format(a))
+				}
 			}
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&asURI, "uri", false, "print otpauth:// URIs (secrets in cleartext)")
-	cmd.Flags().StringVar(&filePath, "file", "", "write a copy of the encrypted vault to this path")
+	cmd.Flags().BoolVar(&asSecret, "secret", false, "print only the base32 secret(s) (cleartext)")
+	cmd.Flags().StringVar(&filePath, "file", "", "write an encrypted copy of the vault to this path")
 	return cmd
 }
 

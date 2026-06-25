@@ -298,19 +298,25 @@ struct AddAccountView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack { Text("Add account").font(Typo.display(17)).foregroundStyle(Palette.textPrimary); Spacer() }
-            Text("Paste an otpauth or Google Authenticator link, or scan a QR code shown anywhere on screen.")
+            HStack { Text("Add accounts").font(Typo.display(17)).foregroundStyle(Palette.textPrimary); Spacer() }
+            Text("Paste one or more otpauth or Google Authenticator links (one per line), scan a QR on screen, or import a file.")
                 .font(Typo.label(12)).foregroundStyle(Palette.textSecondary)
-            FieldBox { TextField("otpauth://…", text: $uri, axis: .vertical).lineLimit(2...5) }
-            Button {
-                scanning = true
-                Task { defer { scanning = false }
-                    do { uri = try await QRCapture.scanScreen() } catch { model.errorMessage = "\(error)" } }
-            } label: {
-                Label(scanning ? "Scanning…" : "Scan QR on screen", systemImage: "qrcode.viewfinder")
-                    .font(Typo.label(12, .medium))
+            FieldBox { TextField("otpauth://…", text: $uri, axis: .vertical).lineLimit(3...8) }
+            HStack(spacing: 16) {
+                Button {
+                    scanning = true
+                    Task { defer { scanning = false }
+                        do { uri = try await QRCapture.scanScreen() } catch { model.errorMessage = "\(error)" } }
+                } label: {
+                    Label(scanning ? "Scanning…" : "Scan QR on screen", systemImage: "qrcode.viewfinder")
+                        .font(Typo.label(12, .medium))
+                }
+                .buttonStyle(.plain).foregroundStyle(Palette.accent).disabled(scanning)
+                Button { model.importFromFile(); if model.errorMessage == nil { dismiss() } } label: {
+                    Label("Import file…", systemImage: "doc.text").font(Typo.label(12, .medium))
+                }
+                .buttonStyle(.plain).foregroundStyle(Palette.accent)
             }
-            .buttonStyle(.plain).foregroundStyle(Palette.accent).disabled(scanning)
             if let e = model.errorMessage { ErrorLine(e) }
             HStack {
                 Spacer()
@@ -322,9 +328,8 @@ struct AddAccountView: View {
     }
 
     private func add() {
-        let before = model.accounts.count
-        if uri.hasPrefix("otpauth-migration://") { model.importMigration(uri) } else { model.importOTPAuth(uri) }
-        if model.errorMessage == nil && model.accounts.count > before { dismiss() }
+        let added = model.importText(uri)
+        if model.errorMessage == nil && added > 0 { dismiss() }
     }
 }
 
