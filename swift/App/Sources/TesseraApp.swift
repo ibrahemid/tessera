@@ -11,15 +11,17 @@ enum AppTheme: String, CaseIterable, Identifiable {
 
 @main
 struct TesseraApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var model = AppModel()
     @AppStorage("tessera.theme") private var theme: AppTheme = .system
 
     var body: some Scene {
-        MenuBarExtra("Tessera", systemImage: "lock.shield") {
+        MenuBarExtra {
             RootView()
                 .environmentObject(model)
                 .preferredColorScheme(theme.colorScheme)
-                .frame(width: 360, height: 460)
+        } label: {
+            Image(systemName: "checkerboard.shield")
         }
         .menuBarExtraStyle(.window)
 
@@ -28,21 +30,5 @@ struct TesseraApp: App {
                 .environmentObject(model)
                 .preferredColorScheme(theme.colorScheme)
         }
-    }
-}
-
-struct RootView: View {
-    @EnvironmentObject var model: AppModel
-    var body: some View {
-        Group {
-            if !model.vaultExists {
-                CreateVaultView()
-            } else if model.isLocked {
-                UnlockView()
-            } else {
-                MenuView()
-            }
-        }
-        .padding(12)
     }
 }

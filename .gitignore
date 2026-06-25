@@ -4,3 +4,8 @@ go/bin/
 .build/
 DerivedData/
 node_modules/
+
+DerivedData/
+*.xcodeproj/
+.build/
+swift/.build/

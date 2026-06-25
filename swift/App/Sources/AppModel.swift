@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import SwiftUI
 import TesseraCore
 import TesseraArgon2
@@ -22,6 +23,34 @@ final class AppModel: ObservableObject {
     init() {
         vaultExists = store.exists
         startTicking()
+    }
+
+    /// In-memory model for screenshots/previews; never touches disk.
+    enum DemoState { case populated, empty, locked, fresh }
+    init(demo: DemoState) {
+        switch demo {
+        case .populated:
+            vaultExists = true; isLocked = false
+            accounts = AppModel.sampleAccounts
+        case .empty:
+            vaultExists = true; isLocked = false; accounts = []
+        case .locked:
+            vaultExists = true; isLocked = true
+        case .fresh:
+            vaultExists = false; isLocked = true
+        }
+    }
+
+    static var sampleAccounts: [Account] {
+        func s(_ str: String) -> Data { Data(str.utf8) }
+        return [
+            Account(id: "1", type: .totp, issuer: "GitHub", account: "ibrahem", secret: s("12345678901234567890"), algorithm: "SHA1", digits: 6, period: 30, pinned: true),
+            Account(id: "2", type: .totp, issuer: "Cloudflare", account: "ibra@ibrahemid.com", secret: s("abcdefghij1234567890"), algorithm: "SHA1", digits: 6, period: 30, pinned: true),
+            Account(id: "3", type: .totp, issuer: "Google", account: "support@ibrahemid.com", secret: s("zyxwvutsrqponmlkjihg"), algorithm: "SHA1", digits: 6, period: 30),
+            Account(id: "4", type: .steam, issuer: "Steam", account: "ibrahem", secret: s("steamsecret12345"), algorithm: "SHA1", digits: 5, period: 30),
+            Account(id: "5", type: .totp, issuer: "AWS", account: "root", secret: s("awssecretkey00000000"), algorithm: "SHA256", digits: 6, period: 30),
+            Account(id: "6", type: .hotp, issuer: "Bank", account: "•••• 4291", secret: s("banksecret0000000000"), algorithm: "SHA1", digits: 6, counter: 12),
+        ]
     }
 
     var hasTouchIDWrap: Bool {
@@ -103,6 +132,35 @@ final class AppModel: ObservableObject {
     }
 
     func remove(_ account: Account) { mutate { $0.removeAll { $0.id == account.id } } }
+
+    func togglePin(_ account: Account) {
+        mutate { accts in
+            if let i = accts.firstIndex(where: { $0.id == account.id }) {
+                accts[i].pinned.toggle()
+                accts[i].updatedAt = Int64(Date().timeIntervalSince1970)
+            }
+        }
+    }
+
+    func advanceHOTP(_ account: Account) {
+        guard account.type == .hotp else { return }
+        mutate { accts in
+            if let i = accts.firstIndex(where: { $0.id == account.id }) {
+                accts[i].counter += 1
+                accts[i].updatedAt = Int64(Date().timeIntervalSince1970)
+            }
+        }
+        // Copy the freshly advanced code.
+        if let updated = accounts.first(where: { $0.id == account.id }),
+           let code = try? OTP.code(for: updated, at: now) {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(code, forType: .string)
+        }
+    }
+
+    var vaultPathDisplay: String {
+        store.vaultURL.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+    }
 
     func code(for account: Account) -> String {
         (try? OTP.code(for: account, at: now)) ?? "------"

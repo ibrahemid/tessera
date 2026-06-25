@@ -18,6 +18,7 @@ targets:
     platform: macOS
     sources:
       - path: App/Sources
+      - path: App/Resources/Assets.xcassets
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ibrahemid.tessera
@@ -29,6 +30,7 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: App/Resources/Info.plist
         CODE_SIGN_ENTITLEMENTS: App/Resources/Tessera.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # Set DEVELOPMENT_TEAM to your Apple Developer team ID before archiving.
     dependencies:
       - package: Tessera
