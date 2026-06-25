@@ -1,6 +1,6 @@
 import XCTest
 import Foundation
-import Argon2Swift
+import TesseraArgon2
 @testable import TesseraCore
 
 /// Locates the repo's /spec directory by walking up from this source file.
@@ -21,23 +21,7 @@ private func vectors() throws -> [String: Any] {
     return try JSONSerialization.jsonObject(with: data) as! [String: Any]
 }
 
-/// Real argon2id provider for CI/Xcode verification of the passphrase wrap.
-struct Argon2SwiftProvider: Argon2idProvider {
-    func deriveKey(passphrase: Data, salt: Data, memoryKiB: UInt32, iterations: UInt32,
-                   parallelism: UInt8, keyLength: Int) throws -> Data {
-        let result = try Argon2Swift.hashPasswordBytes(
-            password: passphrase,
-            salt: Salt(bytes: salt),
-            iterations: Int(iterations),
-            memory: Int(memoryKiB),
-            parallelism: Int(parallelism),
-            length: keyLength,
-            type: .id,
-            version: .V13
-        )
-        return result.hashData()
-    }
-}
+private let argon2: Argon2idProvider = Argon2Reference()
 
 final class InteropTests: XCTestCase {
 
@@ -104,7 +88,7 @@ final class InteropTests: XCTestCase {
             let pass = Data(base64Encoded: c["passphrase_b64"] as! String)!
             let salt = Data(base64Encoded: c["salt_b64"] as! String)!
             let want = Data(base64Encoded: c["key_b64"] as! String)!
-            let got = try Argon2SwiftProvider().deriveKey(
+            let got = try argon2.deriveKey(
                 passphrase: pass, salt: salt,
                 memoryKiB: UInt32((params["m"] as! NSNumber).intValue),
                 iterations: UInt32((params["t"] as! NSNumber).intValue),
@@ -118,10 +102,10 @@ final class InteropTests: XCTestCase {
         let v = try vectors()["vault_crossdecrypt"] as! [String: Any]
         let envData = try JSONSerialization.data(withJSONObject: v["envelope"] as! [String: Any])
         let env = try Envelope.decode(envData)
-        let accounts = try env.open(passphrase: v["passphrase"] as! String, argon2: Argon2SwiftProvider())
+        let accounts = try env.open(passphrase: v["passphrase"] as! String, argon2: argon2)
         XCTAssertEqual(CanonicalJSON.encode(accounts), Data((v["expected_canonical_json"] as! String).utf8))
 
         let neg = v["negatives"] as! [String: Any]
-        XCTAssertThrowsError(try env.open(passphrase: neg["wrong_passphrase"] as! String, argon2: Argon2SwiftProvider()))
+        XCTAssertThrowsError(try env.open(passphrase: neg["wrong_passphrase"] as! String, argon2: argon2))
     }
 }

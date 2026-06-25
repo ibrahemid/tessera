@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import TesseraCore
+import TesseraArgon2
 
 /// Central app state: vault lifecycle, account list, live codes, and the unlock
 /// flow (passphrase + optional Touch ID).
@@ -13,7 +14,7 @@ final class AppModel: ObservableObject {
     @Published var vaultExists: Bool
 
     private let store = VaultStore()
-    private let argon2 = Argon2Provider()
+    private let argon2 = Argon2Reference()
     private var envelope: Envelope?
     private var passphrase: String?
     private var timer: Timer?

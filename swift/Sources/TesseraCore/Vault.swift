@@ -2,7 +2,7 @@ import Foundation
 
 /// Argon2id is the one primitive CryptoKit lacks. The core depends on this
 /// provider abstraction; the app/CI inject a vetted argon2 implementation.
-public protocol Argon2idProvider {
+public protocol Argon2idProvider: Sendable {
     func deriveKey(passphrase: Data, salt: Data, memoryKiB: UInt32, iterations: UInt32,
                    parallelism: UInt8, keyLength: Int) throws -> Data
 }

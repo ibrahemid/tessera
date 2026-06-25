@@ -6,13 +6,9 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [
         .library(name: "TesseraCore", targets: ["TesseraCore"]),
+        .library(name: "TesseraArgon2", targets: ["TesseraArgon2"]),
     ],
     dependencies: [
-        // argon2id is the one primitive CryptoKit lacks. Argon2Swift wraps the
-        // reference C implementation; used only to verify the passphrase wrap in
-        // tests/CI and by the app target (kept out of TesseraCore so the core
-        // stays dependency-free and swiftc-verifiable).
-        .package(url: "https://github.com/tmthecoder/Argon2Swift.git", from: "1.0.0"),
         // swift-crypto provides CryptoKit-compatible APIs for Linux CI; on macOS
         // the system CryptoKit is used via the canImport guard in the sources.
         .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0"),
@@ -24,12 +20,20 @@ let package = Package(
                 .product(name: "Crypto", package: "swift-crypto", condition: .when(platforms: [.linux])),
             ]
         ),
+        // Vendored PHC reference argon2 (CC0/Apache-2.0). Portable ref.c only,
+        // threads disabled — builds clean on Apple Silicon, unlike SIMD opt.c.
+        .target(
+            name: "CArgon2",
+            cSettings: [
+                .define("ARGON2_NO_THREADS"),
+                .headerSearchPath("."),
+                .headerSearchPath("blake2"),
+            ]
+        ),
+        .target(name: "TesseraArgon2", dependencies: ["CArgon2", "TesseraCore"]),
         .testTarget(
             name: "TesseraCoreTests",
-            dependencies: [
-                "TesseraCore",
-                .product(name: "Argon2Swift", package: "Argon2Swift"),
-            ]
+            dependencies: ["TesseraCore", "TesseraArgon2"]
         ),
     ]
 )
