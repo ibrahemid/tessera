@@ -21,7 +21,7 @@ struct TesseraApp: App {
                 .environmentObject(model)
                 .preferredColorScheme(theme.colorScheme)
         } label: {
-            Image(systemName: "checkerboard.shield")
+            Image(systemName: "lock.shield.fill")
         }
         .menuBarExtraStyle(.window)
 

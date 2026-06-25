@@ -19,6 +19,8 @@ targets:
     sources:
       - path: App/Sources
       - path: App/Resources/Assets.xcassets
+      - path: App/Resources/PrivacyInfo.xcprivacy
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ibrahemid.tessera

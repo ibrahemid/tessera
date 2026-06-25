@@ -68,7 +68,7 @@ struct CreateVaultView: View {
             MosaicMark(side: 54)
             VStack(spacing: 6) {
                 Text("Welcome to Tessera").font(Typo.display(22)).foregroundStyle(Palette.textPrimary)
-                Text("Set a passphrase to encrypt your vault.\nIt's shared with the tess command-line app.")
+                Text("Set a passphrase to encrypt your vault.\nIt never leaves this device.")
                     .multilineTextAlignment(.center)
                     .font(Typo.label(12)).foregroundStyle(Palette.textSecondary)
             }

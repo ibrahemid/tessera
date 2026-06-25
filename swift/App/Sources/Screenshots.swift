@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import TesseraCore
+import TesseraArgon2
 
 /// Hidden screenshot mode: `Tessera --shoot <outdir>` renders the key screens to
 /// PNGs (light + dark) and exits. Used for design iteration; no effect on the
@@ -69,8 +70,40 @@ private struct RowsPreview: View {
     }
 }
 
+/// Exercises the real vault read/write path under whatever sandbox the running
+/// binary is signed with. `Tessera --selftest` prints PASS/FAIL and exits.
+@MainActor
+enum SelfTest {
+    static func runIfRequested() -> Bool {
+        guard CommandLine.arguments.contains("--selftest") else { return false }
+        let store = VaultStore()
+        let argon2 = Argon2Reference()
+        let pass = "selftest-passphrase"
+        do {
+            let acct = Account(id: "t1", type: .totp, issuer: "SelfTest", account: "x",
+                               secret: Data("12345678901234567890".utf8), algorithm: "SHA1",
+                               digits: 6, period: 30)
+            let env = try Envelope.create(accounts: [acct], passphrase: pass, argon2: argon2)
+            try store.save(env)                          // write into the sandbox container
+            let reopened = try store.load()              // read back
+            let got = try reopened.open(passphrase: pass, argon2: argon2)
+            try? FileManager.default.removeItem(at: store.vaultURL)
+            if got.count == 1 && got[0].issuer == "SelfTest" {
+                print("SELFTEST PASS path=\(store.vaultURL.path)")
+                exit(0)
+            }
+            print("SELFTEST FAIL: unexpected accounts \(got)")
+            exit(1)
+        } catch {
+            print("SELFTEST FAIL: \(error)")
+            exit(1)
+        }
+    }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if SelfTest.runIfRequested() { return }
         if Screenshots.runIfRequested() {
             // Give the renderer a beat, then exit before showing UI.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { NSApp.terminate(nil) }
