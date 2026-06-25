@@ -9,3 +9,8 @@ DerivedData/
 *.xcodeproj/
 .build/
 swift/.build/
+
+site/node_modules/
+site/dist/
+site/.astro/
+/tmp/

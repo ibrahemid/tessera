@@ -1,0 +1,50 @@
+---
+import "../styles/global.css";
+const { title = "Tessera", description = "A private, open-source 2FA authenticator for macOS. CLI-first, with a native menu-bar app." } = Astro.props;
+const year = 2026;
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+  </head>
+  <body class="min-h-screen flex flex-col">
+    <header class="max-w-3xl mx-auto w-full px-6 py-6 flex items-center justify-between">
+      <a href="/" class="flex items-center gap-2.5 font-semibold" style="font-family: var(--font-display)">
+        <span class="inline-grid grid-cols-2 gap-[2px] w-5 h-5" aria-hidden="true">
+          <span class="rounded-[3px]" style="background: var(--color-gold)"></span>
+          <span class="rounded-[3px]" style="background: #c9ccd6"></span>
+          <span class="rounded-[3px]" style="background: #c9ccd6"></span>
+          <span class="rounded-[3px]" style="background: #e1e3ea"></span>
+        </span>
+        <span class="text-lg">Tessera</span>
+      </a>
+      <nav class="flex items-center gap-5 text-sm" style="color: var(--color-ink-soft)">
+        <a href="/support" class="hover:text-[var(--color-ink)]">Support</a>
+        <a href="/privacy" class="hover:text-[var(--color-ink)]">Privacy</a>
+        <a href="https://github.com/ibrahemid/tessera" class="hover:text-[var(--color-ink)]">GitHub</a>
+      </nav>
+    </header>
+
+    <main class="max-w-3xl mx-auto w-full px-6 flex-1">
+      <slot />
+    </main>
+
+    <footer class="max-w-3xl mx-auto w-full px-6 py-10 mt-16 text-sm border-t" style="border-color: var(--color-line); color: var(--color-ink-soft)">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <span>© {year} Tessera · Apache-2.0 · open source</span>
+        <span class="flex gap-4">
+          <a href="/privacy" class="hover:text-[var(--color-ink)]">Privacy</a>
+          <a href="/support" class="hover:text-[var(--color-ink)]">Support</a>
+        </span>
+      </div>
+    </footer>
+  </body>
+</html>

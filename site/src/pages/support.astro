@@ -1,0 +1,33 @@
+---
+import Base from "../layouts/Base.astro";
+const faqs = [
+  ["How do I import my existing accounts?", "Export from Google Authenticator (Transfer accounts → Export) and scan the QR, or use the app's \"Import file…\" / paste box. In the CLI: tess import --qr export.png, or tess import --file accounts.txt for many otpauth links at once."],
+  ["Where are my codes stored?", "In an encrypted vault on your Mac. The app keeps it in its sandbox container; the CLI keeps it at ~/.local/share/tessera/vault.json. Point both at one file with the TESSERA_VAULT environment variable."],
+  ["I forgot my passphrase.", "The vault is end-to-end encrypted and cannot be recovered without the passphrase — that's the point. Keep an encrypted backup (tess export --file backup.json) and remember your passphrase."],
+  ["Does it sync across devices?", "Not yet. v1 is local-first; encrypted export/import lets you move a vault manually. Cross-device sync is planned."],
+];
+---
+<Base title="Support — Tessera" description="Get help with Tessera, the open-source 2FA authenticator for macOS.">
+  <article class="py-12 max-w-2xl">
+    <h1 class="text-3xl font-semibold mb-2" style="font-family: var(--font-display)">Support</h1>
+    <p class="mb-8 leading-relaxed" style="color: var(--color-ink-soft)">
+      Tessera is open source and maintained on GitHub. The fastest way to report a bug or
+      ask a question is to open an issue; for anything private, email works too.
+    </p>
+
+    <div class="flex flex-wrap gap-3 mb-12">
+      <a href="https://github.com/ibrahemid/tessera/issues" class="px-5 py-2.5 rounded-lg font-medium text-white" style="background: var(--color-gold)">Open an issue</a>
+      <a href="mailto:support@ibrahemid.com" class="px-5 py-2.5 rounded-lg font-medium border" style="border-color: var(--color-line)">Email support</a>
+    </div>
+
+    <h2 class="text-xl font-semibold mb-4" style="font-family: var(--font-display)">Common questions</h2>
+    <div class="space-y-5">
+      {faqs.map(([q, a]) => (
+        <div class="p-5 rounded-xl border" style="border-color: var(--color-line); background: var(--color-surface)">
+          <h3 class="font-semibold mb-1.5">{q}</h3>
+          <p class="text-sm leading-relaxed" style="color: var(--color-ink-soft)">{a}</p>
+        </div>
+      ))}
+    </div>
+  </article>
+</Base>

@@ -1,0 +1,57 @@
+---
+import Base from "../layouts/Base.astro";
+const features = [
+  ["Works with everything", "Any TOTP service, plus HOTP and Steam Guard. Import from Google Authenticator, otpauth links, or QR codes — in bulk."],
+  ["Yours alone", "Secrets are encrypted on your device with argon2id + XChaCha20-Poly1305. No account, no servers, no telemetry."],
+  ["CLI-first", "A real command-line tool (tess) with a live terminal view — unique among Mac authenticators. Scriptable, with JSON output."],
+  ["Menu-bar native", "Touch ID unlock, on-screen QR scan, search, folders, and one-click copy — all from the menu bar."],
+];
+---
+<Base>
+  <section class="pt-12 pb-16">
+    <span class="inline-grid grid-cols-2 gap-1 w-12 h-12 mb-7" aria-hidden="true">
+      <span class="rounded-[5px]" style="background: var(--color-gold)"></span>
+      <span class="rounded-[5px]" style="background: #c9ccd6"></span>
+      <span class="rounded-[5px]" style="background: #c9ccd6"></span>
+      <span class="rounded-[5px]" style="background: #e1e3ea"></span>
+    </span>
+    <h1 class="text-4xl sm:text-5xl font-semibold leading-tight" style="font-family: var(--font-display)">
+      Two-factor codes,<br />kept honest.
+    </h1>
+    <p class="mt-5 text-lg max-w-xl" style="color: var(--color-ink-soft)">
+      Tessera is a private, open-source authenticator for macOS. A sleek menu-bar app
+      and a first-class command-line tool, sharing one encrypted vault. No accounts.
+      No tracking. Your secrets never leave your device.
+    </p>
+    <div class="mt-8 flex flex-wrap gap-3">
+      <a href="#get" class="px-5 py-2.5 rounded-lg font-medium text-white" style="background: var(--color-gold)">Get Tessera</a>
+      <a href="https://github.com/ibrahemid/tessera" class="px-5 py-2.5 rounded-lg font-medium border" style="border-color: var(--color-line)">View source</a>
+    </div>
+  </section>
+
+  <section class="grid sm:grid-cols-2 gap-px rounded-2xl overflow-hidden border" style="border-color: var(--color-line); background: var(--color-line)">
+    {features.map(([title, body]) => (
+      <div class="p-6" style="background: var(--color-surface)">
+        <h3 class="font-semibold mb-1.5" style="font-family: var(--font-display)">{title}</h3>
+        <p class="text-sm leading-relaxed" style="color: var(--color-ink-soft)">{body}</p>
+      </div>
+    ))}
+  </section>
+
+  <section id="get" class="py-16">
+    <h2 class="text-2xl font-semibold mb-6" style="font-family: var(--font-display)">Get Tessera</h2>
+    <div class="space-y-6">
+      <div class="p-6 rounded-xl border" style="border-color: var(--color-line); background: var(--color-surface)">
+        <h3 class="font-semibold mb-1">macOS app</h3>
+        <p class="text-sm mb-3" style="color: var(--color-ink-soft)">Native menu-bar app with Touch ID. Coming to the Mac App Store.</p>
+        <span class="inline-block text-sm px-3 py-1 rounded-md" style="background: #f3e8d4; color: var(--color-gold)">App Store · soon</span>
+      </div>
+      <div class="p-6 rounded-xl border" style="border-color: var(--color-line); background: var(--color-surface)">
+        <h3 class="font-semibold mb-2">Command line</h3>
+        <pre class="text-sm overflow-x-auto p-3 rounded-lg" style="background: var(--color-night); color: #e6e6ea; font-family: var(--font-mono)"><code>go install github.com/ibrahemid/tessera/go/cmd/tess@latest
+tess vault init
+tess watch</code></pre>
+      </div>
+    </div>
+  </section>
+</Base>

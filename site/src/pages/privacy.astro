@@ -1,0 +1,31 @@
+---
+import Base from "../layouts/Base.astro";
+---
+<Base title="Privacy — Tessera" description="Tessera collects nothing. Your 2FA secrets are encrypted on your device and never transmitted.">
+  <article class="py-12 max-w-2xl">
+    <h1 class="text-3xl font-semibold mb-2" style="font-family: var(--font-display)">Privacy Policy</h1>
+    <p class="text-sm mb-8" style="color: var(--color-ink-soft)">Last updated: June 2026</p>
+
+    <div class="space-y-6 leading-relaxed" style="color: var(--color-ink)">
+      <p><strong>Short version:</strong> Tessera collects nothing. There are no accounts, no servers we operate, and no analytics or tracking of any kind. Your data stays on your device.</p>
+
+      <h2 class="text-xl font-semibold pt-2" style="font-family: var(--font-display)">What Tessera stores</h2>
+      <p>Your two-factor accounts (issuer, label, and secret keys) are stored in an encrypted vault on your Mac. The vault is encrypted with a key derived from your passphrase (argon2id) and sealed with XChaCha20-Poly1305. On devices with a Secure Enclave, the vault key can be additionally protected by Touch ID.</p>
+
+      <h2 class="text-xl font-semibold pt-2" style="font-family: var(--font-display)">What Tessera transmits</h2>
+      <p>Nothing. Tessera generates codes entirely offline. It does not connect to any Tessera-operated server, and it contains no analytics, advertising, or crash-reporting SDKs.</p>
+
+      <h2 class="text-xl font-semibold pt-2" style="font-family: var(--font-display)">Permissions</h2>
+      <p>Tessera runs in the macOS App Sandbox. If you use on-screen QR scanning, macOS asks for Screen Recording permission, used only to read a QR code at the moment you trigger a scan. If you import a file, macOS asks you to pick that file. Tessera requests no other access.</p>
+
+      <h2 class="text-xl font-semibold pt-2" style="font-family: var(--font-display)">Data collection</h2>
+      <p>Tessera does not collect any data, as defined by Apple's App Privacy guidelines. We cannot see your accounts or codes.</p>
+
+      <h2 class="text-xl font-semibold pt-2" style="font-family: var(--font-display)">Open source</h2>
+      <p>Tessera is open source under the Apache-2.0 license. You can read exactly what it does and build it yourself: <a class="underline" style="color: var(--color-gold)" href="https://github.com/ibrahemid/tessera">github.com/ibrahemid/tessera</a>.</p>
+
+      <h2 class="text-xl font-semibold pt-2" style="font-family: var(--font-display)">Contact</h2>
+      <p>Questions about privacy: <a class="underline" style="color: var(--color-gold)" href="mailto:support@ibrahemid.com">support@ibrahemid.com</a>.</p>
+    </div>
+  </article>
+</Base>
