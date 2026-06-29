@@ -9,9 +9,8 @@ func color(_ hex: UInt32) -> NSColor {
             blue: CGFloat(hex & 0xff) / 255, alpha: 1)
 }
 
-func drawIcon(size: CGFloat) -> NSImage {
-    let img = NSImage(size: NSSize(width: size, height: size))
-    img.lockFocus()
+// Draws the icon into the CURRENT graphics context at the given point size.
+func drawIcon(size: CGFloat) {
     let ctx = NSGraphicsContext.current!.cgContext
 
     // Ink rounded-rect ground with a soft vertical gradient.
@@ -48,15 +47,20 @@ func drawIcon(size: CGFloat) -> NSImage {
     let goldPath = NSBezierPath(roundedRect: goldRect, xRadius: tileRadius, yRadius: tileRadius)
     color(0xE3B23C).setFill()
     goldPath.fill()
-
-    img.unlockFocus()
-    return img
 }
 
-func png(_ img: NSImage, _ px: Int) -> Data {
-    let target = drawIcon(size: CGFloat(px))
-    guard let tiff = target.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) else { return Data() }
+// Renders at EXACT pixel dimensions (1pt = 1px), independent of display scale,
+// so actool accepts every icon slot.
+func png(_ px: Int) -> Data {
+    guard let rep = NSBitmapImageRep(
+        bitmapDataPlanes: nil, pixelsWide: px, pixelsHigh: px,
+        bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+        colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return Data() }
     rep.size = NSSize(width: px, height: px)
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+    drawIcon(size: CGFloat(px))
+    NSGraphicsContext.restoreGraphicsState()
     return rep.representation(using: .png, properties: [:]) ?? Data()
 }
 
@@ -79,7 +83,7 @@ let specs: [(String, Int, String, String, String)] = [
 
 var images: [String] = []
 for (name, px, idiom, scale, sizePt) in specs {
-    let data = png(NSImage(), px)
+    let data = png(px)
     try? data.write(to: URL(fileURLWithPath: "\(outDir)/\(name)"))
     images.append("""
         {
