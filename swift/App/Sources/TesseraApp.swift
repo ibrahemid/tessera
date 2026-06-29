@@ -14,7 +14,6 @@ struct TesseraApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var model = AppModel()
     @AppStorage("tessera.theme") private var theme: AppTheme = .system
-    @AppStorage("tessera.showMenuBar") private var showMenuBar = true
 
     var body: some Scene {
         WindowGroup(id: "main") {
@@ -33,15 +32,8 @@ struct TesseraApp: App {
             }
         }
 
-        MenuBarExtra(isInserted: $showMenuBar) {
-            MenuBarView()
-                .environmentObject(model)
-                .preferredColorScheme(theme.colorScheme)
-                .frame(width: 360, height: 460)
-        } label: {
-            Image(systemName: "lock.shield.fill")
-        }
-        .menuBarExtraStyle(.window)
+        // Menu-bar quick access returns post-v1 via a stable NSStatusItem; the
+        // SwiftUI MenuBarExtra(.window) + WindowGroup combo spins the CPU.
 
         Settings {
             SettingsView()

@@ -377,75 +377,11 @@ struct AddAccountView: View {
     }
 }
 
-// MARK: Menu bar (secondary quick access)
-
-struct MenuBarView: View {
-    @EnvironmentObject var model: AppModel
-    @Environment(\.openWindow) private var openWindow
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var copiedID: String?
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Wordmark(size: 14)
-                Spacer()
-                Button { openMain() } label: { Image(systemName: "macwindow") }
-                    .buttonStyle(.plain).foregroundStyle(Palette.accent)
-                    .help("Open Tessera")
-            }.padding(12)
-            Divider().overlay(Palette.border)
-
-            if model.isLocked || !model.vaultExists {
-                VStack(spacing: 10) {
-                    Spacer()
-                    Image(systemName: "lock.fill").font(.system(size: 22)).foregroundStyle(Palette.textFaint)
-                    Text(model.vaultExists ? "Tessera is locked" : "No vault yet").font(Typo.label(12)).foregroundStyle(Palette.textSecondary)
-                    Button("Open Tessera") { openMain() }.buttonStyle(.plain).foregroundStyle(Palette.accent).font(Typo.label(12, .medium))
-                    Spacer()
-                }.frame(maxWidth: .infinity)
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 6) {
-                        ForEach(model.accounts.sorted { ($0.pinned ? 0:1) < ($1.pinned ? 0:1) }, id: \.id) { a in
-                            AccountRowView(account: a, remaining: model.remaining(for: a), code: model.code(for: a),
-                                           copied: copiedID == a.id, reduceMotion: reduceMotion,
-                                           onCopy: { copy(a) }, onPin: { model.togglePin(a) },
-                                           onDelete: { model.remove(a) }, onAdvance: { model.advanceHOTP(a) })
-                        }
-                    }.padding(10)
-                }
-                HStack {
-                    Button { model.lock() } label: { Label("Lock", systemImage: "lock") }
-                    Spacer()
-                    Button { openMain() } label: { Label("Open app", systemImage: "macwindow") }
-                }
-                .buttonStyle(.plain).font(Typo.label(11, .medium)).foregroundStyle(Palette.textSecondary)
-                .padding(.horizontal, 12).padding(.vertical, 9)
-            }
-        }
-    }
-
-    private func openMain() {
-        NSApp.activate(ignoringOtherApps: true)
-        openWindow(id: "main")
-    }
-
-    private func copy(_ a: Account) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(model.code(for: a), forType: .string)
-        withAnimation { copiedID = a.id }
-        let id = a.id
-        Task { @MainActor in try? await Task.sleep(for: .seconds(1.3)); if copiedID == id { withAnimation { copiedID = nil } } }
-    }
-}
-
 // MARK: Settings
 
 struct SettingsView: View {
     @EnvironmentObject var model: AppModel
     @AppStorage("tessera.theme") private var theme: AppTheme = .system
-    @AppStorage("tessera.showMenuBar") private var showMenuBar = true
     @AppStorage("tessera.launchAtLogin") private var launchAtLogin = false
 
     var body: some View {
@@ -456,7 +392,6 @@ struct SettingsView: View {
                 }.pickerStyle(.segmented)
             }
             Section("General") {
-                Toggle("Show in menu bar", isOn: $showMenuBar)
                 Toggle("Launch at login", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { _, on in LoginItem.set(enabled: on) }
                 if model.biometricsAvailable {
