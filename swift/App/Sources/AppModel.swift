@@ -42,7 +42,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    static var sampleAccounts: [Account] {
+    nonisolated static var sampleAccounts: [Account] {
         func s(_ str: String) -> Data { Data(str.utf8) }
         return [
             Account(id: "1", type: .totp, issuer: "GitHub", account: "ibrahem", secret: s("12345678901234567890"), algorithm: "SHA1", digits: 6, period: 30, pinned: true),

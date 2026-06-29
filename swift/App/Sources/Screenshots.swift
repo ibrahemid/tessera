@@ -104,6 +104,10 @@ enum SelfTest {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         if SelfTest.runIfRequested() { return }
+        if MarketingShot.runIfRequested() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { NSApp.terminate(nil) }
+            return
+        }
         if Screenshots.runIfRequested() {
             // Give the renderer a beat, then exit before showing UI.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { NSApp.terminate(nil) }

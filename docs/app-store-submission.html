@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tessera — App Store Submission Sheet</title>
+<style>
+  :root { --ink:#16181f; --soft:#5b606e; --paper:#fcfcfd; --line:rgba(22,24,31,.1); --gold:#9a6b12; --goldbg:#f4ead2; --ok:#2a8c5a; --warn:#b4541f; }
+  * { box-sizing:border-box; }
+  body { font:15px/1.6 -apple-system,system-ui,sans-serif; color:var(--ink); background:var(--paper); margin:0; padding:0 0 80px; }
+  .wrap { max-width:860px; margin:0 auto; padding:0 24px; }
+  header { background:linear-gradient(135deg,#fff,#f4f4f6); border-bottom:1px solid var(--line); padding:32px 0; margin-bottom:8px; }
+  h1 { font-size:30px; margin:0 0 4px; letter-spacing:-.5px; }
+  h2 { font-size:20px; margin:36px 0 12px; padding-top:18px; border-top:1px solid var(--line); }
+  h3 { font-size:15px; margin:18px 0 6px; }
+  .sub { color:var(--soft); margin:0; }
+  .mark { display:inline-grid; grid-template-columns:1fr 1fr; gap:2px; width:26px; height:26px; vertical-align:middle; margin-right:8px; }
+  .mark i { border-radius:5px; } .mark i:nth-child(1){background:var(--gold)} .mark i:nth-child(2){background:#c9ccd6} .mark i:nth-child(3){background:#c9ccd6} .mark i:nth-child(4){background:#e1e3ea}
+  code, pre { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:13px; }
+  pre { background:#14161c; color:#e6e6ea; padding:14px 16px; border-radius:10px; overflow-x:auto; }
+  .field { background:#fff; border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin:8px 0; }
+  .field .k { font-size:12px; text-transform:uppercase; letter-spacing:.5px; color:var(--soft); margin-bottom:3px; }
+  .field .v { font-weight:500; }
+  .copy { font-family:ui-monospace,monospace; font-size:13px; white-space:pre-wrap; word-break:break-word; }
+  .pill { display:inline-block; font-size:12px; padding:2px 9px; border-radius:20px; font-weight:600; }
+  .pill.done { background:#e3f3ea; color:var(--ok); } .pill.you { background:var(--goldbg); color:var(--gold); }
+  ul.checks { list-style:none; padding:0; } ul.checks li { padding:7px 0 7px 30px; position:relative; border-bottom:1px solid var(--line); }
+  ul.checks li::before { content:"☐"; position:absolute; left:4px; font-size:16px; color:var(--soft); }
+  ul.checks li.d::before { content:"☑"; color:var(--ok); }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .shot { border:1px solid var(--line); border-radius:10px; overflow:hidden; background:#fff; }
+  .shot img { width:100%; display:block; } .shot .cap { font-size:12px; color:var(--soft); padding:6px 10px; }
+  a { color:var(--gold); }
+  .note { background:var(--goldbg); border-radius:10px; padding:12px 14px; font-size:14px; }
+  .mono { font-family:ui-monospace,monospace; }
+  @media(max-width:640px){ .grid{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <h1><span class="mark"><i></i><i></i><i></i><i></i></span>Tessera — App Store Submission</h1>
+  <p class="sub">Everything for the Mac App Store v1.0.0 submission. <span class="pill done">done</span> = prepared for you · <span class="pill you">you</span> = needs your Apple account / Xcode.</p>
+</div></header>
+
+<div class="wrap">
+
+<div class="note">⚠️ <b>Two things must happen before you submit:</b> (1) deploy the site so the privacy &amp; support URLs are live — <code>cd tessera/site &amp;&amp; npm run deploy</code> + point <code>tessera.ibrahemid.com</code> DNS at Cloudflare. (2) Get your 10-character <b>Team ID</b> from <a href="https://developer.apple.com/account#MembershipDetailsCard">developer.apple.com → Membership</a> (team “Ibrahem Mahyob”).</div>
+
+<h2>1 · Identifiers <span class="pill done">done</span></h2>
+<div class="field"><div class="k">App name (≤30)</div><div class="v copy">Tessera – 2FA Authenticator</div></div>
+<div class="field"><div class="k">Subtitle (≤30)</div><div class="v copy">Open-source TOTP for Mac</div></div>
+<div class="field"><div class="k">Bundle ID</div><div class="v copy">com.ibrahemid.tessera</div></div>
+<div class="field"><div class="k">SKU</div><div class="v copy">tessera-mac-001</div></div>
+<div class="field"><div class="k">Primary language</div><div class="v">English (U.S.)</div></div>
+<div class="field"><div class="k">Apple team</div><div class="v">Ibrahem Mahyob — set Team ID where the build asks</div></div>
+<div class="field"><div class="k">Bundle version / build</div><div class="v">1.0.0 (build 1)</div></div>
+
+<h2>2 · Listing copy <span class="pill done">done</span></h2>
+<h3>Promotional text (≤170, editable anytime)</h3>
+<div class="field"><div class="v copy">Your 2FA codes, kept honest. Tessera generates TOTP, HOTP, and Steam Guard codes in a sleek menu-bar app — and the only Mac authenticator with a real command line.</div></div>
+<h3>Description</h3>
+<div class="field"><div class="v copy">Tessera is a fast, private two-factor authenticator for macOS — and the only one with a first-class command line.
+
+Generate the 6-digit codes you already use everywhere (TOTP), plus HOTP and Steam Guard. Bring your accounts over in seconds: scan a QR code on screen, import a Google Authenticator export, or bulk-import a file of links. Reach every code from the menu bar, unlock with Touch ID, search, pin your favorites, and copy with one click.
+
+Private by design:
+• Your secrets are encrypted on your device with argon2id and XChaCha20-Poly1305.
+• No account. No servers. No tracking. Nothing leaves your Mac.
+• Fully open source, so anyone can verify exactly what it does.
+
+For power users, the included tess command-line tool brings a live terminal view, scripting, and JSON output — unique among Mac authenticators.
+
+Works with any service that supports standard two-factor authentication. Tessera is not affiliated with Google, Microsoft, Steam, or any other provider.</div></div>
+<h3>Keywords (≤100, comma-separated)</h3>
+<div class="field"><div class="v copy">authenticator,2FA,TOTP,OTP,two-factor,one-time,password,HOTP,steam,security,menu bar,otp,login</div></div>
+<h3>URLs</h3>
+<div class="field"><div class="k">Marketing URL</div><div class="v copy">https://tessera.ibrahemid.com</div></div>
+<div class="field"><div class="k">Support URL (required)</div><div class="v copy">https://tessera.ibrahemid.com/support</div></div>
+<div class="field"><div class="k">Privacy Policy URL (required)</div><div class="v copy">https://tessera.ibrahemid.com/privacy</div></div>
+<div class="field"><div class="k">Copyright</div><div class="v copy">2026 Ibrahem Mahyob</div></div>
+<div class="field"><div class="k">Category</div><div class="v">Primary: Utilities · Secondary: Productivity</div></div>
+<h3>“What’s New” (v1.0.0)</h3>
+<div class="field"><div class="v copy">First release. TOTP, HOTP, and Steam Guard; QR and Google Authenticator import; Touch ID; menu-bar quick access; and the tess command line.</div></div>
+
+<h2>3 · App Review answers <span class="pill done">done</span></h2>
+<div class="field"><div class="k">Sign-in required?</div><div class="v">No — no account, fully offline.</div></div>
+<div class="field"><div class="k">Review notes (paste)</div><div class="v copy">Tessera is an offline TOTP authenticator; no login is required. To test: open it from the menu bar (lock icon, top-right of the screen), click the + button, and paste this test link:
+otpauth://totp/Demo:tester?secret=JBSWY3DPEHPK3PXP&issuer=Demo
+A 6-digit code appears with a 30-second countdown ring. You can copy it by clicking the row. "Import file…" and on-screen QR scanning are alternative ways to add accounts.</div></div>
+<div class="field"><div class="k">Age rating</div><div class="v">4+ — answer “None” to every content question.</div></div>
+<div class="field"><div class="k">Pricing</div><div class="v">Free · no in-app purchases (v1).</div></div>
+
+<h2>4 · App Privacy <span class="pill done">done</span></h2>
+<div class="field"><div class="v">Choose <b>“Data Not Collected.”</b> Tessera keeps everything on-device, runs offline, and contains no analytics, ads, or crash SDKs. The bundled <code>PrivacyInfo.xcprivacy</code> already declares no tracking, no collected data, and the required-reason API (UserDefaults · CA92.1).</div></div>
+
+<h2>5 · Export compliance <span class="pill done">done</span></h2>
+<div class="field"><div class="v">When asked “Does your app use encryption?” answer <b>Yes</b>, then <b>“exempt”</b> — Tessera uses only standard cryptography (argon2id, XChaCha20-Poly1305) for authentication/data protection, which qualifies for the exemption. The build sets <code>ITSAppUsesNonExemptEncryption = false</code>, so App Store Connect won’t re-ask on every upload. <i>(Confirm this classification fits your situation; it is the standard answer for authenticator apps.)</i></div></div>
+
+<h2>6 · Assets <span class="pill done">done</span></h2>
+<h3>App icon</h3>
+<div class="field"><div class="v">1024×1024 icon ships inside the build’s asset catalog (<code>swift/App/Resources/Assets.xcassets/AppIcon.appiconset</code>) — Mac apps don’t need a separate upload. Preview: <code>icon_512@2x.png</code> in that folder.</div></div>
+<h3>Screenshots — 2560×1600 (Mac App Store size), light + dark</h3>
+<p class="sub">Generated at <span class="mono">/tmp/tessera_marketing/</span>. Upload 3–5 to App Store Connect (one is required). The light set is recommended as primary.</p>
+<div class="grid" id="shots"></div>
+
+<h2>7 · What I did vs. what only you can do</h2>
+<h3><span class="pill done">done</span> already prepared</h3>
+<ul class="checks">
+  <li class="d">App builds; vault create/save/load verified under an enforced (signed) sandbox</li>
+  <li class="d">App icon, privacy manifest, encryption-exemption flag, minimal entitlements (sandbox + file picker)</li>
+  <li class="d">2560×1600 marketing screenshots (light + dark)</li>
+  <li class="d">All listing copy, keywords, review notes, privacy/age/export answers (this sheet)</li>
+  <li class="d">Privacy &amp; Support pages built (site/)</li>
+</ul>
+<h3><span class="pill you">you</span> must do (Apple account / Xcode / legal)</h3>
+<ul class="checks">
+  <li>Deploy the site &amp; DNS so the privacy + support URLs resolve</li>
+  <li>Get your Team ID; in Xcode → Signing &amp; Capabilities, select team “Ibrahem Mahyob” (auto-manage signing)</li>
+  <li>Create the app record in App Store Connect (bundle id above)</li>
+  <li>Archive &amp; upload the build (commands below)</li>
+  <li>Paste the metadata from this sheet; upload screenshots; set price = Free</li>
+  <li>Answer App Privacy (Data Not Collected), Age rating (4+), Export compliance (exempt)</li>
+  <li>Attach the build, then <b>Submit for Review</b></li>
+</ul>
+
+<h2>8 · Build &amp; upload commands</h2>
+<p class="sub">Easiest path is the Xcode GUI; CLI shown for reference.</p>
+<pre>cd tessera/swift
+xcodegen generate
+open Tessera.xcodeproj
+# In Xcode: select the “Tessera” scheme → Signing &amp; Capabilities → Team = Ibrahem Mahyob
+# Product → Archive → (Organizer opens) → Distribute App → App Store Connect → Upload</pre>
+<p class="sub">CLI archive (replace <span class="mono">XXXXXXXXXX</span> with your Team ID), then upload from Xcode Organizer or Transporter:</p>
+<pre>xcodebuild -project Tessera.xcodeproj -scheme Tessera -configuration Release \
+  -archivePath build/Tessera.xcarchive archive \
+  DEVELOPMENT_TEAM=XXXXXXXXXX CODE_SIGN_STYLE=Automatic</pre>
+
+<p class="sub" style="margin-top:40px">Generated <span class="mono" id="ts"></span>. Source of truth for deeper detail: <code>tessera/docs/APP_STORE.md</code>.</p>
+</div>
+
+<script>
+  // Assets live next to this file in appstore-assets/.
+  const names = ["01-vault","02-touchid","03-cli","04-private"];
+  const caps = {"01-vault":"Vault — codes & countdown","02-touchid":"Touch ID unlock","03-cli":"tess watch (CLI)","04-private":"Private by design"};
+  const base = "appstore-assets/";
+  const grid = document.getElementById("shots");
+  names.forEach(n => {
+    ["light","dark"].forEach(scheme => {
+      const d = document.createElement("div"); d.className="shot";
+      const img = document.createElement("img"); img.src = base + n + "-" + scheme + ".png"; img.loading="lazy";
+      const c = document.createElement("div"); c.className="cap"; c.textContent = caps[n] + " · " + scheme + " · 2560×1600";
+      d.appendChild(img); d.appendChild(c); grid.appendChild(d);
+    });
+  });
+  document.getElementById("ts").textContent = new Date().toISOString().slice(0,10);
+</script>
+</body>
+</html>
