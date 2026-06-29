@@ -42,3 +42,29 @@ targets:
         product: TesseraCore
       - package: Tessera
         product: TesseraArgon2
+
+  TesseraUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - path: App/UITests
+    dependencies:
+      - target: Tessera
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ibrahemid.tessera.uitests
+        SWIFT_VERSION: "6.0"
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Tessera
+
+schemes:
+  Tessera:
+    build:
+      targets:
+        Tessera: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - TesseraUITests

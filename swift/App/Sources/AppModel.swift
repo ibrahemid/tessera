@@ -14,17 +14,23 @@ final class AppModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var vaultExists: Bool
     @Published var lastImportSkipped = 0
+    @Published var pendingRecoveryKey: String?   // shown once at setup until acknowledged
 
     private let store = VaultStore()
     private let argon2 = Argon2Reference()
     private var envelope: Envelope?
-    private var passphrase: String?
+    private var dek: Data?            // held after any unlock; enables edits without a password
     private var timer: Timer?
 
     init() {
         vaultExists = store.exists
         startTicking()
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.willSleepNotification, object: nil, queue: .main
+        ) { [weak self] _ in Task { @MainActor in self?.lock() } }
     }
+
+    var biometricsAvailable: Bool { SecureEnclaveWrap.isAvailable }
 
     /// In-memory model for screenshots/previews; never touches disk.
     enum DemoState { case populated, empty, locked, fresh }
@@ -59,8 +65,9 @@ final class AppModel: ObservableObject {
         return SecureEnclaveWrap.hasWrap(env)
     }
 
+    /// True when the existing vault can be opened with Touch ID.
     var touchIDAvailableForUnlock: Bool {
-        store.exists && SecureEnclaveWrap.isAvailable && (peekEnvelopeHasSEWrap())
+        store.exists && SecureEnclaveWrap.isAvailable && peekEnvelopeHasSEWrap()
     }
 
     private func peekEnvelopeHasSEWrap() -> Bool {
@@ -69,30 +76,36 @@ final class AppModel: ObservableObject {
         return false
     }
 
-    // MARK: Lifecycle
+    // MARK: Onboarding & unlock
 
-    func createVault(passphrase: String) {
+    /// Creates the vault, protects it with Touch ID (when available), and returns
+    /// a one-time recovery key the user must save. Daily unlock is Touch ID; the
+    /// recovery key is only for when biometrics is unavailable.
+    @discardableResult
+    func setUp() -> String? {
+        let display = AppModel.generateRecoveryKey()
+        let key = AppModel.normalizeRecoveryKey(display)
         run {
-            let env = try seal(accounts: [], passphrase: passphrase, existing: nil)
+            var env = try Envelope.create(accounts: [], passphrase: key, argon2: argon2)
+            let dek = try env.recoverDEK(passphrase: key, argon2: argon2)
+            // Best-effort biometric wrap; if the user declines or there's no
+            // Secure Enclave, the recovery key still unlocks the vault.
+            // (-uitest skips it so automated UI runs don't hit a Touch ID prompt.)
+            if SecureEnclaveWrap.isAvailable, !CommandLine.arguments.contains("-uitest") {
+                try? SecureEnclaveWrap.enable(on: &env, dek: dek)
+            }
             try store.save(env)
             self.envelope = env
-            self.passphrase = passphrase
+            self.dek = dek
             self.accounts = []
             self.isLocked = false
             self.vaultExists = true
+            self.pendingRecoveryKey = display
         }
+        return errorMessage == nil ? display : nil
     }
 
-    func unlock(passphrase: String) {
-        run {
-            let env = try store.load()
-            let accts = try env.open(passphrase: passphrase, argon2: argon2)
-            self.envelope = env
-            self.passphrase = passphrase
-            self.accounts = accts
-            self.isLocked = false
-        }
-    }
+    func acknowledgeRecoveryKey() { pendingRecoveryKey = nil }
 
     func unlockWithTouchID() {
         run {
@@ -100,16 +113,50 @@ final class AppModel: ObservableObject {
             let dek = try SecureEnclaveWrap.open(env, reason: "Unlock your Tessera vault")
             self.accounts = try env.open(dek: dek)
             self.envelope = env
-            // passphrase stays nil; mutations require passphrase, so prompt then.
+            self.dek = dek
+            self.isLocked = false
+        }
+    }
+
+    func unlock(recoveryKey: String) {
+        run {
+            let env = try store.load()
+            let key = AppModel.normalizeRecoveryKey(recoveryKey)
+            let dek = try env.recoverDEK(passphrase: key, argon2: argon2)
+            self.accounts = try env.open(dek: dek)
+            self.envelope = env
+            self.dek = dek
             self.isLocked = false
         }
     }
 
     func lock() {
+        guard !isLocked else { return }
         accounts = []
-        passphrase = nil
+        dek = nil
         envelope = nil
         isLocked = true
+        errorMessage = nil
+    }
+
+    // MARK: Recovery key
+
+    /// A strong, human-transcribable recovery key: 20 random bytes as base32,
+    /// grouped (e.g. "K7Q2-9FM4-..."). It is the passphrase behind the recovery wrap.
+    static func generateRecoveryKey() -> String {
+        var bytes = Data(count: 20)
+        for i in 0..<bytes.count { bytes[i] = UInt8.random(in: 0...255) }
+        let raw = Base32.encodeNoPad(bytes)              // 32 chars, A-Z2-7
+        return stride(from: 0, to: raw.count, by: 4).map { i -> String in
+            let s = raw.index(raw.startIndex, offsetBy: i)
+            let e = raw.index(s, offsetBy: 4, limitedBy: raw.endIndex) ?? raw.endIndex
+            return String(raw[s..<e])
+        }.joined(separator: "-")
+    }
+
+    static func normalizeRecoveryKey(_ s: String) -> String {
+        s.uppercased().filter { $0.isLetter || $0.isNumber }
+            .replacingOccurrences(of: " ", with: "")
     }
 
     // MARK: Account operations
@@ -122,7 +169,6 @@ final class AppModel: ObservableObject {
     func importText(_ text: String) -> Int {
         var added = 0
         run {
-            try requireMutable()
             var parsed: [Account] = []
             for raw in text.split(whereSeparator: \.isNewline) {
                 let line = raw.trimmingCharacters(in: .whitespaces)
@@ -213,8 +259,7 @@ final class AppModel: ObservableObject {
 
     func enableTouchID() {
         run {
-            guard var env = envelope, let pass = passphrase else { throw VaultError.wrongPassphrase }
-            let dek = try unwrapDEK(env: env, passphrase: pass)
+            guard var env = envelope, let dek = dek else { throw VaultError.wrongPassphrase }
             try SecureEnclaveWrap.enable(on: &env, dek: dek)
             try store.save(env)
             self.envelope = env
@@ -234,31 +279,18 @@ final class AppModel: ObservableObject {
 
     private func mutate(_ change: (inout [Account]) -> Void) {
         run {
-            try requireMutable()
             var next = accounts
             change(&next)
             try persist(next)
         }
     }
 
-    private func requireMutable() throws {
-        if passphrase == nil { throw VaultError.noPassphraseWrap } // unlocked via Touch ID only
-    }
-
     private func persist(_ next: [Account]) throws {
-        guard let env = envelope, let pass = passphrase else { throw VaultError.wrongPassphrase }
-        let updated = try env.reseal(accounts: next, passphrase: pass, argon2: argon2)
+        guard let env = envelope, let dek = dek else { throw VaultError.wrongPassphrase }
+        let updated = try env.reseal(accounts: next, dek: dek)
         try store.save(updated)
         self.envelope = updated
         self.accounts = next
-    }
-
-    private func unwrapDEK(env: Envelope, passphrase: String) throws -> Data {
-        try env.recoverDEK(passphrase: passphrase, argon2: argon2)
-    }
-
-    private func seal(accounts: [Account], passphrase: String, existing: Envelope?) throws -> Envelope {
-        try Envelope.create(accounts: accounts, passphrase: passphrase, argon2: argon2)
     }
 
     private func stamped(_ a: Account) -> Account {

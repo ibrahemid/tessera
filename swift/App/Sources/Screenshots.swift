@@ -20,6 +20,9 @@ enum Screenshots {
             ("empty", AnyView(RootView().environmentObject(AppModel(demo: .empty)))),
             ("locked", AnyView(RootView().environmentObject(AppModel(demo: .locked)))),
             ("create", AnyView(RootView().environmentObject(AppModel(demo: .fresh)))),
+            ("recovery", AnyView(RecoveryKeyView(recoveryKey: "K7Q2-9FM4-3XT8-PD5R-WL6N-2HJ4-8YBC-VQ7M")
+                .environmentObject(AppModel(demo: .fresh)).frame(width: Metrics.windowWidth, height: Metrics.windowHeight)
+                .background(Palette.background))),
             ("add", AnyView(AddAccountView().environmentObject(AppModel(demo: .populated)).background(Palette.background))),
             ("settings", AnyView(SettingsView().environmentObject(AppModel(demo: .populated)))),
         ]

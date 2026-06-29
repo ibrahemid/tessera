@@ -10,8 +10,10 @@ struct RootView: View {
         ZStack {
             Palette.background.ignoresSafeArea()
             Group {
-                if !model.vaultExists {
-                    CreateVaultView()
+                if let key = model.pendingRecoveryKey {
+                    RecoveryKeyView(recoveryKey: key)
+                } else if !model.vaultExists {
+                    OnboardingView()
                 } else if model.isLocked {
                     UnlockView()
                 } else {
@@ -19,12 +21,12 @@ struct RootView: View {
                 }
             }
         }
-        .frame(width: Metrics.windowWidth, height: Metrics.windowHeight)
         .tint(Palette.accent)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
-// MARK: Brandmark
+// MARK: Brand
 
 struct Wordmark: View {
     var size: CGFloat = 17
@@ -36,16 +38,13 @@ struct Wordmark: View {
     }
 }
 
-/// The mosaic mark: four tesserae, one gold. Mirrors the app icon.
 struct MosaicMark: View {
     var side: CGFloat = 20
     private var gap: CGFloat { side * 0.14 }
     private var cell: CGFloat { (side - gap) / 2 }
-
     private func tile(_ color: Color) -> some View {
         RoundedRectangle(cornerRadius: cell * 0.28).fill(color).frame(width: cell, height: cell)
     }
-
     var body: some View {
         VStack(spacing: gap) {
             HStack(spacing: gap) { tile(Palette.accent); tile(Palette.textSecondary.opacity(0.45)) }
@@ -55,38 +54,70 @@ struct MosaicMark: View {
     }
 }
 
-// MARK: Create vault
+// MARK: Onboarding
 
-struct CreateVaultView: View {
+struct OnboardingView: View {
     @EnvironmentObject var model: AppModel
-    @State private var pass = ""
-    @State private var confirm = ""
+    var body: some View {
+        VStack(spacing: 18) {
+            Spacer()
+            MosaicMark(side: 56)
+            VStack(spacing: 8) {
+                Text("Welcome to Tessera").font(Typo.display(24)).foregroundStyle(Palette.textPrimary)
+                Text(model.biometricsAvailable
+                     ? "You'll unlock with Touch ID. We'll give you a recovery key to keep somewhere safe — that's the only thing that can restore your vault if Touch ID ever isn't available."
+                     : "We'll give you a recovery key to unlock and restore your vault. Keep it somewhere safe, like a password manager.")
+                    .multilineTextAlignment(.center).font(Typo.label(13)).foregroundStyle(Palette.textSecondary)
+                    .frame(maxWidth: 380)
+            }
+            if let e = model.errorMessage { ErrorLine(e) }
+            PrimaryButton("Create vault") { model.setUp() }.frame(maxWidth: 260)
+            Spacer()
+        }
+        .padding(32)
+    }
+}
+
+struct RecoveryKeyView: View {
+    @EnvironmentObject var model: AppModel
+    let recoveryKey: String
+    @State private var saved = false
+    @State private var copied = false
 
     var body: some View {
         VStack(spacing: 18) {
             Spacer()
-            MosaicMark(side: 54)
-            VStack(spacing: 6) {
-                Text("Welcome to Tessera").font(Typo.display(22)).foregroundStyle(Palette.textPrimary)
-                Text("Set a passphrase to encrypt your vault.\nIt never leaves this device.")
-                    .multilineTextAlignment(.center)
-                    .font(Typo.label(12)).foregroundStyle(Palette.textSecondary)
+            Image(systemName: "key.horizontal.fill").font(.system(size: 36)).foregroundStyle(Palette.accent)
+            Text("Your recovery key").font(Typo.display(22)).foregroundStyle(Palette.textPrimary)
+            Text("Save this now. It's the only way back into your vault if Touch ID isn't available. We can't recover it for you.")
+                .multilineTextAlignment(.center).font(Typo.label(13)).foregroundStyle(Palette.textSecondary)
+                .frame(maxWidth: 420)
+
+            Text(recoveryKey)
+                .font(.system(size: 16, weight: .medium, design: .monospaced))
+                .foregroundStyle(Palette.textPrimary)
+                .textSelection(.enabled)
+                .padding(.horizontal, 16).padding(.vertical, 12)
+                .background(Palette.surfaceHi, in: RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.border, lineWidth: 1))
+
+            Button {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(recoveryKey, forType: .string)
+                copied = true
+            } label: {
+                Label(copied ? "Copied" : "Copy recovery key", systemImage: copied ? "checkmark" : "doc.on.doc")
+                    .font(Typo.label(12, .medium))
             }
-            VStack(spacing: 10) {
-                FieldBox { SecureField("Passphrase", text: $pass) }
-                FieldBox { SecureField("Confirm passphrase", text: $confirm) }
-            }
-            .frame(maxWidth: 280)
-            if let e = model.errorMessage { ErrorLine(e) }
-            PrimaryButton("Create vault", enabled: !pass.isEmpty) {
-                guard pass.count >= 8 else { model.errorMessage = "Use at least 8 characters."; return }
-                guard pass == confirm else { model.errorMessage = "Passphrases don't match."; return }
-                model.createVault(passphrase: pass)
-            }
-            .frame(maxWidth: 280)
+            .buttonStyle(.plain).foregroundStyle(Palette.accent)
+
+            Toggle("I've saved my recovery key somewhere safe", isOn: $saved)
+                .toggleStyle(.checkbox).font(Typo.label(12)).foregroundStyle(Palette.textSecondary)
+
+            PrimaryButton("Continue", enabled: saved) { model.acknowledgeRecoveryKey() }.frame(maxWidth: 260)
             Spacer()
         }
-        .padding(24)
+        .padding(32)
     }
 }
 
@@ -94,124 +125,154 @@ struct CreateVaultView: View {
 
 struct UnlockView: View {
     @EnvironmentObject var model: AppModel
-    @State private var pass = ""
+    @State private var showRecovery = false
+    @State private var recoveryKey = ""
+    @State private var triedAuto = false
 
     var body: some View {
         VStack(spacing: 16) {
             Spacer()
-            MosaicMark(side: 48)
-            Text("Vault locked").font(Typo.display(19)).foregroundStyle(Palette.textPrimary)
-            FieldBox {
-                SecureField("Passphrase", text: $pass).onSubmit { model.unlock(passphrase: pass) }
-            }
-            .frame(maxWidth: 260)
-            if let e = model.errorMessage { ErrorLine(e) }
-            PrimaryButton("Unlock", enabled: !pass.isEmpty) { model.unlock(passphrase: pass) }
-                .frame(maxWidth: 260)
-            if model.touchIDAvailableForUnlock {
+            MosaicMark(side: 50)
+            Text("Tessera is locked").font(Typo.display(20)).foregroundStyle(Palette.textPrimary)
+
+            if model.touchIDAvailableForUnlock && !showRecovery {
                 Button { model.unlockWithTouchID() } label: {
                     Label("Unlock with Touch ID", systemImage: "touchid")
-                        .font(Typo.label(12, .medium))
+                        .font(Typo.label(13, .semibold)).foregroundStyle(.white)
+                        .frame(maxWidth: 260).padding(.vertical, 10)
+                        .background(Palette.accent, in: RoundedRectangle(cornerRadius: 10))
+                }.buttonStyle(.plain)
+                Button("Use recovery key") { showRecovery = true }
+                    .buttonStyle(.plain).font(Typo.label(12)).foregroundStyle(Palette.textSecondary)
+            } else {
+                Text("Enter your recovery key").font(Typo.label(12)).foregroundStyle(Palette.textSecondary)
+                FieldBox { TextField("XXXX-XXXX-…", text: $recoveryKey).onSubmit { model.unlock(recoveryKey: recoveryKey) } }
+                    .frame(maxWidth: 320)
+                PrimaryButton("Unlock", enabled: !recoveryKey.isEmpty) { model.unlock(recoveryKey: recoveryKey) }
+                    .frame(maxWidth: 320)
+                if model.touchIDAvailableForUnlock {
+                    Button("Use Touch ID instead") { showRecovery = false }
+                        .buttonStyle(.plain).font(Typo.label(12)).foregroundStyle(Palette.textSecondary)
                 }
-                .buttonStyle(.plain).foregroundStyle(Palette.accent)
             }
+            if let e = model.errorMessage { ErrorLine(e) }
             Spacer()
         }
-        .padding(24)
+        .padding(32)
+        .onAppear {
+            if model.touchIDAvailableForUnlock && !triedAuto {
+                triedAuto = true
+                model.unlockWithTouchID()
+            }
+        }
     }
 }
 
-// MARK: Vault (main)
+// MARK: Vault (windowed)
+
+private enum SidebarItem: Hashable {
+    case all, pinned, folder(String)
+}
 
 struct VaultView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.openSettings) private var openSettings
+    @State private var selection: SidebarItem? = .all
     @State private var query = ""
     @State private var showingAdd = false
     @State private var copiedID: String?
 
-    private var groups: (pinned: [Account], rest: [Account]) {
-        let q = query.lowercased()
-        let filtered = model.accounts.filter {
-            q.isEmpty || "\($0.issuer) \($0.account)".lowercased().contains(q)
+    private var folders: [String] {
+        Array(Set(model.accounts.map(\.folder).filter { !$0.isEmpty })).sorted()
+    }
+
+    private var visible: [Account] {
+        var list = model.accounts
+        switch selection ?? .all {
+        case .all: break
+        case .pinned: list = list.filter(\.pinned)
+        case .folder(let f): list = list.filter { $0.folder == f }
         }
-        .sorted { lhs, rhs in
-            let l = (lhs.issuer.isEmpty ? lhs.account : lhs.issuer).lowercased()
-            let r = (rhs.issuer.isEmpty ? rhs.account : rhs.issuer).lowercased()
-            return l < r
+        if !query.isEmpty {
+            let q = query.lowercased()
+            list = list.filter { "\($0.issuer) \($0.account)".lowercased().contains(q) }
         }
-        return (filtered.filter(\.pinned), filtered.filter { !$0.pinned })
+        return list.sorted {
+            ($0.pinned ? 0 : 1, ($0.issuer.isEmpty ? $0.account : $0.issuer).lowercased())
+                < ($1.pinned ? 0 : 1, ($1.issuer.isEmpty ? $1.account : $1.issuer).lowercased())
+        }
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            Divider().overlay(Palette.border)
-            content
-            Divider().overlay(Palette.border)
-            footer
+        NavigationSplitView {
+            List(selection: $selection) {
+                Section {
+                    Label("All", systemImage: "square.grid.2x2").tag(SidebarItem.all)
+                    Label("Pinned", systemImage: "star").tag(SidebarItem.pinned)
+                }
+                if !folders.isEmpty {
+                    Section("Folders") {
+                        ForEach(folders, id: \.self) { f in
+                            Label(f, systemImage: "folder").tag(SidebarItem.folder(f))
+                        }
+                    }
+                }
+            }
+            .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 280)
+            .safeAreaInset(edge: .bottom) {
+                HStack {
+                    Wordmark(size: 13)
+                    Spacer()
+                }.padding(10)
+            }
+        } detail: {
+            detailList
+                .navigationTitle("")
+                .toolbar {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button { showingAdd = true } label: { Image(systemName: "plus") }
+                    }
+                    ToolbarItem(placement: .automatic) {
+                        Button { openSettings() } label: { Image(systemName: "gearshape") }
+                    }
+                    ToolbarItem(placement: .automatic) {
+                        Button { model.lock() } label: { Image(systemName: "lock") }
+                    }
+                }
+                .searchable(text: $query, placement: .toolbar, prompt: "Search")
         }
         .sheet(isPresented: $showingAdd) { AddAccountView() }
     }
 
-    private var header: some View {
-        VStack(spacing: 10) {
-            HStack {
-                Wordmark()
-                Spacer()
-                IconButton(system: "plus") { showingAdd = true }
-            }
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(Palette.textFaint)
-                TextField("Search", text: $query).textFieldStyle(.plain).font(Typo.label(13))
-                if !query.isEmpty {
-                    Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }
-                        .buttonStyle(.plain).foregroundStyle(Palette.textFaint)
-                }
-            }
-            .padding(.horizontal, 10).padding(.vertical, 7)
-            .background(Palette.surfaceHi, in: RoundedRectangle(cornerRadius: 9))
-        }
-        .padding(Metrics.pad)
-    }
-
-    @ViewBuilder private var content: some View {
-        let g = groups
+    @ViewBuilder private var detailList: some View {
         if model.accounts.isEmpty {
             EmptyState { showingAdd = true }
-        } else if g.pinned.isEmpty && g.rest.isEmpty {
-            VStack(spacing: 6) {
-                Spacer()
-                Image(systemName: "magnifyingglass").font(.system(size: 22)).foregroundStyle(Palette.textFaint)
-                Text("No matches for \"\(query)\"").font(Typo.label(12)).foregroundStyle(Palette.textSecondary)
-                Spacer()
-            }
-            .frame(maxWidth: .infinity)
+        } else if visible.isEmpty {
+            VStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").font(.system(size: 24)).foregroundStyle(Palette.textFaint)
+                Text("No matches").font(Typo.label(13)).foregroundStyle(Palette.textSecondary)
+            }.frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
-                LazyVStack(spacing: 8, pinnedViews: []) {
-                    if !g.pinned.isEmpty {
-                        SectionLabel("Pinned")
-                        ForEach(g.pinned, id: \.id) { row($0) }
-                        if !g.rest.isEmpty { SectionLabel("All").padding(.top, 4) }
+                LazyVStack(spacing: 8) {
+                    ForEach(visible, id: \.id) { account in
+                        AccountRowView(account: account,
+                                       remaining: model.remaining(for: account),
+                                       code: model.code(for: account),
+                                       copied: copiedID == account.id,
+                                       reduceMotion: reduceMotion,
+                                       onCopy: { copy(account) },
+                                       onPin: { model.togglePin(account) },
+                                       onDelete: { model.remove(account) },
+                                       onAdvance: { model.advanceHOTP(account) })
                     }
-                    ForEach(g.rest, id: \.id) { row($0) }
                 }
-                .padding(Metrics.pad)
+                .padding(16)
+                .frame(maxWidth: 680)
+                .frame(maxWidth: .infinity)
             }
         }
-    }
-
-    private func row(_ account: Account) -> some View {
-        AccountRowView(account: account,
-                       remaining: model.remaining(for: account),
-                       code: model.code(for: account),
-                       copied: copiedID == account.id,
-                       reduceMotion: reduceMotion,
-                       onCopy: { copy(account) },
-                       onPin: { model.togglePin(account) },
-                       onDelete: { model.remove(account) },
-                       onAdvance: { model.advanceHOTP(account) })
     }
 
     private func copy(_ account: Account) {
@@ -223,18 +284,6 @@ struct VaultView: View {
             try? await Task.sleep(for: .seconds(1.3))
             if copiedID == id { withAnimation { copiedID = nil } }
         }
-    }
-
-    private var footer: some View {
-        HStack(spacing: 14) {
-            FooterButton(system: "lock.fill", title: "Lock") { model.lock() }
-            Spacer()
-            Text("\(model.accounts.count) accounts").font(Typo.label(11)).foregroundStyle(Palette.textFaint)
-            Spacer()
-            SettingsLink { FooterButtonLabel(system: "gearshape.fill", title: "Settings") }
-                .buttonStyle(.plain)
-        }
-        .padding(.horizontal, Metrics.pad).padding(.vertical, 9)
     }
 }
 
@@ -257,25 +306,23 @@ struct AccountRowView: View {
                 TesseraTile(account: account, remaining: remaining, reduceMotion: reduceMotion)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(account.issuer.isEmpty ? account.account : account.issuer)
-                        .font(Typo.label(13, .semibold)).foregroundStyle(Palette.textPrimary)
-                        .lineLimit(1)
+                        .font(Typo.label(13, .semibold)).foregroundStyle(Palette.textPrimary).lineLimit(1)
                     if !account.issuer.isEmpty {
                         Text(account.account).font(Typo.label(11)).foregroundStyle(Palette.textSecondary).lineLimit(1)
                     }
                 }
                 Spacer(minLength: 8)
                 Text(groupCode(code))
-                    .font(Typo.code(17)).foregroundStyle(copied ? Palette.accent : Palette.textPrimary)
+                    .font(Typo.code(18)).foregroundStyle(copied ? Palette.accent : Palette.textPrimary)
                     .contentTransition(.numericText())
                 ZStack {
                     Image(systemName: "doc.on.doc").opacity(copied ? 0 : 1)
                     Image(systemName: "checkmark").opacity(copied ? 1 : 0)
                 }
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(copied ? Palette.accent : Palette.textFaint)
-                .frame(width: 16)
+                .foregroundStyle(copied ? Palette.accent : Palette.textFaint).frame(width: 16)
             }
-            .padding(.horizontal, 12).padding(.vertical, 10)
+            .padding(.horizontal, 12).padding(.vertical, 11)
             .scaleEffect(copied && !reduceMotion ? 1.01 : 1)
         }
         .contextMenu {
@@ -288,7 +335,7 @@ struct AccountRowView: View {
     }
 }
 
-// MARK: Add
+// MARK: Add account
 
 struct AddAccountView: View {
     @EnvironmentObject var model: AppModel
@@ -298,7 +345,7 @@ struct AddAccountView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack { Text("Add accounts").font(Typo.display(17)).foregroundStyle(Palette.textPrimary); Spacer() }
+            HStack { Text("Add accounts").font(Typo.display(18)).foregroundStyle(Palette.textPrimary); Spacer() }
             Text("Paste one or more otpauth or Google Authenticator links (one per line), scan a QR on screen, or import a file.")
                 .font(Typo.label(12)).foregroundStyle(Palette.textSecondary)
             FieldBox { TextField("otpauth://…", text: $uri, axis: .vertical).lineLimit(3...8) }
@@ -308,14 +355,11 @@ struct AddAccountView: View {
                     Task { defer { scanning = false }
                         do { uri = try await QRCapture.scanScreen() } catch { model.errorMessage = "\(error)" } }
                 } label: {
-                    Label(scanning ? "Scanning…" : "Scan QR on screen", systemImage: "qrcode.viewfinder")
-                        .font(Typo.label(12, .medium))
-                }
-                .buttonStyle(.plain).foregroundStyle(Palette.accent).disabled(scanning)
+                    Label(scanning ? "Scanning…" : "Scan QR on screen", systemImage: "qrcode.viewfinder").font(Typo.label(12, .medium))
+                }.buttonStyle(.plain).foregroundStyle(Palette.accent).disabled(scanning)
                 Button { model.importFromFile(); if model.errorMessage == nil { dismiss() } } label: {
                     Label("Import file…", systemImage: "doc.text").font(Typo.label(12, .medium))
-                }
-                .buttonStyle(.plain).foregroundStyle(Palette.accent)
+                }.buttonStyle(.plain).foregroundStyle(Palette.accent)
             }
             if let e = model.errorMessage { ErrorLine(e) }
             HStack {
@@ -324,7 +368,7 @@ struct AddAccountView: View {
                 PrimaryButton("Add", enabled: !uri.isEmpty) { add() }.fixedSize()
             }
         }
-        .padding(20).frame(width: 380).background(Palette.background)
+        .padding(20).frame(width: 420).background(Palette.background)
     }
 
     private func add() {
@@ -333,11 +377,75 @@ struct AddAccountView: View {
     }
 }
 
+// MARK: Menu bar (secondary quick access)
+
+struct MenuBarView: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var copiedID: String?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Wordmark(size: 14)
+                Spacer()
+                Button { openMain() } label: { Image(systemName: "macwindow") }
+                    .buttonStyle(.plain).foregroundStyle(Palette.accent)
+                    .help("Open Tessera")
+            }.padding(12)
+            Divider().overlay(Palette.border)
+
+            if model.isLocked || !model.vaultExists {
+                VStack(spacing: 10) {
+                    Spacer()
+                    Image(systemName: "lock.fill").font(.system(size: 22)).foregroundStyle(Palette.textFaint)
+                    Text(model.vaultExists ? "Tessera is locked" : "No vault yet").font(Typo.label(12)).foregroundStyle(Palette.textSecondary)
+                    Button("Open Tessera") { openMain() }.buttonStyle(.plain).foregroundStyle(Palette.accent).font(Typo.label(12, .medium))
+                    Spacer()
+                }.frame(maxWidth: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 6) {
+                        ForEach(model.accounts.sorted { ($0.pinned ? 0:1) < ($1.pinned ? 0:1) }, id: \.id) { a in
+                            AccountRowView(account: a, remaining: model.remaining(for: a), code: model.code(for: a),
+                                           copied: copiedID == a.id, reduceMotion: reduceMotion,
+                                           onCopy: { copy(a) }, onPin: { model.togglePin(a) },
+                                           onDelete: { model.remove(a) }, onAdvance: { model.advanceHOTP(a) })
+                        }
+                    }.padding(10)
+                }
+                HStack {
+                    Button { model.lock() } label: { Label("Lock", systemImage: "lock") }
+                    Spacer()
+                    Button { openMain() } label: { Label("Open app", systemImage: "macwindow") }
+                }
+                .buttonStyle(.plain).font(Typo.label(11, .medium)).foregroundStyle(Palette.textSecondary)
+                .padding(.horizontal, 12).padding(.vertical, 9)
+            }
+        }
+    }
+
+    private func openMain() {
+        NSApp.activate(ignoringOtherApps: true)
+        openWindow(id: "main")
+    }
+
+    private func copy(_ a: Account) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(model.code(for: a), forType: .string)
+        withAnimation { copiedID = a.id }
+        let id = a.id
+        Task { @MainActor in try? await Task.sleep(for: .seconds(1.3)); if copiedID == id { withAnimation { copiedID = nil } } }
+    }
+}
+
 // MARK: Settings
 
 struct SettingsView: View {
     @EnvironmentObject var model: AppModel
     @AppStorage("tessera.theme") private var theme: AppTheme = .system
+    @AppStorage("tessera.showMenuBar") private var showMenuBar = true
     @AppStorage("tessera.launchAtLogin") private var launchAtLogin = false
 
     var body: some View {
@@ -348,9 +456,10 @@ struct SettingsView: View {
                 }.pickerStyle(.segmented)
             }
             Section("General") {
+                Toggle("Show in menu bar", isOn: $showMenuBar)
                 Toggle("Launch at login", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { _, on in LoginItem.set(enabled: on) }
-                if SecureEnclaveWrap.isAvailable {
+                if model.biometricsAvailable {
                     Toggle("Unlock with Touch ID", isOn: Binding(
                         get: { model.hasTouchIDWrap },
                         set: { $0 ? model.enableTouchID() : model.disableTouchID() }
@@ -364,7 +473,7 @@ struct SettingsView: View {
             if let e = model.errorMessage { ErrorLine(e) }
         }
         .formStyle(.grouped)
-        .frame(width: 380, height: 320)
+        .frame(width: 420, height: 360)
         .tint(Palette.accent)
     }
 }
@@ -397,33 +506,6 @@ struct PrimaryButton: View {
     }
 }
 
-struct IconButton: View {
-    let system: String; var action: () -> Void
-    @State private var hovering = false
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: system).font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Palette.accent).frame(width: 28, height: 28)
-                .background(Palette.accentSoft.opacity(hovering ? 1 : 0.6), in: RoundedRectangle(cornerRadius: 8))
-        }
-        .buttonStyle(.plain).onHover { hovering = $0 }
-    }
-}
-
-struct FooterButton: View {
-    let system: String; let title: String; var action: () -> Void
-    var body: some View {
-        Button(action: action) { FooterButtonLabel(system: system, title: title) }.buttonStyle(.plain)
-    }
-}
-
-struct FooterButtonLabel: View {
-    let system: String; let title: String
-    var body: some View {
-        Label(title, systemImage: system).font(Typo.label(11, .medium)).foregroundStyle(Palette.textSecondary)
-    }
-}
-
 struct SectionLabel: View {
     let text: String
     init(_ text: String) { self.text = text }
@@ -431,8 +513,7 @@ struct SectionLabel: View {
         HStack {
             Text(text.uppercased()).font(Typo.label(10, .semibold)).tracking(0.6).foregroundStyle(Palette.textFaint)
             Spacer()
-        }
-        .padding(.horizontal, 4).padding(.top, 2)
+        }.padding(.horizontal, 4).padding(.top, 2)
     }
 }
 
@@ -440,8 +521,7 @@ struct ErrorLine: View {
     let text: String
     init(_ text: String) { self.text = text }
     var body: some View {
-        Label(text, systemImage: "exclamationmark.triangle.fill")
-            .font(Typo.label(11)).foregroundStyle(Palette.warning)
+        Label(text, systemImage: "exclamationmark.triangle.fill").font(Typo.label(11)).foregroundStyle(Palette.warning)
     }
 }
 
@@ -449,16 +529,14 @@ struct EmptyState: View {
     var add: () -> Void
     var body: some View {
         VStack(spacing: 12) {
-            Spacer()
             MosaicMark(side: 44)
             Text("No accounts yet").font(Typo.display(16)).foregroundStyle(Palette.textPrimary)
-            Text("Add your first account from an otpauth link\nor a QR code on screen.")
-                .multilineTextAlignment(.center).font(Typo.label(12)).foregroundStyle(Palette.textSecondary)
+            Text("Add your first account from an otpauth link or a QR code on screen.")
+                .multilineTextAlignment(.center).font(Typo.label(12)).foregroundStyle(Palette.textSecondary).frame(maxWidth: 320)
             Button(action: add) {
                 Label("Add account", systemImage: "plus").font(Typo.label(12, .semibold)).foregroundStyle(Palette.accent)
             }.buttonStyle(.plain).padding(.top, 2)
-            Spacer()
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

@@ -122,8 +122,14 @@ public struct Envelope: Codable, Sendable {
     /// Re-seal the payload with a new account list, reusing the existing DEK so
     /// all wraps (including a Touch ID secure-enclave wrap) are preserved.
     public func reseal(accounts: [Account], passphrase: String, argon2: Argon2idProvider) throws -> Envelope {
-        for a in accounts { try a.validate() }
         let dek = try recoverDEK(passphrase: passphrase, argon2: argon2)
+        return try reseal(accounts: accounts, dek: dek)
+    }
+
+    /// Re-seal the payload with a known DEK (held after any successful unlock,
+    /// including Touch ID). Lets the app mutate accounts without the passphrase.
+    public func reseal(accounts: [Account], dek: Data) throws -> Envelope {
+        for a in accounts { try a.validate() }
         let nonce = Self.randomBytes(XChaCha.nonceSize)
         let ct = try XChaCha.seal(CanonicalJSON.encode(accounts), key: dek, nonce: nonce)
         var copy = self
