@@ -3,6 +3,7 @@ package vault
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -123,6 +124,18 @@ func TestUpdateAccountsPreservesWrapsAndOpens(t *testing.T) {
 	}
 	if !hasSE {
 		t.Error("secure-enclave wrap was lost during update")
+	}
+}
+
+func TestAppOnlyVaultError(t *testing.T) {
+	env, _ := Seal(accounts(), "pw")
+	env.Wraps = []wrap{{Type: "secure-enclave", Nonce: []byte("x"), CT: []byte("y")}}
+	if _, err := env.Open("pw"); !errors.Is(err, ErrAppOnlyVault) {
+		t.Errorf("expected ErrAppOnlyVault, got %v", err)
+	}
+	env.Wraps = nil
+	if _, err := env.Open("pw"); !errors.Is(err, ErrNoPassphraseWrap) {
+		t.Errorf("expected ErrNoPassphraseWrap, got %v", err)
 	}
 }
 

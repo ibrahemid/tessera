@@ -1,57 +1,414 @@
 ---
 import Base from "../layouts/Base.astro";
+import TileMosaic from "../components/TileMosaic.astro";
+import Terminal from "../components/Terminal.astro";
+
+const repo = "https://github.com/ibrahemid/tessera";
+// TODO: replace with the real Mac App Store listing URL once the app ID is issued.
+const appStore = "https://apps.apple.com/app/tessera/id000000000";
+
 const features = [
-  ["Works with everything", "Any TOTP service, plus HOTP and Steam Guard. Import from Google Authenticator, otpauth links, or QR codes — in bulk."],
-  ["Yours alone", "Secrets are encrypted on your device with argon2id + XChaCha20-Poly1305. No account, no servers, no telemetry."],
-  ["CLI-first", "A real command-line tool (tess) with a live terminal view — unique among Mac authenticators. Scriptable, with JSON output."],
-  ["Menu-bar native", "Touch ID unlock, on-screen QR scan, search, folders, and one-click copy — all from the menu bar."],
+  {
+    k: "01",
+    t: "Works with any TOTP service",
+    b: "Every TOTP service you already use, plus HOTP and Steam Guard. If it works with an authenticator app, it works with Tessera.",
+    c: "var(--violet)",
+  },
+  {
+    k: "02",
+    t: "Move in, in minutes",
+    b: "Import from Google Authenticator, paste otpauth links, or scan a QR. One account or a hundred at once, nothing to retype.",
+    c: "var(--blue)",
+  },
+  {
+    k: "03",
+    t: "Scan from the screen",
+    b: "Point the app at a QR code on your display and it reads it. The CLI reads QR images straight from a file.",
+    c: "var(--teal)",
+  },
+  {
+    k: "04",
+    t: "A real command line",
+    b: "Lists, watches, and copies codes, with JSON output and shell completions. Rare for a Mac authenticator, and how Tessera was built first.",
+    c: "var(--gold-bright)",
+  },
+  {
+    k: "05",
+    t: "Open with Touch ID",
+    b: "Your vault key can be sealed by the Secure Enclave, so a fingerprint unlocks it. No fingerprint, no codes.",
+    c: "var(--coral)",
+  },
+  {
+    k: "06",
+    t: "Encrypted on your device",
+    b: "A random key encrypts every secret with XChaCha20-Poly1305, wrapped by your argon2id passphrase. Plain secrets never touch disk.",
+    c: "var(--green)",
+  },
+];
+
+const cliCmds = [
+  ["tess add", "add an account from an otpauth link or QR"],
+  ["tess", "print current codes with countdown bars"],
+  ["tess watch", "live view: search, copy, refresh"],
+  ["tess code github -c", "copy one code to the clipboard"],
 ];
 ---
+
 <Base>
-  <section class="pt-12 pb-16">
-    <span class="inline-grid grid-cols-2 gap-1 w-12 h-12 mb-7" aria-hidden="true">
-      <span class="rounded-[5px]" style="background: var(--color-gold)"></span>
-      <span class="rounded-[5px]" style="background: #c9ccd6"></span>
-      <span class="rounded-[5px]" style="background: #c9ccd6"></span>
-      <span class="rounded-[5px]" style="background: #e1e3ea"></span>
-    </span>
-    <h1 class="text-4xl sm:text-5xl font-semibold leading-tight" style="font-family: var(--font-display)">
-      Two-factor codes,<br />kept honest.
-    </h1>
-    <p class="mt-5 text-lg max-w-xl" style="color: var(--color-ink-soft)">
-      Tessera is a private, open-source authenticator for macOS. A sleek menu-bar app
-      and a first-class command-line tool, sharing one encrypted vault. No accounts.
-      No tracking. Your secrets never leave your device.
-    </p>
-    <div class="mt-8 flex flex-wrap gap-3">
-      <a href="#get" class="px-5 py-2.5 rounded-lg font-medium text-white" style="background: var(--color-gold)">Get Tessera</a>
-      <a href="https://github.com/ibrahemid/tessera" class="px-5 py-2.5 rounded-lg font-medium border" style="border-color: var(--color-line)">View source</a>
+  <!-- ===== HERO ===== -->
+  <section class="relative overflow-hidden">
+    <div class="grout-bg absolute inset-0 -z-10" style="mask-image: radial-gradient(120% 80% at 70% 0%, #000 20%, transparent 75%); -webkit-mask-image: radial-gradient(120% 80% at 70% 0%, #000 20%, transparent 75%);"></div>
+    <div class="mx-auto w-full max-w-[var(--maxw)] px-5 sm:px-7 pt-14 sm:pt-20 pb-10">
+      <div class="grid lg:grid-cols-[1.05fr_0.95fr] gap-12 lg:gap-16 items-center">
+        <div>
+          <span class="eyebrow">Local-first · Open source</span>
+          <h1 class="mt-5" style="font-size: clamp(2.4rem, 5.2vw, 4rem)">
+            Two-factor codes<br />you actually own.
+          </h1>
+          <p class="lede mt-6 max-w-[34rem]">
+            Tessera keeps your 2FA codes in an encrypted vault on your Mac,
+            reachable from the menu bar and a real command line. No account to
+            sign up for. No server to trust. Nothing tracking you.
+          </p>
+          <div class="mt-8 flex flex-wrap gap-3">
+            <a href="#get" class="btn btn-gold">Get Tessera</a>
+            <a href={repo} rel="noopener" class="btn btn-ghost">
+              <span class="mono text-[var(--gold)] text-sm">&lt;/&gt;</span> Read the source
+            </a>
+          </div>
+          <ul class="mt-9 flex flex-wrap gap-x-6 gap-y-2 text-sm" style="color: var(--ink-soft)">
+            <li class="flex items-center gap-2"><span class="dotcheck"></span> Apache-2.0 licensed</li>
+            <li class="flex items-center gap-2"><span class="dotcheck"></span> argon2id + XChaCha20</li>
+            <li class="flex items-center gap-2"><span class="dotcheck"></span> Zero telemetry</li>
+          </ul>
+        </div>
+
+        <div class="relative">
+          <div class="absolute -inset-8 -z-10 opacity-60" style="background: radial-gradient(60% 55% at 60% 40%, var(--gold-tint), transparent 70%)"></div>
+          <TileMosaic />
+        </div>
+      </div>
     </div>
   </section>
 
-  <section class="grid sm:grid-cols-2 gap-px rounded-2xl overflow-hidden border" style="border-color: var(--color-line); background: var(--color-line)">
-    {features.map(([title, body]) => (
-      <div class="p-6" style="background: var(--color-surface)">
-        <h3 class="font-semibold mb-1.5" style="font-family: var(--font-display)">{title}</h3>
-        <p class="text-sm leading-relaxed" style="color: var(--color-ink-soft)">{body}</p>
+  <!-- ===== EXPLAINER ===== -->
+  <section class="mx-auto w-full max-w-[var(--maxw)] px-5 sm:px-7 py-20 sm:py-28">
+    <div class="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
+      <div class="reveal">
+        <span class="eyebrow">New to 2FA?</span>
+        <h2 class="mt-4" style="font-size: clamp(1.8rem, 3.4vw, 2.7rem)">A second key,<br />just for you.</h2>
+        <div class="mt-6 space-y-4 text-[1.02rem] leading-relaxed" style="color: var(--ink-soft); max-width: 36rem">
+          <p>
+            A password can be guessed, leaked, or phished. Two-factor
+            authentication adds a second step that a thief can't fake: a
+            six-digit code that changes every 30 seconds and only your device
+            can produce.
+          </p>
+          <p>
+            Even if someone has your password, they can't get in without that
+            code. Tessera is where your codes live: offline, and only
+            yours. <span style="color: var(--ink)">You don't need to understand the cryptography to be protected by it.</span>
+          </p>
+        </div>
+        <a href="/support" class="inline-flex items-center gap-1.5 mt-7 font-medium" style="color: var(--gold)">
+          How to set it up <span aria-hidden="true">→</span>
+        </a>
       </div>
-    ))}
+
+      <div class="reveal">
+        <figure class="tile p-7 sm:p-9 mx-auto max-w-sm">
+          <figcaption class="eyebrow mb-5" style="color: var(--ink-faint)">Anatomy of a code</figcaption>
+          <div class="flex items-center gap-3">
+            <span class="grid place-items-center w-9 h-9 rounded-[0.6rem] text-white font-mono text-xs font-semibold" style="background: var(--violet)">{`{ }`}</span>
+            <span class="font-semibold">GitHub</span>
+            <span class="ml-auto mono text-xs" style="color: var(--ink-faint)">the issuer</span>
+          </div>
+          <div class="mt-6 mono tnum" style="font-size: 2.6rem; letter-spacing: 0.06em; line-height: 1">824 159</div>
+          <div class="mt-2 mono text-xs" style="color: var(--ink-faint)">your six-digit code, right now</div>
+          <div class="mt-6 h-px" style="background: var(--line)"></div>
+          <div class="mt-5 flex items-center gap-3">
+            <div class="flex-1 h-2 rounded-full overflow-hidden" style="background: var(--line)">
+              <div class="h-full rounded-full" style="width: 60%; background: var(--gold-bright)"></div>
+            </div>
+            <span class="mono text-xs" style="color: var(--ink-faint)">rolls in 18s</span>
+          </div>
+        </figure>
+      </div>
+    </div>
   </section>
 
-  <section id="get" class="py-16">
-    <h2 class="text-2xl font-semibold mb-6" style="font-family: var(--font-display)">Get Tessera</h2>
-    <div class="space-y-6">
-      <div class="p-6 rounded-xl border" style="border-color: var(--color-line); background: var(--color-surface)">
-        <h3 class="font-semibold mb-1">macOS app</h3>
-        <p class="text-sm mb-3" style="color: var(--color-ink-soft)">Native menu-bar app with Touch ID. Coming to the Mac App Store.</p>
-        <span class="inline-block text-sm px-3 py-1 rounded-md" style="background: #f3e8d4; color: var(--color-gold)">App Store · soon</span>
+  <!-- ===== FEATURES ===== -->
+  <section id="features" class="mx-auto w-full max-w-[var(--maxw)] px-5 sm:px-7 py-12">
+    <div class="reveal max-w-2xl">
+      <span class="eyebrow">What's inside</span>
+      <h2 class="mt-4" style="font-size: clamp(1.8rem, 3.4vw, 2.7rem)">Everything, free. Including the command line.</h2>
+      <p class="lede mt-5">
+        Unlimited accounts, menu bar, Touch ID, auto-launch, HOTP, Steam Guard,
+        and bulk import. Plus the one thing dedicated Mac authenticators
+        almost never ship: a real command line.
+      </p>
+    </div>
+
+    <div class="mt-12 grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {features.map((f) => (
+        <article class="tile tile-hover p-6 reveal" style={`--c: ${f.c}`}>
+          <div class="flex items-center justify-between">
+            <span class="grid place-items-center w-9 h-9 rounded-[0.6rem]" style={`background: color-mix(in srgb, ${f.c} 15%, transparent)`}>
+              <span class="w-3 h-3 rounded-[0.25rem]" style={`background: ${f.c}`}></span>
+            </span>
+            <span class="mono text-xs" style="color: var(--ink-faint)">{f.k}</span>
+          </div>
+          <h3 class="mt-5" style="font-size: 1.15rem">{f.t}</h3>
+          <p class="mt-2 text-sm leading-relaxed" style="color: var(--ink-soft)">{f.b}</p>
+        </article>
+      ))}
+    </div>
+  </section>
+
+  <!-- ===== CLI MOMENT ===== -->
+  <section class="mx-auto w-full max-w-[var(--maxw)] px-5 sm:px-7 py-20 sm:py-28">
+    <div class="grid lg:grid-cols-[0.9fr_1.1fr] gap-12 lg:gap-16 items-center">
+      <div class="reveal">
+        <span class="eyebrow">The command line</span>
+        <h2 class="mt-4" style="font-size: clamp(1.8rem, 3.4vw, 2.7rem)">For people who live in the terminal.</h2>
+        <p class="lede mt-5 max-w-[32rem]">
+          Tessera is CLI-first. <span class="mono text-[0.95em]" style="color: var(--gold)">tess</span> isn't a
+          companion script. It's the same vault, fully scriptable, with JSON
+          output and shell completions.
+        </p>
+        <ul class="mt-7 space-y-3">
+          {cliCmds.map(([cmd, desc]) => (
+            <li class="flex flex-col sm:flex-row sm:items-baseline gap-1 sm:gap-3">
+              <code class="mono text-sm px-2 py-1 rounded-md whitespace-nowrap" style="background: var(--surface-sunken); color: var(--ink)">{cmd}</code>
+              <span class="text-sm" style="color: var(--ink-soft)">{desc}</span>
+            </li>
+          ))}
+        </ul>
       </div>
-      <div class="p-6 rounded-xl border" style="border-color: var(--color-line); background: var(--color-surface)">
-        <h3 class="font-semibold mb-2">Command line</h3>
-        <pre class="text-sm overflow-x-auto p-3 rounded-lg" style="background: var(--color-night); color: #e6e6ea; font-family: var(--font-mono)"><code>go install github.com/ibrahemid/tessera/go/cmd/tess@latest
-tess vault init
-tess watch</code></pre>
+      <div class="reveal">
+        <Terminal />
       </div>
+    </div>
+  </section>
+
+  <!-- ===== TRUST ===== -->
+  <section id="trust" class="relative">
+    <div class="mx-auto w-full max-w-[var(--maxw)] px-5 sm:px-7 py-20 sm:py-28">
+      <div class="reveal max-w-2xl">
+        <span class="eyebrow">Why you can trust it</span>
+        <h2 class="mt-4" style="font-size: clamp(1.8rem, 3.4vw, 2.7rem)">Security you can read.</h2>
+        <p class="lede mt-5">
+          A 2FA app holds the keys to your accounts, so it has to earn that
+          trust. Tessera does it in the open: the code is public, and nothing
+          phones home.
+        </p>
+      </div>
+
+      <div class="mt-12 grid md:grid-cols-3 gap-4">
+        <article class="tile p-7 reveal">
+          <h3 style="font-size: 1.2rem">Open and auditable</h3>
+          <p class="mt-3 text-sm leading-relaxed" style="color: var(--ink-soft)">
+            Apache-2.0, end to end. The CLI and app share one documented vault
+            format, checked byte-for-byte against a public test suite. Read it,
+            build it, verify it yourself.
+          </p>
+          <a href={repo} rel="noopener" class="inline-block mt-4 text-sm font-medium" style="color: var(--gold)">github.com/ibrahemid/tessera →</a>
+        </article>
+        <article class="tile p-7 reveal">
+          <h3 style="font-size: 1.2rem">Local-first by default</h3>
+          <p class="mt-3 text-sm leading-relaxed" style="color: var(--ink-soft)">
+            Codes are generated entirely offline. There's no Tessera account and
+            no Tessera server, so there's no central database of your secrets to
+            breach, subpoena, or sell.
+          </p>
+        </article>
+        <article class="tile p-7 reveal">
+          <h3 style="font-size: 1.2rem">No tracking</h3>
+          <p class="mt-3 text-sm leading-relaxed" style="color: var(--ink-soft)">
+            No analytics, no ads, no crash SDKs. Apple's privacy label reads
+            <span class="mono" style="color: var(--ink)"> Data Not Collected</span>.
+            This very site ships zero trackers and self-hosts its fonts.
+          </p>
+        </article>
+      </div>
+
+      <div class="mt-4 tile p-7 sm:p-9 reveal" style="background: var(--surface-sunken)">
+        <div class="grid md:grid-cols-[auto_1fr] gap-4 md:gap-10 md:items-center">
+          <span class="eyebrow" style="color: var(--ink-faint)">The crypto, plainly</span>
+          <p class="text-sm leading-relaxed" style="color: var(--ink-soft)">
+            A random 256-bit key encrypts your accounts with
+            <span class="mono" style="color: var(--ink)"> XChaCha20-Poly1305</span>. That key is
+            wrapped by a key derived from your passphrase with
+            <span class="mono" style="color: var(--ink)"> argon2id</span>, and on a Mac it can also
+            be sealed by the <span style="color: var(--ink)">Secure Enclave</span> behind Touch ID.
+            Two independent builds, Go and Swift, prove they read the same vault
+            on every change. Secrets live as raw bytes; they're never logged.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== PLATFORMS / ROADMAP ===== -->
+  <section class="mx-auto w-full max-w-[var(--maxw)] px-5 sm:px-7 py-12">
+    <div class="reveal max-w-2xl">
+      <span class="eyebrow">Where it runs</span>
+      <h2 class="mt-4" style="font-size: clamp(1.8rem, 3.4vw, 2.7rem)">macOS first, portable by design.</h2>
+      <p class="lede mt-5">
+        macOS is the first home. The vault format and the CLI are
+        cross-platform already, so the rest is a matter of shipping, not
+        rebuilding.
+      </p>
+    </div>
+
+    <div class="mt-12 grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <article class="tile p-6 reveal">
+        <div class="flex items-center justify-between">
+          <span class="font-semibold">macOS app</span>
+          <span class="status status-now">Now</span>
+        </div>
+        <p class="mt-3 text-sm leading-relaxed" style="color: var(--ink-soft)">Native menu-bar app with Touch ID, on the Mac App Store.</p>
+      </article>
+      <article class="tile p-6 reveal">
+        <div class="flex items-center justify-between">
+          <span class="font-semibold">Command line</span>
+          <span class="status status-now">Now</span>
+        </div>
+        <p class="mt-3 text-sm leading-relaxed" style="color: var(--ink-soft)">The <span class="mono">tess</span> CLI runs today. Written in Go, it builds anywhere Go does.</p>
+      </article>
+      <article class="tile p-6 reveal">
+        <div class="flex items-center justify-between">
+          <span class="font-semibold">iPhone</span>
+          <span class="status status-soon">Planned</span>
+        </div>
+        <p class="mt-3 text-sm leading-relaxed" style="color: var(--ink-soft)">The same vault, in your pocket. On the roadmap, not yet shipped.</p>
+      </article>
+      <article class="tile p-6 reveal">
+        <div class="flex items-center justify-between">
+          <span class="font-semibold">Android</span>
+          <span class="status status-soon">Planned</span>
+        </div>
+        <p class="mt-3 text-sm leading-relaxed" style="color: var(--ink-soft)">The same vault on Android. On the roadmap, not yet shipped.</p>
+      </article>
+    </div>
+  </section>
+
+  <!-- ===== FREE ===== -->
+  <section class="mx-auto w-full max-w-[var(--maxw)] px-5 sm:px-7 py-20 sm:py-28">
+    <div class="reveal mx-auto max-w-3xl tile p-9 sm:p-12 text-center" style="background: var(--surface-sunken)">
+      <span class="eyebrow">Pricing</span>
+      <h2 class="mt-4" style="font-size: clamp(1.8rem, 3.4vw, 2.7rem)">All of it. For nothing.</h2>
+      <p class="lede mt-5 mx-auto max-w-xl">
+        Every feature, the app and the CLI, free and open source. There's no
+        upgrade to buy and no account to make. Your codes stay yours.
+      </p>
+      <ul class="mt-8 flex flex-wrap justify-center gap-x-6 gap-y-2.5 text-sm">
+        {["Unlimited accounts", "Menu bar + Touch ID", "The tess CLI, HOTP, Steam Guard", "Bulk import & QR", "Encrypted local vault"].map((x) => (
+          <li class="flex items-center gap-2.5" style="color: var(--ink)"><span class="dotcheck"></span> {x}</li>
+        ))}
+      </ul>
+    </div>
+  </section>
+
+  <!-- ===== GET IT ===== -->
+  <section id="get" class="mx-auto w-full max-w-[var(--maxw)] px-5 sm:px-7 py-12 scroll-mt-20">
+    <div class="reveal max-w-2xl">
+      <span class="eyebrow">Get Tessera</span>
+      <h2 class="mt-4" style="font-size: clamp(1.8rem, 3.4vw, 2.7rem)">Two ways in.</h2>
+      <p class="lede mt-5">
+        Download the Mac app from the App Store, or install the CLI with a
+        single command. Same encrypted vault, either way.
+      </p>
+    </div>
+
+    <div class="mt-10 grid lg:grid-cols-2 gap-4">
+      <article class="tile p-7 sm:p-8 reveal">
+        <h3 style="font-size: 1.2rem">Command line</h3>
+        <p class="mt-2 text-sm" style="color: var(--ink-soft)">Install with Go, then create a vault and watch your codes.</p>
+        <div class="mt-5 rounded-xl overflow-hidden border border-line">
+          <div class="flex items-center justify-between px-4 py-2.5" style="background: var(--surface-sunken)">
+            <span class="mono text-xs" style="color: var(--ink-faint)">terminal</span>
+            <button type="button" class="copy-btn mono text-xs px-2 py-1 rounded-md" data-copy={"go install github.com/ibrahemid/tessera/go/cmd/tess@latest\ntess vault init\ntess watch"} style="color: var(--gold); background: var(--gold-tint)">Copy</button>
+          </div>
+          <pre class="mono text-sm overflow-x-auto p-4 leading-relaxed" style="background: var(--surface)"><code><span style="color: var(--green)">$</span> go install github.com/ibrahemid/tessera/go/cmd/tess@latest
+<span style="color: var(--green)">$</span> tess vault init
+<span style="color: var(--green)">$</span> tess watch</code></pre>
+        </div>
+        <p class="mt-3 mono text-xs" style="color: var(--ink-faint)">Needs Go 1.26+. Vault: ~/.local/share/tessera/vault.json</p>
+      </article>
+
+      <article class="tile p-7 sm:p-8 reveal flex flex-col">
+        <h3 style="font-size: 1.2rem">macOS app</h3>
+        <p class="mt-2 text-sm" style="color: var(--ink-soft)">Native menu-bar app with Touch ID, on-screen QR scanning, folders, and one-click copy.</p>
+        <div class="mt-auto pt-6">
+          <a href={appStore} rel="noopener" class="inline-flex items-center gap-3 px-5 py-3 rounded-xl border border-line tile-hover" style="background: var(--surface-sunken)" aria-label="Download Tessera on the Mac App Store">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="color: var(--ink)"><path d="M16.36 12.78c-.02-2.3 1.88-3.4 1.96-3.46-1.07-1.56-2.73-1.78-3.32-1.8-1.41-.14-2.76.83-3.48.83-.72 0-1.82-.81-3-.79-1.54.02-2.96.9-3.75 2.28-1.6 2.78-.41 6.89 1.15 9.14.76 1.1 1.67 2.34 2.86 2.3 1.15-.05 1.58-.74 2.97-.74 1.38 0 1.77.74 2.98.72 1.23-.02 2.01-1.12 2.76-2.23.87-1.28 1.23-2.52 1.25-2.58-.03-.01-2.4-.92-2.42-3.64zM14.13 6.13c.64-.78 1.07-1.85.95-2.93-.92.04-2.03.61-2.69 1.38-.59.69-1.11 1.79-.97 2.85 1.02.08 2.07-.52 2.71-1.3z"/></svg>
+            <div class="text-left leading-tight">
+              <div class="text-[0.6rem] mono" style="color: var(--ink-faint)">Download on the</div>
+              <div class="font-semibold text-sm" style="color: var(--ink)">Mac App Store</div>
+            </div>
+          </a>
+          <p class="mt-4 text-sm" style="color: var(--ink-soft)">Sandboxed, and opens the same vault you built in the terminal.</p>
+        </div>
+      </article>
     </div>
   </section>
 </Base>
+
+<style>
+  .dotcheck {
+    width: 1.05rem; height: 1.05rem; border-radius: 99px; flex: none;
+    background: var(--gold-tint);
+    position: relative;
+  }
+  .dotcheck::after {
+    content: ""; position: absolute; inset: 0;
+    background: var(--gold);
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='%23000' stroke-width='3' stroke-linecap='round' stroke-linejoin='round' d='M5 12.5l4 4 10-10'/%3E%3C/svg%3E") center/64% no-repeat;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='%23000' stroke-width='3' stroke-linecap='round' stroke-linejoin='round' d='M5 12.5l4 4 10-10'/%3E%3C/svg%3E") center/64% no-repeat;
+  }
+  .dotcheck-faint { background: var(--line); }
+  .dotcheck-faint::after { background: var(--ink-faint); }
+
+  .status {
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 0.2rem 0.55rem;
+    border-radius: 99px;
+    white-space: nowrap;
+  }
+  .status-now { color: var(--green); background: color-mix(in srgb, var(--green) 13%, transparent); }
+  .status-soon { color: var(--ink-faint); background: var(--surface-sunken); border: 1px solid var(--line); }
+  .copy-btn { cursor: pointer; transition: opacity 0.15s; }
+  .copy-btn:hover { opacity: 0.8; }
+</style>
+
+<script>
+  const io = new IntersectionObserver(
+    (entries) => {
+      for (const e of entries) {
+        if (e.isIntersecting) {
+          e.target.classList.add("in");
+          io.unobserve(e.target);
+        }
+      }
+    },
+    { rootMargin: "0px 0px -10% 0px", threshold: 0.1 }
+  );
+  document.querySelectorAll(".reveal").forEach((el) => io.observe(el));
+
+  document.querySelectorAll<HTMLButtonElement>(".copy-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const text = btn.dataset.copy || "";
+      try {
+        await navigator.clipboard.writeText(text);
+        const prev = btn.textContent;
+        btn.textContent = "Copied";
+        setTimeout(() => (btn.textContent = prev), 1400);
+      } catch (_) {}
+    });
+  });
+</script>

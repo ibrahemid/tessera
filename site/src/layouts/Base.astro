@@ -1,8 +1,20 @@
 ---
+import "@fontsource-variable/schibsted-grotesk";
+import "@fontsource-variable/hanken-grotesk";
+import "@fontsource/ibm-plex-mono/400.css";
+import "@fontsource/ibm-plex-mono/500.css";
+import "@fontsource/ibm-plex-mono/600.css";
 import "../styles/global.css";
-const { title = "Tessera", description = "A private, open-source 2FA authenticator for macOS. CLI-first, with a native menu-bar app." } = Astro.props;
+import Wordmark from "../components/Wordmark.astro";
+
+const {
+  title = "Tessera · open-source 2FA for macOS",
+  description = "A private, open-source two-factor authenticator for macOS. A native menu-bar app and a real command-line tool, sharing one encrypted vault. No account. No tracking. Free.",
+} = Astro.props;
 const year = 2026;
+const repo = "https://github.com/ibrahemid/tessera";
 ---
+
 <!doctype html>
 <html lang="en">
   <head>
@@ -11,40 +23,110 @@ const year = 2026;
     <title>{title}</title>
     <meta name="description" content={description} />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta name="theme-color" content="#fbfaf7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0e0f13" media="(prefers-color-scheme: dark)" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://tessera.ibrahemid.com" />
+    <meta name="twitter:card" content="summary" />
+    <link rel="canonical" href={new URL(Astro.url.pathname, "https://tessera.ibrahemid.com")} />
+    <script is:inline>
+      // Default to light on first visit (house rule: never default to dark);
+      // only honor an explicit user choice saved by the toggle.
+      (() => {
+        try {
+          if (localStorage.getItem("tessera-theme") === "dark") {
+            document.documentElement.classList.add("dark");
+          }
+        } catch (_) {}
+      })();
+    </script>
   </head>
   <body class="min-h-screen flex flex-col">
-    <header class="max-w-3xl mx-auto w-full px-6 py-6 flex items-center justify-between">
-      <a href="/" class="flex items-center gap-2.5 font-semibold" style="font-family: var(--font-display)">
-        <span class="inline-grid grid-cols-2 gap-[2px] w-5 h-5" aria-hidden="true">
-          <span class="rounded-[3px]" style="background: var(--color-gold)"></span>
-          <span class="rounded-[3px]" style="background: #c9ccd6"></span>
-          <span class="rounded-[3px]" style="background: #c9ccd6"></span>
-          <span class="rounded-[3px]" style="background: #e1e3ea"></span>
-        </span>
-        <span class="text-lg">Tessera</span>
-      </a>
-      <nav class="flex items-center gap-5 text-sm" style="color: var(--color-ink-soft)">
-        <a href="/support" class="hover:text-[var(--color-ink)]">Support</a>
-        <a href="/privacy" class="hover:text-[var(--color-ink)]">Privacy</a>
-        <a href="https://github.com/ibrahemid/tessera" class="hover:text-[var(--color-ink)]">GitHub</a>
-      </nav>
+    <a
+      href="#main"
+      class="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:px-4 focus:py-2 focus:rounded-lg focus:bg-surface focus:border focus:border-line"
+      >Skip to content</a
+    >
+
+    <header
+      class="sticky top-0 z-40 w-full border-b border-line"
+      style="background: color-mix(in srgb, var(--paper) 82%, transparent); backdrop-filter: saturate(150%) blur(14px);"
+    >
+      <div class="mx-auto w-full max-w-[var(--maxw)] px-5 sm:px-7 h-16 flex items-center justify-between">
+        <a href="/" class="flex items-center gap-2.5" aria-label="Tessera home">
+          <Wordmark />
+        </a>
+        <nav class="flex items-center gap-1 sm:gap-2 text-sm" style="color: var(--ink-soft)">
+          <a href="/#features" class="hidden sm:inline px-3 py-2 rounded-lg hover:text-ink transition-colors">Features</a>
+          <a href="/#trust" class="hidden sm:inline px-3 py-2 rounded-lg hover:text-ink transition-colors">Trust</a>
+          <a href="/support" class="px-3 py-2 rounded-lg hover:text-ink transition-colors">Support</a>
+          <a href={repo} class="px-3 py-2 rounded-lg hover:text-ink transition-colors" rel="noopener">Source</a>
+          <button
+            id="theme-toggle"
+            type="button"
+            class="ml-1 grid place-items-center w-9 h-9 rounded-lg border border-line hover:border-[var(--gold)] transition-colors"
+            aria-label="Toggle color theme"
+          >
+            <svg class="theme-sun w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.4 1.4M17.6 17.6 19 19M5 19l1.4-1.4M17.6 6.4 19 5" />
+            </svg>
+            <svg class="theme-moon w-[18px] h-[18px] hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" />
+            </svg>
+          </button>
+        </nav>
+      </div>
     </header>
 
-    <main class="max-w-3xl mx-auto w-full px-6 flex-1">
+    <main id="main" class="flex-1 w-full">
       <slot />
     </main>
 
-    <footer class="max-w-3xl mx-auto w-full px-6 py-10 mt-16 text-sm border-t" style="border-color: var(--color-line); color: var(--color-ink-soft)">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <span>© {year} Tessera · Apache-2.0 · open source</span>
-        <span class="flex gap-4">
-          <a href="/privacy" class="hover:text-[var(--color-ink)]">Privacy</a>
-          <a href="/support" class="hover:text-[var(--color-ink)]">Support</a>
-        </span>
+    <footer class="border-t border-line mt-24">
+      <div class="mx-auto w-full max-w-[var(--maxw)] px-5 sm:px-7 py-12">
+        <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-8">
+          <div class="max-w-sm">
+            <Wordmark />
+            <p class="mt-3 text-sm leading-relaxed" style="color: var(--ink-soft)">
+              Two-factor codes you actually own.
+            </p>
+          </div>
+          <nav class="grid grid-cols-2 gap-x-12 gap-y-2 text-sm" style="color: var(--ink-soft)">
+            <a href="/#get" class="py-1 hover:text-ink transition-colors">Get Tessera</a>
+            <a href={repo} class="py-1 hover:text-ink transition-colors" rel="noopener">Source code</a>
+            <a href="/support" class="py-1 hover:text-ink transition-colors">Support</a>
+            <a href="/privacy" class="py-1 hover:text-ink transition-colors">Privacy</a>
+            <a href="mailto:support@ibrahemid.com" class="py-1 hover:text-ink transition-colors">Contact</a>
+            <a href={repo + "/blob/main/LICENSE"} class="py-1 hover:text-ink transition-colors" rel="noopener">License</a>
+          </nav>
+        </div>
+        <div class="mt-10 pt-6 border-t border-line flex flex-wrap items-center justify-between gap-3 text-xs" style="color: var(--ink-faint)">
+          <span class="mono">© {year} Tessera · Apache-2.0</span>
+          <span class="mono">No accounts · No servers · No tracking</span>
+        </div>
       </div>
     </footer>
+
+    <script is:inline>
+      (() => {
+        const btn = document.getElementById("theme-toggle");
+        const root = document.documentElement;
+        const sun = btn?.querySelector(".theme-sun");
+        const moon = btn?.querySelector(".theme-moon");
+        const sync = () => {
+          const dark = root.classList.contains("dark");
+          sun?.classList.toggle("hidden", dark);
+          moon?.classList.toggle("hidden", !dark);
+        };
+        sync();
+        btn?.addEventListener("click", () => {
+          const dark = root.classList.toggle("dark");
+          try { localStorage.setItem("tessera-theme", dark ? "dark" : "light"); } catch (_) {}
+          sync();
+        });
+      })();
+    </script>
   </body>
 </html>

@@ -1,32 +1,19 @@
 import XCTest
 
-/// Drives the real windowed app through the flows that were broken in the
-/// status-bar-only version: the window opens, onboarding + recovery work, the
-/// Add sheet opens without dismissing the app, import works, and Settings opens.
+/// Drives the real windowed app: first launch opens straight into an empty vault
+/// with no prompts, the Add sheet opens without dismissing the app, import works,
+/// and Settings opens.
 final class FlowUITests: XCTestCase {
-    func testOnboardingAddAndSettings() throws {
+    func testLaunchAddAndSettings() throws {
         let app = XCUIApplication()
         app.launchArguments += ["-uitest"]
         app.launchEnvironment["TESSERA_VAULT"] =
             NSTemporaryDirectory() + "tessera-uitest-\(UUID().uuidString)/vault.json"
         app.launch()
 
-        // A real window opens with onboarding.
-        let create = app.buttons["Create vault"]
-        XCTAssertTrue(create.waitForExistence(timeout: 15), "onboarding window did not appear")
-        create.click()
-
-        // Recovery key screen — must save before continuing.
-        let cont = app.buttons["Continue"]
-        XCTAssertTrue(cont.waitForExistence(timeout: 8), "recovery key screen missing")
-        let toggle = app.checkBoxes.firstMatch
-        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
-        toggle.click()
-        cont.click()
-
-        // Vault, empty state.
+        // First launch goes straight to the empty vault (no onboarding, no prompts).
         let addAccount = app.buttons["Add account"]
-        XCTAssertTrue(addAccount.waitForExistence(timeout: 8), "vault empty state missing")
+        XCTAssertTrue(addAccount.waitForExistence(timeout: 15), "vault empty state did not appear")
         addAccount.click()
 
         // Add sheet appears AND the app stays alive (the old dismiss bug).
@@ -42,8 +29,6 @@ final class FlowUITests: XCTestCase {
 
         // Settings opens in its own window without killing the app.
         app.typeKey(",", modifierFlags: .command)
-        let settingsShown = app.staticTexts["Theme"].waitForExistence(timeout: 8)
-            || app.checkBoxes["Show in menu bar"].waitForExistence(timeout: 3)
-        XCTAssertTrue(settingsShown, "settings did not open")
+        XCTAssertTrue(app.staticTexts["Theme"].waitForExistence(timeout: 8), "settings did not open")
     }
 }

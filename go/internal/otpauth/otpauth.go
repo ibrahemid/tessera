@@ -28,6 +28,8 @@ func Parse(uri string) (account.Account, error) {
 		a.Type = account.TOTP
 	case "hotp":
 		a.Type = account.HOTP
+	case "steam":
+		a.Type = account.Steam
 	default:
 		return a, fmt.Errorf("otpauth: unsupported type %q", u.Host)
 	}
@@ -62,6 +64,11 @@ func Parse(uri string) (account.Account, error) {
 		a.Issuer = iss
 	}
 
+	// Steam heuristic: issuer "Steam" with a TOTP type is treated as Steam.
+	if a.Type == account.TOTP && strings.EqualFold(a.Issuer, "Steam") {
+		a.Type = account.Steam
+	}
+
 	a.Algorithm = "SHA1"
 	if alg := q.Get("algorithm"); alg != "" {
 		switch strings.ToUpper(alg) {
@@ -73,9 +80,16 @@ func Parse(uri string) (account.Account, error) {
 	}
 
 	a.Digits = 6
+	if a.Type == account.Steam {
+		a.Digits = 5
+	}
 	if d := q.Get("digits"); d != "" {
 		n, err := strconv.Atoi(d)
-		if err != nil || n < 6 || n > 8 {
+		bad := err != nil || n < 6 || n > 8
+		if a.Type == account.Steam {
+			bad = err != nil || n != 5
+		}
+		if bad {
 			return a, fmt.Errorf("otpauth: invalid digits %q", d)
 		}
 		a.Digits = n
@@ -102,18 +116,17 @@ func Parse(uri string) (account.Account, error) {
 		a.Counter = n
 	}
 
-	// Steam heuristic: issuer "Steam" with a TOTP type is treated as Steam.
-	if a.Type == account.TOTP && strings.EqualFold(a.Issuer, "Steam") {
-		a.Type = account.Steam
-	}
 	return a, nil
 }
 
 // Format emits an otpauth:// URI for the account (secret base32, no padding).
 func Format(a account.Account) string {
 	typ := "totp"
-	if a.Type == account.HOTP {
+	switch a.Type {
+	case account.HOTP:
 		typ = "hotp"
+	case account.Steam:
+		typ = "steam"
 	}
 	label := a.Account
 	if a.Issuer != "" {
@@ -127,7 +140,9 @@ func Format(a account.Account) string {
 	if a.Algorithm != "" && a.Algorithm != "SHA1" {
 		v.Set("algorithm", a.Algorithm)
 	}
-	if a.Digits != 0 && a.Digits != 6 {
+	if a.Type == account.Steam {
+		v.Set("digits", "5")
+	} else if a.Digits != 0 && a.Digits != 6 {
 		v.Set("digits", strconv.Itoa(a.Digits))
 	}
 	if a.Type != account.HOTP && a.Period != 0 && a.Period != 30 {

@@ -31,6 +31,7 @@ var (
 	ErrUnsupportedVersion = errors.New("vault: unsupported version")
 	ErrUnsupportedAEAD    = errors.New("vault: unsupported aead")
 	ErrNoPassphraseWrap   = errors.New("vault: no passphrase wrap present")
+	ErrAppOnlyVault       = errors.New("vault: openable only by the Tessera app on the Mac that created it (Secure Enclave); use the app's Settings > Export encrypted backup for a file the CLI can open")
 	ErrWrongPassphrase    = errors.New("vault: wrong passphrase or corrupt vault")
 	ErrCorrupt            = errors.New("vault: corrupt or tampered vault")
 )
@@ -192,6 +193,11 @@ func (e *Envelope) unwrapWithPassphrase(passphrase string) ([]byte, error) {
 		}
 	}
 	if !found {
+		for _, w := range e.Wraps {
+			if w.Type == "secure-enclave" {
+				return nil, ErrAppOnlyVault
+			}
+		}
 		return nil, ErrNoPassphraseWrap
 	}
 	return nil, ErrWrongPassphrase

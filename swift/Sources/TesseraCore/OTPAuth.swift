@@ -13,6 +13,7 @@ public enum OTPAuth {
         switch host {
         case "totp": type = .totp
         case "hotp": type = .hotp
+        case "steam": type = .steam
         default: throw AccountError.invalid("unsupported type \(host)")
         }
 
@@ -42,18 +43,25 @@ public enum OTPAuth {
             issuer = iss
         }
 
+        // Steam heuristic: issuer "Steam" with a TOTP type is treated as Steam.
+        if type == .totp && issuer.lowercased() == "steam" {
+            type = .steam
+        }
+
         var algorithm = "SHA1"
         if let alg = q("algorithm"), !alg.isEmpty {
             algorithm = try OTP.Algorithm.parse(alg).rawValue
         }
-        var digits = 6
-        if let d = q("digits"), let n = Int(d) {
-            if n < 6 || n > 8 { throw AccountError.invalid("invalid digits") }
-            digits = n
+        var digits = type == .steam ? 5 : 6
+        if let d = q("digits"), !d.isEmpty {
+            let n = Int(d)
+            let bad = type == .steam ? (n != 5) : (n == nil || n! < 6 || n! > 8)
+            if bad { throw AccountError.invalid("invalid digits") }
+            digits = n!
         }
         var period = 30
-        if let p = q("period"), let n = Int(p) {
-            if n <= 0 { throw AccountError.invalid("invalid period") }
+        if let p = q("period"), !p.isEmpty {
+            guard let n = Int(p), n > 0 else { throw AccountError.invalid("invalid period") }
             period = n
         }
         var counter: Int64 = 0
@@ -64,15 +72,17 @@ public enum OTPAuth {
             counter = n
         }
 
-        if type == .totp && issuer.lowercased() == "steam" {
-            type = .steam
-        }
         return Account(id: "", type: type, issuer: issuer, account: account, secret: secret,
                        algorithm: algorithm, digits: digits, period: period, counter: counter)
     }
 
     public static func format(_ a: Account) -> String {
-        let typ = a.type == .hotp ? "hotp" : "totp"
+        let typ: String
+        switch a.type {
+        case .hotp: typ = "hotp"
+        case .steam: typ = "steam"
+        default: typ = "totp"
+        }
         let label = a.issuer.isEmpty ? a.account : "\(a.issuer):\(a.account)"
         var comps = URLComponents()
         comps.scheme = "otpauth"
@@ -81,7 +91,11 @@ public enum OTPAuth {
         var items: [URLQueryItem] = [URLQueryItem(name: "secret", value: Base32.encodeNoPad(a.secret))]
         if !a.issuer.isEmpty { items.append(URLQueryItem(name: "issuer", value: a.issuer)) }
         if a.algorithm != "SHA1" { items.append(URLQueryItem(name: "algorithm", value: a.algorithm)) }
-        if a.digits != 6 { items.append(URLQueryItem(name: "digits", value: String(a.digits))) }
+        if a.type == .steam {
+            items.append(URLQueryItem(name: "digits", value: "5"))
+        } else if a.digits != 6 {
+            items.append(URLQueryItem(name: "digits", value: String(a.digits)))
+        }
         if a.type != .hotp && a.period != 30 { items.append(URLQueryItem(name: "period", value: String(a.period))) }
         if a.type == .hotp { items.append(URLQueryItem(name: "counter", value: String(a.counter))) }
         comps.queryItems = items

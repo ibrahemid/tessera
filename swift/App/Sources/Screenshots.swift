@@ -19,10 +19,6 @@ enum Screenshots {
             ("vault", AnyView(RootView().environmentObject(AppModel(demo: .populated)))),
             ("empty", AnyView(RootView().environmentObject(AppModel(demo: .empty)))),
             ("locked", AnyView(RootView().environmentObject(AppModel(demo: .locked)))),
-            ("create", AnyView(RootView().environmentObject(AppModel(demo: .fresh)))),
-            ("recovery", AnyView(RecoveryKeyView(recoveryKey: "K7Q2-9FM4-3XT8-PD5R-WL6N-2HJ4-8YBC-VQ7M")
-                .environmentObject(AppModel(demo: .fresh)).frame(width: Metrics.windowWidth, height: Metrics.windowHeight)
-                .background(Palette.background))),
             ("add", AnyView(AddAccountView().environmentObject(AppModel(demo: .populated)).background(Palette.background))),
             ("settings", AnyView(SettingsView().environmentObject(AppModel(demo: .populated)))),
         ]
@@ -38,11 +34,8 @@ enum Screenshots {
     private static func render(_ view: some View, to path: String) {
         let renderer = ImageRenderer(content: view)
         renderer.scale = 2
-        guard let img = renderer.nsImage,
-              let tiff = img.tiffRepresentation,
-              let rep = NSBitmapImageRep(data: tiff),
-              let png = rep.representation(using: .png, properties: [:]) else { return }
-        try? png.write(to: URL(fileURLWithPath: path))
+        guard let img = renderer.nsImage else { return }
+        try? QRImage.writePNG(img, to: URL(fileURLWithPath: path))
     }
 }
 
@@ -56,13 +49,13 @@ private struct RowsPreview: View {
             ForEach(Array(accts.prefix(2).enumerated()), id: \.element.id) { i, a in
                 AccountRowView(account: a, remaining: remaining[i],
                                code: sampleCode(a), copied: i == 0,
-                               reduceMotion: false, onCopy: {}, onPin: {}, onDelete: {}, onAdvance: {})
+                               reduceMotion: false, onCopy: {}, onAdvance: {})
             }
             SectionLabel("All").padding(.top, 4)
             ForEach(Array(accts.dropFirst(2).enumerated()), id: \.element.id) { i, a in
                 AccountRowView(account: a, remaining: remaining[i + 2],
                                code: sampleCode(a), copied: false,
-                               reduceMotion: false, onCopy: {}, onPin: {}, onDelete: {}, onAdvance: {})
+                               reduceMotion: false, onCopy: {}, onAdvance: {})
             }
         }
         .padding(Metrics.pad)
@@ -104,9 +97,41 @@ enum SelfTest {
     }
 }
 
+/// Verifies the default daily-unlock path: a non-biometric Secure Enclave wrap
+/// must open with NO Touch ID prompt. `Tessera --selftest-se` prints PASS/FAIL
+/// (or SKIP on SE-less Macs). A PASS with no biometric dialog confirms silent
+/// open. Run from the signed app (SE needs entitlements).
+@MainActor
+enum SelfTestSE {
+    static func runIfRequested() -> Bool {
+        guard CommandLine.arguments.contains("--selftest-se") else { return false }
+        guard SecureEnclaveWrap.isAvailable else { print("SELFTEST-SE SKIP: no Secure Enclave"); exit(0) }
+        do {
+            let acct = Account(id: "t1", type: .totp, issuer: "SelfTest", account: "x",
+                               secret: Data("12345678901234567890".utf8), algorithm: "SHA1",
+                               digits: 6, period: 30)
+            let made = try Envelope.createUnwrapped(accounts: [acct])
+            var env = made.0
+            try SecureEnclaveWrap.enable(on: &env, dek: made.1, requireBiometrics: false)
+            let dek = try SecureEnclaveWrap.open(env, reason: "Tessera self-test")
+            let got = try env.open(dek: dek)
+            if got.count == 1 && got[0].issuer == "SelfTest" {
+                print("SELFTEST-SE PASS: non-biometric SE wrap opened silently")
+                exit(0)
+            }
+            print("SELFTEST-SE FAIL: unexpected accounts \(got)")
+            exit(1)
+        } catch {
+            print("SELFTEST-SE FAIL: \(error)")
+            exit(1)
+        }
+    }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         if SelfTest.runIfRequested() { return }
+        if SelfTestSE.runIfRequested() { return }
         if MarketingShot.runIfRequested() {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { NSApp.terminate(nil) }
             return

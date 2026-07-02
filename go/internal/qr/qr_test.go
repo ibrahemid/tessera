@@ -44,6 +44,34 @@ func TestDecodeFile(t *testing.T) {
 	}
 }
 
+func TestEncodePNGRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "out.png")
+	if err := EncodePNG(testURI, path, 512); err != nil {
+		t.Fatalf("EncodePNG: %v", err)
+	}
+	got, err := DecodeFile(path)
+	if err != nil {
+		t.Fatalf("DecodeFile: %v", err)
+	}
+	if got != testURI {
+		t.Fatalf("round-trip mismatch:\n got %q\nwant %q", got, testURI)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Fatalf("QR PNG mode = %o, want 600 (cleartext secret)", perm)
+	}
+}
+
+func TestEncodePNGEmpty(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "empty.png")
+	if err := EncodePNG("", path, 512); err == nil {
+		t.Fatal("expected error for empty payload, got nil")
+	}
+}
+
 func TestDecodeFileNoQR(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "blank.png")
 	img := image.NewRGBA(image.Rect(0, 0, 10, 10))

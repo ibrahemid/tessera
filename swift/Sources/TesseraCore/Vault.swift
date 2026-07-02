@@ -114,6 +114,20 @@ public struct Envelope: Codable, Sendable {
                                           ct: payloadCT.base64EncodedString()))
     }
 
+    /// Create an envelope with a fresh DEK and no wraps, returning the DEK so the
+    /// caller can attach a platform wrap (e.g. Secure Enclave) before saving. The
+    /// returned envelope is transient until at least one wrap is added.
+    public static func createUnwrapped(accounts: [Account]) throws -> (Envelope, Data) {
+        for a in accounts { try a.validate() }
+        let dek = randomBytes(32)
+        let nonce = randomBytes(XChaCha.nonceSize)
+        let ct = try XChaCha.seal(CanonicalJSON.encode(accounts), key: dek, nonce: nonce)
+        let env = Envelope(version: 1, aead: "xchacha20poly1305", wraps: [],
+                           payload: VaultBox(nonce: nonce.base64EncodedString(),
+                                             ct: ct.base64EncodedString()))
+        return (env, dek)
+    }
+
     /// Recover the raw DEK via a passphrase wrap (for re-sealing the payload).
     public func recoverDEK(passphrase: String, argon2: Argon2idProvider) throws -> Data {
         try unwrap(passphrase: passphrase, argon2: argon2)

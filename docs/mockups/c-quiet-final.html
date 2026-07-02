@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tessera — Quiet (final) · Window ⇄ Compact</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#101218;--bg-2:#161922;--sidebar:#0c0e13;--row:#181b24;--row-hi:#1e222d;
+  --line:#242936;--text:#eef0f5;--text-2:#969cad;--faint:#5f6678;
+  --gold:#e3b23c;--gold-soft:rgba(227,178,60,.14);--warn:#f97316;
+  --disp:"Inter Tight",-apple-system,system-ui,sans-serif;
+  --body:"Inter",-apple-system,system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;font-family:var(--body);color:var(--text);
+  background:radial-gradient(120% 90% at 50% -20%,#1c2030 0%,#0c0e14 60%);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;
+  padding:36px;min-height:100vh;-webkit-font-smoothing:antialiased}
+.head{width:100%;max-width:980px;display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+.head h1{font-family:var(--disp);font-size:16px;margin:0;font-weight:700}
+.head h1 b{color:var(--gold)}
+.head p{margin:0;color:var(--text-2);font-size:13px}
+.head .hint{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--gold);display:flex;align-items:center;gap:7px}
+.head .hint svg{width:14px;height:14px}
+
+/* window shell — width animates between modes */
+.shell{display:flex;justify-content:center;width:100%;min-height:640px;align-items:flex-start}
+.win{
+  width:960px;background:var(--bg);border-radius:14px;overflow:hidden;border:1px solid #05070b;
+  box-shadow:0 1px 0 rgba(255,255,255,.04) inset,0 40px 90px -32px rgba(0,0,0,.8),0 0 0 1px rgba(0,0,0,.4);
+  display:grid;grid-template-rows:auto 1fr;height:640px;
+  transition:width .42s cubic-bezier(.4,0,.2,1);
+}
+.win.compact{width:480px}
+@media(prefers-reduced-motion:reduce){.win{transition:none}}
+
+/* titlebar */
+.bar{display:flex;align-items:center;gap:10px;height:54px;padding:0 14px;background:linear-gradient(#171a23,#12151d);border-bottom:1px solid var(--line)}
+.lights{display:flex;gap:8px}
+.lights i{width:12px;height:12px;border-radius:50%;display:block}
+.lights .r{background:#ff5f57}.lights .y{background:#febc2e}.lights .g{background:#28c840}
+.modetoggle{display:inline-flex;background:#0c0e14;border:1px solid var(--line);border-radius:9px;padding:2px;gap:2px;margin-left:4px}
+.modetoggle button{display:flex;align-items:center;gap:6px;height:26px;padding:0 10px;border:0;background:transparent;color:var(--text-2);font-family:var(--body);font-size:12px;font-weight:500;border-radius:7px;cursor:pointer;transition:.12s}
+.modetoggle button svg{width:14px;height:14px}
+.modetoggle button.on{background:var(--gold-soft);color:var(--gold);font-weight:600}
+.search{flex:1;min-width:0;max-width:330px;margin:0 auto;display:flex;align-items:center;gap:9px;height:34px;padding:0 13px;background:#0c0e14;border:1px solid var(--line);border-radius:9px;color:var(--faint);font-size:13px}
+.search svg{width:15px;height:15px;flex:none}
+.actions{display:flex;gap:6px;flex:none}
+.win.compact .modetoggle .lbl{display:none}
+.win.compact .modetoggle button{padding:0 8px}
+.win.compact .search{max-width:none}
+.ib{width:32px;height:32px;display:grid;place-items:center;border-radius:8px;border:1px solid transparent;background:transparent;color:var(--text-2);cursor:pointer;transition:.12s}
+.ib:hover{background:var(--row-hi);color:var(--text)}
+.ib.solid{background:var(--gold-soft);color:var(--gold);border-color:rgba(227,178,60,.25)}
+.ib.solid:hover{background:rgba(227,178,60,.22)}
+.ib svg{width:17px;height:17px}
+
+.body{display:grid;grid-template-columns:212px 1fr;min-height:0}
+.win.compact .body{grid-template-columns:1fr}
+
+/* sidebar (window mode) */
+.side{background:var(--sidebar);border-right:1px solid var(--line);padding:16px 12px;display:flex;flex-direction:column}
+.win.compact .side{display:none}
+.nav{display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;color:var(--text-2);font-size:13.5px;font-weight:500;cursor:pointer;transition:.12s}
+.nav svg{width:17px;height:17px;opacity:.9}
+.nav .ct{margin-left:auto;font-size:11.5px;color:var(--faint);font-family:var(--mono)}
+.nav:hover{background:var(--row-hi);color:var(--text)}
+.nav.on{background:var(--gold-soft);color:var(--gold)}.nav.on .ct{color:var(--gold)}
+.navlbl{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);padding:16px 11px 8px;font-weight:600}
+.side .spacer{flex:1}
+.wordmark{display:flex;align-items:center;gap:9px;padding:10px 11px;color:var(--text-2)}
+.mark{display:grid;grid-template-columns:1fr 1fr;gap:2.5px;width:19px;height:19px}
+.mark i{border-radius:4px;background:#33384a}.mark i:first-child{background:var(--gold)}
+.wordmark b{font-family:var(--disp);font-weight:700;font-size:14px;color:var(--text)}
+.wordmark .v{font-family:var(--mono);font-size:10px;color:var(--faint);margin-left:auto}
+
+/* compact filter bar (compact mode only) — keeps filters visible, not buried */
+.cfilter{display:none;align-items:center;gap:8px;padding:11px 14px 4px}
+.win.compact .cfilter{display:flex}
+.pill{display:inline-flex;background:#0c0e14;border:1px solid var(--line);border-radius:9px;padding:2px}
+.pill span{padding:5px 13px;border-radius:7px;font-size:12.5px;font-weight:500;color:var(--text-2);cursor:pointer}
+.pill span.on{background:var(--gold-soft);color:var(--gold);font-weight:600}
+.cfilter .drop{margin-left:auto;display:flex;align-items:center;gap:6px;height:30px;padding:0 11px;background:#0c0e14;border:1px solid var(--line);border-radius:9px;color:var(--text-2);font-size:12.5px;cursor:pointer;position:relative}
+.cfilter .drop svg{width:13px;height:13px;opacity:.7}
+.dropmenu{position:absolute;top:36px;right:0;background:var(--bg-2);border:1px solid var(--line);border-radius:10px;padding:5px;min-width:150px;z-index:6;box-shadow:0 16px 36px -18px rgba(0,0,0,.8)}
+.dropmenu div{padding:8px 10px;border-radius:7px;font-size:12.5px;color:var(--text-2);cursor:pointer;display:flex;align-items:center;gap:8px}
+.dropmenu div:hover{background:var(--row-hi);color:var(--text)}
+.dropmenu .ct{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--faint)}
+
+.main{overflow:auto;padding:14px 18px 18px}
+.win.compact .main{padding:6px 12px 14px}
+.seclbl{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:600;padding:10px 8px 8px;display:flex;align-items:center;gap:8px}
+.seclbl svg{width:12px;height:12px;color:var(--gold)}
+.win.compact .seclbl{padding:10px 6px 6px}
+.rows{display:grid;gap:4px;margin-bottom:6px}
+
+.row{display:flex;align-items:center;gap:16px;padding:14px 16px;border-radius:13px;cursor:pointer;background:transparent;border:1px solid transparent;transition:background .12s,border-color .12s}
+.row:hover{background:var(--row);border-color:var(--line)}
+.win.compact .row{gap:12px;padding:11px 12px;border-radius:11px}
+.glyph{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;color:#fff;font-family:var(--disp);font-weight:700;font-size:17px;flex:none;transition:.2s}
+.win.compact .glyph{width:36px;height:36px;font-size:15px;border-radius:10px}
+.who{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.who .i{font-family:var(--disp);font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.who .a{font-size:12px;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.win.compact .who .i{font-size:14px}.win.compact .who .a{font-size:11px;font-family:var(--mono)}
+.code{font-family:var(--mono);font-size:27px;font-weight:600;letter-spacing:.04em;color:var(--text);font-variant-numeric:tabular-nums;transition:.2s}
+.win.compact .code{font-size:22px}
+.row.copied .code{color:var(--gold)}
+.timer{display:flex;align-items:center;gap:10px;width:96px;justify-content:flex-end}
+.win.compact .timer{width:auto}
+.ring{width:30px;height:30px;transform:rotate(-90deg)}
+.win.compact .ring{width:26px;height:26px}
+.ring circle{fill:none;stroke-width:2.6}
+.ring .trk{stroke:var(--line)}.ring .val{stroke:var(--gold);stroke-linecap:round;transition:stroke-dashoffset .25s linear}
+.row.warn .ring .val{stroke:var(--warn)}
+.ringn{position:relative}
+.ringtxt{position:absolute;inset:0;display:grid;place-items:center;font-family:var(--mono);font-size:10px;color:var(--text-2);font-variant-numeric:tabular-nums}
+.row.warn .ringtxt{color:var(--warn)}
+.act{display:flex;gap:2px;opacity:0;transition:opacity .12s}
+.row:hover .act{opacity:1}
+.win.compact .act{display:none}
+.act button{width:30px;height:30px;display:grid;place-items:center;border:0;background:transparent;color:var(--faint);border-radius:7px;cursor:pointer}
+.act button:hover{background:var(--row-hi);color:var(--text)}
+.act svg{width:15px;height:15px}
+.copyflag{font-family:var(--mono);font-size:11px;color:transparent;width:0;transition:.12s}
+.row.copied .copyflag{color:var(--gold)}
+.hotpbtn{display:grid;place-items:center;width:30px;height:30px;color:var(--text-2)}
+.hotpbtn svg{width:16px;height:16px}
+
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px;border-radius:8px}
+@media(prefers-reduced-motion:reduce){*{animation:none!important}.win,.glyph,.code{transition:none!important}}
+</style>
+</head>
+<body>
+  <div class="head">
+    <h1>Quiet · <b>final</b></h1>
+    <p>One app, two densities. The roomy window is the home base; Compact narrows it to a menu-bar-friendly size with the sidebar folded into a filter row — denser, still legible, every option in reach.</p>
+    <span class="hint"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l-4 6 4 6M15 6l4 6-4 6"/></svg> click Window / Compact in the toolbar</span>
+  </div>
+
+  <div class="shell">
+    <div class="win" id="win">
+      <div class="bar">
+        <div class="lights"><i class="r"></i><i class="y"></i><i class="g"></i></div>
+        <div class="modetoggle" role="tablist" aria-label="Window density">
+          <button id="mWindow" class="on" aria-selected="true" title="Window"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg> <span class="lbl">Window</span></button>
+          <button id="mCompact" aria-selected="false" title="Compact"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="3" width="12" height="18" rx="2.5"/></svg> <span class="lbl">Compact</span></button>
+        </div>
+        <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg> Search</div>
+        <div class="actions">
+          <button class="ib solid" title="Add account"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+          <button class="ib" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9 2 2 0 1 1-2.7 2.7 1.7 1.7 0 0 0-2.9 1.2 2 2 0 1 1-4 0 1.7 1.7 0 0 0-2.9-1.2 2 2 0 1 1-2.7-2.7 1.7 1.7 0 0 0 0-2.4 2 2 0 1 1 2.7-2.7 1.7 1.7 0 0 0 1.2-1.5 2 2 0 1 1 4 0 1.7 1.7 0 0 0 2.9 1.2 2 2 0 1 1 2.7 2.7 1.7 1.7 0 0 0-.3 2.7z"/></svg></button>
+          <button class="ib" title="Lock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></button>
+        </div>
+      </div>
+
+      <div class="body">
+        <aside class="side">
+          <div class="nav on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg> All <span class="ct">6</span></div>
+          <div class="nav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l2.6 5.3 5.9.9-4.2 4.1 1 5.9L12 17.8 6.7 19.2l1-5.9L3.5 9.2l5.9-.9z"/></svg> Pinned <span class="ct">2</span></div>
+          <div class="navlbl">Folders</div>
+          <div class="nav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> Work <span class="ct">3</span></div>
+          <div class="nav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> Personal <span class="ct">3</span></div>
+          <div class="spacer"></div>
+          <div class="wordmark"><span class="mark"><i></i><i></i><i></i><i></i></span><b>Tessera</b><span class="v">1.0</span></div>
+        </aside>
+
+        <main class="main">
+          <div class="cfilter">
+            <div class="pill"><span class="on">All</span><span>Pinned</span></div>
+            <div class="drop" data-drop>Folders <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M6 9l6 6 6-6"/></svg>
+              <div class="dropmenu" hidden><div>Work <span class="ct">3</span></div><div>Personal <span class="ct">3</span></div></div>
+            </div>
+          </div>
+          <div class="seclbl"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l2.6 5.3 5.9.9-4.2 4.1 1 5.9L12 17.8 6.7 19.2l1-5.9L3.5 9.2l5.9-.9z"/></svg> Pinned</div>
+          <div class="rows" id="pinned"></div>
+          <div class="seclbl">All accounts</div>
+          <div class="rows" id="all"></div>
+        </main>
+      </div>
+    </div>
+  </div>
+
+<script>
+const ACCOUNTS=[
+  {iss:"GitHub",acc:"ibrahem",hue:"#4F5BB0",code:"482913",off:3,pin:1},
+  {iss:"Cloudflare",acc:"ibra@ibrahemid.com",hue:"#B5562E",code:"067421",off:11,pin:1},
+  {iss:"Google",acc:"you@gmail.com",hue:"#3B6FB0",code:"559028",off:21},
+  {iss:"Steam",acc:"ibrahem",hue:"#2A8C7E",code:"4K7QF",steam:1,off:7},
+  {iss:"AWS",acc:"root",hue:"#B08A2E",code:"318740",off:17},
+  {iss:"Bank",acc:"•••• 4291",hue:"#3E7D4F",code:"902556",hotp:1},
+];
+const grp=c=>c.length===5?c:c.replace(/(\d{3})(\d{3})/,"$1 $2");
+const R=13,C=2*Math.PI*R;
+function rowHTML(a){
+  const timer=a.hotp
+    ? `<span class="hotpbtn" title="counter-based — tap to advance"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg></span>`
+    : `<span class="ringn"><svg class="ring" viewBox="0 0 32 32"><circle class="trk" cx="16" cy="16" r="${R}"/><circle class="val" cx="16" cy="16" r="${R}" stroke-dasharray="${C}" stroke-dashoffset="0"/></svg><span class="ringtxt"></span></span>`;
+  return `<div class="row" data-off="${a.off||0}" data-hotp="${a.hotp?1:0}" tabindex="0">
+    <span class="glyph" style="background:${a.hue}">${a.iss[0]}</span>
+    <span class="who"><span class="i">${a.iss}</span><span class="a">${a.acc}</span></span>
+    <span class="copyflag">copied</span>
+    <span class="code">${grp(a.code)}</span>
+    <span class="timer">${timer}</span>
+    <span class="act">
+      <button title="Pin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l2.6 5.3 5.9.9-4.2 4.1 1 5.9L12 17.8 6.7 19.2l1-5.9L3.5 9.2l5.9-.9z"/></svg></button>
+      <button title="QR"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 21v.01M17 21h.01M21 17h.01"/></svg></button>
+    </span>
+  </div>`;
+}
+const pinned=document.getElementById('pinned'), all=document.getElementById('all');
+ACCOUNTS.forEach(a=>{(a.pin?pinned:all).insertAdjacentHTML('beforeend',rowHTML(a));});
+
+function tick(){
+  const t=Date.now()/1000,p=30;
+  document.querySelectorAll('.row').forEach(r=>{
+    if(r.dataset.hotp==="1")return;
+    const off=+r.dataset.off, rem=p-((t+off)%p), frac=rem/p;
+    const val=r.querySelector('.ring .val'), txt=r.querySelector('.ringtxt');
+    if(val) val.style.strokeDashoffset=(C*(1-frac)).toFixed(2);
+    if(txt) txt.textContent=Math.ceil(rem);
+    r.classList.toggle('warn',rem<=5);
+  });
+}
+tick();setInterval(tick,250);
+
+document.querySelectorAll('.row').forEach(r=>{
+  const fire=()=>{r.classList.add('copied');setTimeout(()=>r.classList.remove('copied'),1300);};
+  r.addEventListener('click',e=>{if(e.target.closest('.act button'))return;fire();});
+  r.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();fire();}});
+});
+
+// mode toggle
+const win=document.getElementById('win'),mW=document.getElementById('mWindow'),mC=document.getElementById('mCompact');
+function setMode(compact){
+  win.classList.toggle('compact',compact);
+  mC.classList.toggle('on',compact);mW.classList.toggle('on',!compact);
+  mC.setAttribute('aria-selected',compact);mW.setAttribute('aria-selected',!compact);
+}
+mW.addEventListener('click',()=>setMode(false));
+mC.addEventListener('click',()=>setMode(true));
+if(location.hash==='#compact') setMode(true);
+
+// filter interactions
+document.querySelectorAll('.pill span').forEach(s=>s.addEventListener('click',()=>{
+  s.parentElement.querySelectorAll('span').forEach(x=>x.classList.remove('on'));s.classList.add('on');}));
+document.querySelectorAll('[data-drop]').forEach(d=>d.addEventListener('click',e=>{
+  e.stopPropagation();const m=d.querySelector('.dropmenu');m.hidden=!m.hidden;}));
+document.addEventListener('click',()=>document.querySelectorAll('.dropmenu').forEach(m=>m.hidden=true));
+</script>
+</body>
+</html>

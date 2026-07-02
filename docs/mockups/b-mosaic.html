@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tessera — Direction B · Mosaic</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --canvas:#eef0f4;
+  --paper:#ffffff;
+  --ink:#191b22;
+  --ink-2:#5d6371;
+  --faint:#9aa0ac;
+  --line:#e3e6ec;
+  --gold:#9a6e1c;
+  --gold-bg:#f4ead2;
+  --warn:#c2410c;
+  --r:16px;
+  --disp:"Space Grotesk",-apple-system,system-ui,sans-serif;
+  --body:"Inter",-apple-system,system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;font-family:var(--body);color:var(--ink);
+  background:
+    radial-gradient(110% 80% at 80% -10%, #dfe3ec 0%, #cfd4e0 45%, #c2c8d6 100%);
+  display:flex;align-items:center;justify-content:center;padding:40px;min-height:100vh;-webkit-font-smoothing:antialiased;
+}
+.stage{width:100%;max-width:1140px;display:grid;gap:26px}
+.dirhead{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;padding:0 4px}
+.dirhead h1{font-family:var(--disp);font-size:16px;letter-spacing:.02em;margin:0;color:#23262f;font-weight:700}
+.dirhead h1 b{color:var(--gold)}
+.dirhead p{margin:0;color:#4a5060;font-size:13px}
+.dirhead .tag{margin-left:auto;font-family:var(--mono);font-size:11px;color:#6a7080;letter-spacing:.06em;background:#fff;border:1px solid var(--line);padding:4px 10px;border-radius:20px}
+
+.win{
+  background:var(--canvas);border-radius:14px;overflow:hidden;
+  box-shadow:0 1px 0 rgba(255,255,255,.6) inset, 0 40px 90px -34px rgba(40,48,70,.55), 0 0 0 1px rgba(40,48,70,.12);
+  display:grid;grid-template-rows:auto 1fr;height:660px;
+}
+.bar{
+  display:flex;align-items:center;gap:14px;height:54px;padding:0 16px;background:var(--paper);border-bottom:1px solid var(--line);
+}
+.lights{display:flex;gap:8px}
+.lights i{width:12px;height:12px;border-radius:50%;display:block}
+.lights .r{background:#ff5f57}.lights .y{background:#febc2e}.lights .g{background:#28c840}
+.title{display:flex;align-items:center;gap:9px;margin-left:6px}
+.mark{display:grid;grid-template-columns:1fr 1fr;gap:2.5px;width:19px;height:19px}
+.mark i{border-radius:3.5px;background:#cfd5e0}.mark i:first-child{background:var(--gold)}
+.title b{font-family:var(--disp);font-weight:700;font-size:15px;letter-spacing:.01em}
+.search{
+  flex:1;max-width:300px;margin:0 auto;display:flex;align-items:center;gap:9px;height:34px;padding:0 13px;
+  background:var(--canvas);border:1px solid var(--line);border-radius:10px;color:var(--faint);font-size:13px;
+}
+.search svg{width:15px;height:15px}
+.actions{display:flex;align-items:center;gap:8px}
+.iconbtn{width:32px;height:32px;display:grid;place-items:center;border-radius:9px;border:1px solid var(--line);background:var(--paper);color:var(--ink-2);cursor:pointer;transition:.12s}
+.iconbtn:hover{background:var(--canvas)}
+.iconbtn svg{width:16px;height:16px}
+.addbtn{
+  display:flex;align-items:center;gap:7px;height:32px;padding:0 15px;border:0;border-radius:9px;cursor:pointer;
+  background:var(--gold);color:#fff;font-family:var(--body);font-weight:600;font-size:13px;transition:.12s;
+  box-shadow:0 2px 6px -1px rgba(154,110,28,.5);
+}
+.addbtn:hover{filter:brightness(1.06)}
+.addbtn svg{width:15px;height:15px}
+
+.scroll{overflow:auto;padding:20px 22px 24px}
+.sectlbl{font-family:var(--disp);font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:4px 2px 12px;display:flex;align-items:center;gap:8px}
+.sectlbl span{flex:1;height:1px;background:var(--line)}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:8px}
+@media(max-width:880px){.grid{grid-template-columns:repeat(2,1fr)}}
+
+.tile{
+  position:relative;background:var(--paper);border:1px solid var(--line);border-radius:var(--r);padding:16px 16px 14px;
+  cursor:pointer;overflow:hidden;transition:transform .12s, box-shadow .12s, border-color .12s;
+  display:grid;gap:13px;
+}
+.tile:hover{transform:translateY(-2px);box-shadow:0 14px 26px -16px rgba(40,48,70,.4);border-color:#d3d8e2}
+.tile::before{content:"";position:absolute;inset:0 auto 0 0;width:4px;background:var(--hue)}
+.thead{display:flex;align-items:center;gap:11px}
+.tg{width:40px;height:40px;border-radius:11px;display:grid;place-items:center;color:#fff;font-family:var(--disp);font-weight:700;font-size:17px;flex:none}
+.tmeta{min-width:0;flex:1}
+.tmeta .i{font-family:var(--disp);font-size:14.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tmeta .a{font-size:11.5px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--mono)}
+.pin{position:absolute;top:13px;right:13px;color:var(--gold);opacity:.9}
+.pin svg{width:14px;height:14px}
+.tcode{font-family:var(--mono);font-size:30px;font-weight:600;letter-spacing:.03em;color:var(--ink);font-variant-numeric:tabular-nums;line-height:1}
+.tile.copied .tcode{color:var(--gold)}
+.tfoot{display:flex;align-items:center;gap:10px}
+.ring{width:22px;height:22px;flex:none;transform:rotate(-90deg)}
+.ring circle{fill:none;stroke-width:3}
+.ring .trk{stroke:var(--line)}
+.ring .val{stroke:var(--hue);stroke-linecap:round;transition:stroke-dashoffset .25s linear}
+.tile.warn .ring .val{stroke:var(--warn)}
+.tsec{font-family:var(--mono);font-size:12px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.tile.warn .tsec{color:var(--warn)}
+.thint{margin-left:auto;font-size:11px;color:var(--faint);font-family:var(--mono);display:flex;align-items:center;gap:5px}
+.tile.copied .thint{color:var(--gold)}
+.thint svg{width:13px;height:13px}
+.kind{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;color:var(--ink-2);background:var(--canvas);border-radius:5px;padding:2px 6px;text-transform:uppercase}
+
+/* add modal */
+.addwrap{display:grid;gap:12px}
+.note{font-size:12.5px;color:#4a5060;padding:0 4px;font-family:var(--mono)}
+.modal{
+  background:var(--paper);border:1px solid var(--line);border-radius:var(--r);max-width:480px;padding:20px;
+  box-shadow:0 30px 70px -34px rgba(40,48,70,.6);
+}
+.modal h3{font-family:var(--disp);margin:0 0 3px;font-size:17px;font-weight:700}
+.modal .s{margin:0 0 14px;color:var(--ink-2);font-size:12.5px}
+.seg-wrap{display:flex;background:var(--canvas);border-radius:10px;padding:3px;gap:3px;margin-bottom:14px}
+.seg{flex:1;text-align:center;padding:7px;border-radius:7px;font-size:13px;font-weight:500;color:var(--ink-2);cursor:pointer;transition:.12s}
+.seg.on{background:var(--paper);color:var(--ink);box-shadow:0 1px 3px rgba(40,48,70,.12);font-weight:600}
+.field{
+  width:100%;background:var(--canvas);border:1px solid var(--line);border-radius:11px;padding:12px 14px;font-family:var(--mono);
+  font-size:12.5px;color:var(--ink-2);min-height:76px;
+}
+.modfoot{display:flex;align-items:center;gap:10px;margin-top:14px}
+.link{color:var(--gold);font-size:12.5px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:7px}
+.link svg{width:14px;height:14px}
+.grow{flex:1}
+.btn-ghost{background:transparent;border:0;color:var(--ink-2);font-size:13px;font-weight:500;cursor:pointer;padding:9px 12px;font-family:var(--body)}
+.btn-primary{background:var(--gold);color:#fff;border:0;border-radius:9px;padding:9px 20px;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--body);box-shadow:0 2px 6px -1px rgba(154,110,28,.5)}
+.btn-primary:active{transform:translateY(1px)}
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="dirhead">
+    <h1>B · <b>Mosaic</b></h1>
+    <p>Each account is a tessera. A glanceable light grid, brand-hued tiles, the countdown drawn as a ring on every tile. Scales to a wall of accounts; tap a tile to copy.</p>
+    <span class="tag">glanceable</span>
+  </div>
+
+  <div class="win">
+    <div class="bar">
+      <div class="lights"><i class="r"></i><i class="y"></i><i class="g"></i></div>
+      <div class="title"><span class="mark"><i></i><i></i><i></i><i></i></span><b>Tessera</b></div>
+      <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg> Search accounts</div>
+      <div class="actions">
+        <button class="iconbtn" title="Lock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></button>
+        <button class="iconbtn" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9 2 2 0 1 1-2.7 2.7 1.7 1.7 0 0 0-2.9 1.2 2 2 0 1 1-4 0 1.7 1.7 0 0 0-2.9-1.2 2 2 0 1 1-2.7-2.7 1.7 1.7 0 0 0 0-2.4 2 2 0 1 1 2.7-2.7 1.7 1.7 0 0 0 1.2-1.5 2 2 0 1 1 4 0 1.7 1.7 0 0 0 2.9 1.2 2 2 0 1 1 2.7 2.7 1.7 1.7 0 0 0-.3 2.7z"/></svg></button>
+        <button class="addbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> Add</button>
+      </div>
+    </div>
+
+    <div class="scroll">
+      <div class="sectlbl">Pinned <span></span></div>
+      <div class="grid" id="pinned"></div>
+      <div class="sectlbl">All accounts <span></span></div>
+      <div class="grid" id="all"></div>
+    </div>
+  </div>
+
+  <div class="addwrap">
+    <div class="note">// Add accounts — clean modal, real segmented control, solid gold primary (no more olive button).</div>
+    <div class="modal">
+      <h3>Add accounts</h3>
+      <p class="s">Paste one or more otpauth or Google Authenticator links, one per line.</p>
+      <div class="seg-wrap"><div class="seg on">Link</div><div class="seg">Manual</div><div class="seg">Scan</div></div>
+      <div class="field">otpauth://…</div>
+      <div class="modfoot">
+        <span class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 3v5h5"/><path d="M5 3h9l5 5v13H5z"/></svg> Import a file of links…</span>
+        <span class="grow"></span>
+        <button class="btn-ghost">Cancel</button>
+        <button class="btn-primary">Add</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const ACCOUNTS=[
+  {iss:"GitHub",acc:"ibrahem",hue:"#4F5BB0",code:"482913",off:3,pin:1},
+  {iss:"Cloudflare",acc:"ibra@ibrahemid.com",hue:"#B5562E",code:"067421",off:11,pin:1},
+  {iss:"Google",acc:"you@gmail.com",hue:"#3B6FB0",code:"559028",off:21},
+  {iss:"Steam",acc:"ibrahem",hue:"#2A8C7E",code:"4K7QF",steam:1,off:7},
+  {iss:"AWS",acc:"root",hue:"#B08A2E",code:"318740",off:17,kind:"SHA256"},
+  {iss:"Bank",acc:"•••• 4291",hue:"#3E7D4F",code:"902556",hotp:1},
+];
+const grp=c=>c.length===5?c:c.replace(/(\d{3})(\d{3})/,"$1 $2");
+const C=2*Math.PI*9;
+function tileHTML(a,i){
+  const pin=a.pin?'<span class="pin"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l2.6 5.3 5.9.9-4.2 4.1 1 5.9L12 17.8 6.7 19.2l1-5.9L3.5 9.2l5.9-.9z"/></svg></span>':'';
+  const kind=a.hotp?'<span class="kind">hotp</span>':a.steam?'<span class="kind">steam</span>':a.kind?'<span class="kind">'+a.kind+'</span>':'';
+  const foot=a.hotp
+    ? `<span class="tsec" title="counter-based">⟳ tap to advance</span>${kind}<span class="thint"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg> copy</span>`
+    : `<svg class="ring" viewBox="0 0 24 24"><circle class="trk" cx="12" cy="12" r="9"/><circle class="val" cx="12" cy="12" r="9" stroke-dasharray="${C}" stroke-dashoffset="0"/></svg><span class="tsec"></span>${kind}<span class="thint"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg> copy</span>`;
+  return `<div class="tile" style="--hue:${a.hue}" data-off="${a.off||0}" data-hotp="${a.hotp?1:0}" tabindex="0">
+    ${pin}
+    <div class="thead"><span class="tg" style="background:${a.hue}">${a.iss[0]}</span>
+      <span class="tmeta"><div class="i">${a.iss}</div><div class="a">${a.acc}</div></span></div>
+    <div class="tcode">${grp(a.code)}</div>
+    <div class="tfoot">${foot}</div>
+  </div>`;
+}
+const pinned=document.getElementById('pinned'), all=document.getElementById('all');
+ACCOUNTS.forEach((a,i)=>{(a.pin?pinned:all).insertAdjacentHTML('beforeend',tileHTML(a,i));});
+
+function tick(){
+  const t=Date.now()/1000,p=30;
+  document.querySelectorAll('.tile').forEach(tl=>{
+    if(tl.dataset.hotp==="1")return;
+    const off=+tl.dataset.off, rem=p-((t+off)%p), frac=rem/p;
+    const val=tl.querySelector('.ring .val'), sec=tl.querySelector('.tsec');
+    if(val) val.style.strokeDashoffset=(C*(1-frac)).toFixed(2);
+    if(sec) sec.textContent=Math.ceil(rem)+'s';
+    tl.classList.toggle('warn',rem<=5);
+  });
+}
+tick();setInterval(tick,250);
+document.querySelectorAll('.tile').forEach(t=>{
+  const fire=()=>{t.classList.add('copied');const h=t.querySelector('.thint');if(h){const o=h.innerHTML;h.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 13l4 4L19 7"/></svg> copied';setTimeout(()=>{t.classList.remove('copied');h.innerHTML=o;},1300);}else{setTimeout(()=>t.classList.remove('copied'),1300);}};
+  t.addEventListener('click',fire);
+  t.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();fire();}});
+});
+document.querySelectorAll('.seg').forEach(s=>s.addEventListener('click',()=>{document.querySelectorAll('.seg').forEach(x=>x.classList.remove('on'));s.classList.add('on');}));
+</script>
+</body>
+</html>

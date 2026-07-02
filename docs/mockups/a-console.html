@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tessera — Direction A · Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#15130d;          /* warm near-black, amber-phosphor base */
+  --panel:#1b180f;
+  --panel-2:#221d11;
+  --line:#2c2616;
+  --line-soft:#241f13;
+  --amber:#e8b24a;        /* terminal amber = brand gold */
+  --amber-dim:#a9791f;
+  --text:#f1e9d6;
+  --text-2:#a59a7e;
+  --text-faint:#6f664f;
+  --warn:#f08a3c;
+  --good:#7fb37a;
+  --r:12px;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --sans:"IBM Plex Sans",-apple-system,system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;font-family:var(--sans);color:var(--text);
+  background:
+    radial-gradient(120% 90% at 15% 0%, #2a2412 0%, #100e09 55%, #0a0906 100%);
+  display:flex;align-items:center;justify-content:center;padding:40px;min-height:100vh;
+  -webkit-font-smoothing:antialiased;
+}
+.stage{width:100%;max-width:1140px;display:grid;gap:26px}
+.dirhead{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;padding:0 4px}
+.dirhead h1{font-size:15px;letter-spacing:.16em;text-transform:uppercase;margin:0;color:var(--amber);font-weight:600;font-family:var(--mono)}
+.dirhead p{margin:0;color:var(--text-2);font-size:13px}
+.dirhead .tag{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--text-faint);letter-spacing:.1em}
+
+/* ---- macOS window ---- */
+.win{
+  background:var(--ink);border-radius:14px;overflow:hidden;
+  border:1px solid #000;
+  box-shadow:0 1px 0 rgba(255,255,255,.04) inset, 0 40px 90px -30px rgba(0,0,0,.85), 0 0 0 1px rgba(0,0,0,.5);
+  display:grid;grid-template-rows:auto 1fr auto;height:660px;
+}
+/* unified titlebar — traffic lights live HERE, not floating */
+.bar{
+  display:flex;align-items:center;gap:14px;height:52px;padding:0 16px;
+  background:linear-gradient(#1d190f,#171307);border-bottom:1px solid var(--line);
+}
+.lights{display:flex;gap:8px}
+.lights i{width:12px;height:12px;border-radius:50%;display:block}
+.lights .r{background:#ff5f57;box-shadow:0 0 0 .5px rgba(0,0,0,.3) inset}
+.lights .y{background:#febc2e}
+.lights .g{background:#28c840}
+.cmd{
+  flex:1;display:flex;align-items:center;gap:10px;height:32px;padding:0 12px;max-width:560px;margin:0 auto;
+  background:#0e0c07;border:1px solid var(--line);border-radius:9px;color:var(--text-2);
+  font-family:var(--mono);font-size:12.5px;cursor:text;
+}
+.cmd .prompt{color:var(--amber);font-weight:600}
+.cmd .kbd{margin-left:auto;font-size:10.5px;color:var(--text-faint);border:1px solid var(--line);border-radius:5px;padding:2px 6px}
+.barbtns{display:flex;gap:6px}
+.iconbtn{
+  width:30px;height:30px;display:grid;place-items:center;border-radius:8px;border:1px solid transparent;
+  color:var(--text-2);background:transparent;cursor:pointer;transition:.12s;
+}
+.iconbtn:hover{background:var(--panel-2);color:var(--text);border-color:var(--line)}
+.iconbtn svg{width:16px;height:16px}
+
+/* ---- body: rail + list ---- */
+.body{display:grid;grid-template-columns:188px 1fr;min-height:0}
+.rail{border-right:1px solid var(--line-soft);padding:14px 10px;display:flex;flex-direction:column;gap:2px;background:#120f08}
+.rail .eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:.18em;color:var(--text-faint);padding:6px 10px 8px;text-transform:uppercase}
+.navitem{
+  display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:8px;cursor:pointer;
+  font-size:13px;color:var(--text-2);font-weight:500;transition:.12s;
+}
+.navitem svg{width:15px;height:15px;opacity:.85}
+.navitem .ct{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--text-faint)}
+.navitem:hover{background:var(--panel-2);color:var(--text)}
+.navitem.on{background:linear-gradient(90deg,rgba(232,178,74,.16),rgba(232,178,74,.05));color:var(--amber)}
+.navitem.on .ct{color:var(--amber-dim)}
+.rail .spacer{flex:1}
+.brand{display:flex;align-items:center;gap:8px;padding:8px 10px;color:var(--text-2)}
+.mark{display:grid;grid-template-columns:1fr 1fr;gap:2px;width:18px;height:18px}
+.mark i{border-radius:3px;background:#3a3320}
+.mark i:first-child{background:var(--amber)}
+.brand b{font-size:13px;color:var(--text);font-weight:600;letter-spacing:.02em}
+
+.list{overflow:auto;padding:8px 8px 4px}
+.grouplbl{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--text-faint);padding:12px 12px 6px}
+.row{
+  display:flex;align-items:center;gap:14px;padding:13px 14px 14px;border-radius:11px;cursor:pointer;
+  position:relative;transition:background .12s;
+}
+.row:hover{background:#1a160c}
+.row::after{content:"";position:absolute;left:14px;right:14px;bottom:6px;height:1.5px;border-radius:2px;background:var(--line-soft);overflow:hidden}
+.row .drain{position:absolute;left:14px;bottom:6px;height:1.5px;border-radius:2px;background:var(--amber);box-shadow:0 0 6px rgba(232,178,74,.6)}
+.row.warn .drain{background:var(--warn);box-shadow:0 0 6px rgba(240,138,60,.6)}
+.glyph{
+  width:38px;height:38px;border-radius:10px;display:grid;place-items:center;flex:none;
+  font-weight:700;font-size:15px;color:#fff;font-family:var(--sans);
+}
+.who{min-width:0;display:flex;flex-direction:column;gap:2px;flex:1}
+.who .iss{font-size:13.5px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.who .acc{font-size:11.5px;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--mono)}
+.code{font-family:var(--mono);font-size:24px;font-weight:500;letter-spacing:.04em;color:var(--text);font-variant-numeric:tabular-nums}
+.row.copied .code{color:var(--amber)}
+.secs{font-family:var(--mono);font-size:12px;color:var(--text-2);width:30px;text-align:right;font-variant-numeric:tabular-nums}
+.row.warn .secs{color:var(--warn)}
+.copy{width:30px;text-align:center;color:var(--text-faint)}
+.copy svg{width:15px;height:15px}
+.row.copied .copy{color:var(--amber)}
+.badge{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;padding:2px 6px;border-radius:5px;border:1px solid var(--line);color:var(--text-faint);text-transform:uppercase}
+
+/* status line */
+.status{
+  display:flex;align-items:center;gap:14px;height:34px;padding:0 16px;border-top:1px solid var(--line);
+  background:#100e08;font-family:var(--mono);font-size:11.5px;color:var(--text-faint);
+}
+.status .p{color:var(--good)}
+.status .dot{color:var(--text-faint)}
+.status .right{margin-left:auto;display:flex;gap:16px}
+.status b{color:var(--text-2);font-weight:500}
+
+/* add panel mock */
+.addwrap{display:grid;gap:14px}
+.addcard{
+  background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 18px 16px;max-width:520px;
+  box-shadow:0 30px 60px -30px rgba(0,0,0,.7);
+}
+.addcard h3{margin:0 0 2px;font-size:15px;display:flex;align-items:center;gap:8px}
+.addcard h3 .c{color:var(--amber);font-family:var(--mono)}
+.addcard .sub{margin:0 0 14px;color:var(--text-2);font-size:12.5px}
+.segs{display:inline-flex;background:#0e0c07;border:1px solid var(--line);border-radius:9px;padding:3px;gap:2px;font-family:var(--mono);font-size:12px}
+.seg{padding:5px 14px;border-radius:6px;color:var(--text-2);cursor:pointer}
+.seg.on{background:var(--amber);color:#1a1407;font-weight:600}
+.editor{
+  margin-top:12px;background:#0e0c07;border:1px solid var(--line);border-radius:10px;padding:12px 14px;
+  font-family:var(--mono);font-size:12.5px;color:var(--text-2);min-height:84px;line-height:1.7;
+}
+.editor .ln{color:var(--text-faint);user-select:none;margin-right:14px}
+.editor .ok{color:var(--good)}
+.editor .cur{color:var(--text);border-right:2px solid var(--amber);animation:blink 1.1s step-end infinite}
+@keyframes blink{50%{border-color:transparent}}
+.addfoot{display:flex;align-items:center;gap:12px;margin-top:14px}
+.link{color:var(--amber);font-size:12.5px;font-family:var(--mono);cursor:pointer;display:flex;gap:7px;align-items:center}
+.link svg{width:14px;height:14px}
+.addfoot .grow{flex:1}
+.btn-ghost{background:transparent;border:0;color:var(--text-2);font-size:13px;cursor:pointer;padding:8px 12px;font-family:var(--sans)}
+.btn-primary{
+  background:var(--amber);color:#1a1407;border:0;border-radius:9px;padding:9px 20px;font-size:13px;font-weight:600;
+  cursor:pointer;font-family:var(--sans);transition:.12s;
+}
+.btn-primary:hover{filter:brightness(1.07)}
+.btn-primary:active{transform:translateY(1px)}
+.note{font-family:var(--mono);font-size:11px;color:var(--text-faint);padding:0 4px}
+:focus-visible{outline:2px solid var(--amber);outline-offset:2px;border-radius:6px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media (max-width:720px){.body{grid-template-columns:1fr}.rail{display:none}}
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="dirhead">
+    <h1>A · Console</h1>
+    <p>The GUI twin of the <code style="font-family:var(--mono);color:var(--amber)">tess</code> CLI. Command-bar first, monospace codes, amber-phosphor on warm ink. For people who live in the terminal.</p>
+    <span class="tag">keyboard-first</span>
+  </div>
+
+  <div class="win">
+    <!-- titlebar: lights are part of the unified bar (no floating overlay) -->
+    <div class="bar">
+      <div class="lights"><i class="r"></i><i class="y"></i><i class="g"></i></div>
+      <div class="cmd" tabindex="0"><span class="prompt">›</span><span>filter or paste otpauth://…</span><span class="kbd">⌘K</span></div>
+      <div class="barbtns">
+        <button class="iconbtn" title="Add"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+        <button class="iconbtn" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 7 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 2.6 14H2.5a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.3 7l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 4.6V4.5a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.1a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+        <button class="iconbtn" title="Lock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></button>
+      </div>
+    </div>
+
+    <div class="body">
+      <aside class="rail">
+        <div class="eyebrow">Vault</div>
+        <div class="navitem on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg> All <span class="ct">6</span></div>
+        <div class="navitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l2.6 5.3 5.9.9-4.2 4.1 1 5.9L12 22.4 6.7 19.2l1-5.9L3.5 9.2l5.9-.9z"/></svg> Pinned <span class="ct">2</span></div>
+        <div class="eyebrow" style="padding-top:14px">Folders</div>
+        <div class="navitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> Work <span class="ct">3</span></div>
+        <div class="navitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> Personal <span class="ct">3</span></div>
+        <div class="spacer"></div>
+        <div class="brand"><span class="mark"><i></i><i></i><i></i><i></i></span><b>Tessera</b></div>
+      </aside>
+
+      <main class="list" id="list">
+        <div class="grouplbl">Pinned</div>
+        <!-- rows injected -->
+      </main>
+    </div>
+
+    <div class="status">
+      <span><span class="p">●</span> vault unlocked</span>
+      <span class="dot">·</span><span><b>6</b> accounts</span>
+      <span class="dot">·</span><span>Secure Enclave</span>
+      <div class="right"><span>⌘N new</span><span>⌘F filter</span><span>⌘L lock</span></div>
+    </div>
+  </div>
+
+  <!-- redesigned Add flow (fixes the ugly button) -->
+  <div class="addwrap">
+    <div class="note">› Add accounts — the old olive button is replaced by a solid amber primary; the input reads like an editor.</div>
+    <div class="addcard">
+      <h3><span class="c">tess add</span></h3>
+      <p class="sub">Paste one or more otpauth or Google Authenticator links, one per line.</p>
+      <div class="segs"><span class="seg on">link</span><span class="seg">manual</span><span class="seg">scan</span></div>
+      <div class="editor"><span class="ln">1</span><span class="ok">otpauth://totp/GitHub:ibrahem?secret=…&amp;issuer=GitHub</span><br><span class="ln">2</span><span class="cur">&nbsp;</span></div>
+      <div class="addfoot">
+        <span class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 3v5h5"/><path d="M5 3h9l5 5v13H5z"/></svg> Import a file of links…</span>
+        <span class="grow"></span>
+        <button class="btn-ghost">Cancel</button>
+        <button class="btn-primary">Add</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const ACCOUNTS=[
+  {iss:"GitHub",acc:"ibrahem",hue:"#4F5BB0",code:"482913",period:30,off:3,pin:1},
+  {iss:"Cloudflare",acc:"ibra@ibrahemid.com",hue:"#B5562E",code:"067421",period:30,off:11,pin:1},
+  {iss:"Google",acc:"you@gmail.com",hue:"#3B6FB0",code:"559028",period:30,off:21},
+  {iss:"Steam",acc:"ibrahem",hue:"#2A8C7E",code:"4K7QF",steam:1,period:30,off:7},
+  {iss:"AWS",acc:"root",hue:"#B08A2E",code:"318740",period:30,off:17,alg:"SHA256"},
+  {iss:"Bank",acc:"•••• 4291",hue:"#3E7D4F",code:"902556",hotp:1},
+];
+const grp=(c)=>c.length===5?c:c.replace(/(\d{3})(\d{3})/,"$1 $2");
+const list=document.getElementById('list');
+function rowHTML(a,i){
+  const badge=a.hotp?'<span class="badge">hotp</span>':a.steam?'<span class="badge">steam</span>':a.alg?'<span class="badge">'+a.alg+'</span>':'';
+  return `<div class="row" data-i="${i}" tabindex="0" data-period="${a.period||30}" data-off="${a.off||0}" data-hotp="${a.hotp?1:0}">
+    <span class="glyph" style="background:${a.hue}">${a.iss[0]}</span>
+    <span class="who"><span class="iss">${a.iss}</span><span class="acc">${a.acc}</span></span>
+    ${badge}
+    <span class="code">${grp(a.code)}</span>
+    ${a.hotp?'<span class="secs" title="counter-based">⟳</span>':'<span class="secs"></span>'}
+    <span class="copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></span>
+    <span class="drain" style="width:0"></span>
+  </div>`;
+}
+list.insertAdjacentHTML('beforeend', ACCOUNTS.filter(a=>a.pin).map((a)=>rowHTML(a,ACCOUNTS.indexOf(a))).join(''));
+list.insertAdjacentHTML('beforeend', '<div class="grouplbl">All accounts</div>');
+list.insertAdjacentHTML('beforeend', ACCOUNTS.filter(a=>!a.pin).map((a)=>rowHTML(a,ACCOUNTS.indexOf(a))).join(''));
+
+function tick(){
+  const t=Date.now()/1000;
+  document.querySelectorAll('.row').forEach(r=>{
+    if(r.dataset.hotp==="1") return;
+    const p=+r.dataset.period, off=+r.dataset.off;
+    const rem=p-((t+off)%p);
+    const frac=rem/p;
+    const drain=r.querySelector('.drain'), secs=r.querySelector('.secs');
+    const full=r.clientWidth-28;
+    drain.style.width=(full*frac)+'px';
+    if(secs) secs.textContent=Math.ceil(rem);
+    r.classList.toggle('warn', rem<=5);
+  });
+}
+tick(); setInterval(tick,250);
+
+document.querySelectorAll('.row').forEach(r=>{
+  const fire=()=>{
+    r.classList.add('copied');
+    const c=r.querySelector('.copy');
+    const old=c.innerHTML;
+    c.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 13l4 4L19 7"/></svg>';
+    setTimeout(()=>{r.classList.remove('copied');c.innerHTML=old;},1300);
+  };
+  r.addEventListener('click',fire);
+  r.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();fire();}});
+});
+document.querySelectorAll('.seg').forEach(s=>s.addEventListener('click',()=>{
+  document.querySelectorAll('.seg').forEach(x=>x.classList.remove('on'));s.classList.add('on');
+}));
+</script>
+</body>
+</html>

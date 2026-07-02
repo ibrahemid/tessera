@@ -1,0 +1,262 @@
+---
+// The living mosaic — the site's signature element.
+// Server-rendered tiles (no layout shift, works with JS off / reduced-motion);
+// a tiny client script syncs each countdown ring to the real 30s TOTP window
+// and rolls the demo codes on rollover.
+const tiles = [
+  { name: "GitHub", color: "var(--violet)", glyph: "{ }", seed: "github", code: "824 159" },
+  { name: "Google", color: "var(--blue)", glyph: "G", seed: "google", code: "317 042" },
+  { name: "Cloudflare", color: "var(--coral)", glyph: "☁", seed: "cf", code: "660 318" },
+  { name: "Steam", color: "var(--teal)", glyph: "S", seed: "steam", code: "K7M T2", steam: true },
+  { name: "Proton", color: "var(--violet)", glyph: "P", seed: "proton", code: "905 774" },
+  { name: "Fastmail", color: "var(--green)", glyph: "F", seed: "fm", code: "248 530" },
+  { name: "AWS", color: "var(--gold-bright)", glyph: "a", seed: "aws", code: "471 962" },
+  { name: "Discord", color: "var(--blue)", glyph: "D", seed: "discord", code: "138 605" },
+];
+---
+
+<div class="mosaic" role="img" aria-label="A mosaic of two-factor authentication tiles, each showing an issuer, a six-digit code, and a countdown ring.">
+  {tiles.map((t, i) => (
+    <article class="mtile" style={`--c: ${t.color}; --i: ${i}`} data-seed={t.seed} data-steam={t.steam ? "1" : undefined}>
+      <div class="mtile-top">
+        <span class="mtile-dot" aria-hidden="true">{t.glyph}</span>
+        <span class="mtile-name">{t.name}</span>
+        <svg class="ring" viewBox="0 0 32 32" aria-hidden="true">
+          <circle class="ring-track" cx="16" cy="16" r="13" />
+          <circle class="ring-arc" cx="16" cy="16" r="13" />
+        </svg>
+      </div>
+      <div class="mtile-code mono">{t.code}</div>
+      <div class="mtile-foot mono"><span class="secs">30</span><span class="secs-u">s</span></div>
+    </article>
+  ))}
+</div>
+
+<style>
+  .mosaic {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.7rem;
+    width: 100%;
+  }
+  @media (min-width: 480px) {
+    .mosaic { gap: 0.85rem; }
+  }
+
+  .mtile {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 1.1rem;
+    box-shadow: var(--tile-shadow);
+    padding: 0.95rem 1rem 0.85rem;
+    overflow: hidden;
+    transition: transform 0.25s var(--ease), box-shadow 0.25s var(--ease);
+    animation: settle 0.6s var(--spring) backwards;
+    animation-delay: calc(var(--i) * 55ms + 120ms);
+  }
+  .mtile::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--c);
+    opacity: 0.07;
+    pointer-events: none;
+  }
+  .mtile:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--tile-shadow-lift);
+  }
+
+  .mtile-top {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    position: relative;
+  }
+  .mtile-dot {
+    display: grid;
+    place-items: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 0.5rem;
+    background: var(--c);
+    color: #fff;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 600;
+    flex: none;
+    box-shadow: 0 2px 6px -2px var(--c);
+  }
+  .mtile-name {
+    font-family: var(--font-body);
+    font-weight: 600;
+    font-size: 0.86rem;
+    color: var(--ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+  .ring {
+    width: 1.5rem;
+    height: 1.5rem;
+    margin-left: auto;
+    flex: none;
+    transform: rotate(-90deg);
+  }
+  .ring-track {
+    fill: none;
+    stroke: var(--line);
+    stroke-width: 3;
+  }
+  .ring-arc {
+    fill: none;
+    stroke: var(--gold-bright);
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-dasharray: 81.68;
+    stroke-dashoffset: 0;
+    animation: deplete 30s linear infinite;
+  }
+
+  .mtile-code {
+    margin-top: 0.7rem;
+    font-size: 1.5rem;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    color: var(--ink);
+    line-height: 1;
+  }
+  .mtile-foot {
+    margin-top: 0.45rem;
+    font-size: 0.72rem;
+    color: var(--ink-faint);
+    letter-spacing: 0.02em;
+  }
+
+  @keyframes settle {
+    from { opacity: 0; transform: translateY(10px) scale(0.94); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes deplete {
+    0% { stroke-dashoffset: 0; stroke: var(--gold-bright); }
+    72% { stroke: var(--gold-bright); }
+    100% { stroke-dashoffset: 81.68; stroke: var(--coral); }
+  }
+  .mtile-code.roll { animation: roll 0.5s var(--ease); }
+  @keyframes roll {
+    0% { opacity: 0.25; transform: translateY(-3px); color: var(--gold); }
+    100% { opacity: 1; transform: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .mtile { animation: none; }
+    .ring-arc { animation: none; stroke-dashoffset: 24; }
+    .mtile-code.roll { animation: none; }
+  }
+</style>
+
+<script>
+  const STEP = "0123456789BCDFGHJKMNPQRTVWXY"; // Steam Guard alphabet
+  function hash(s: string): number {
+    let h = 2166136261;
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+  }
+  function totpCode(seed: string, counter: number): string {
+    const n = hash(seed + ":" + counter) % 1000000;
+    const s = String(n).padStart(6, "0");
+    return s.slice(0, 3) + " " + s.slice(3);
+  }
+  function steamCode(seed: string, counter: number): string {
+    let h = hash(seed + ":" + counter);
+    let out = "";
+    for (let i = 0; i < 5; i++) {
+      out += STEP[h % STEP.length];
+      h = Math.floor(h / STEP.length) ^ (h << 1);
+      h = h >>> 0;
+    }
+    return out.slice(0, 3) + " " + out.slice(3);
+  }
+
+  interface Cell {
+    seed: string;
+    steam: boolean;
+    codeEl: HTMLElement | null;
+    secsEl: HTMLElement | null;
+    arcEl: HTMLElement | null;
+  }
+
+  function init() {
+    const mosaic = document.querySelector<HTMLElement>(".mosaic");
+    if (!mosaic) return;
+
+    const cells: Cell[] = Array.from(mosaic.querySelectorAll<HTMLElement>(".mtile")).map((t) => ({
+      seed: t.dataset.seed || "x",
+      steam: !!t.dataset.steam,
+      codeEl: t.querySelector<HTMLElement>(".mtile-code"),
+      secsEl: t.querySelector<HTMLElement>(".secs"),
+      arcEl: t.querySelector<HTMLElement>(".ring-arc"),
+    }));
+    if (!cells.length) return;
+
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let lastCounter = -1;
+
+    function tick() {
+      const now = Date.now() / 1000;
+      const counter = Math.floor(now / 30);
+      const into = now % 30;
+      const remaining = Math.ceil(30 - into);
+      const rolled = counter !== lastCounter;
+
+      for (const c of cells) {
+        if (c.secsEl) c.secsEl.textContent = String(remaining);
+        if (c.codeEl && rolled) {
+          c.codeEl.textContent = c.steam ? steamCode(c.seed, counter) : totpCode(c.seed, counter);
+          if (!reduce && lastCounter !== -1) {
+            c.codeEl.classList.remove("roll");
+            void c.codeEl.offsetWidth;
+            c.codeEl.classList.add("roll");
+          }
+        }
+        // pin the CSS ring loop to the real window once (and on rollover)
+        if (!reduce && (lastCounter === -1 || rolled) && c.arcEl) {
+          c.arcEl.style.animationDelay = `-${into}s`;
+        }
+      }
+      lastCounter = counter;
+    }
+
+    // Run the 1s tick only while the mosaic is on screen; pause when scrolled away.
+    let timer: number | null = null;
+    function start() {
+      if (timer !== null) return;
+      tick();
+      timer = window.setInterval(tick, 1000);
+    }
+    function stop() {
+      if (timer === null) return;
+      window.clearInterval(timer);
+      timer = null;
+    }
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) start();
+          else stop();
+        }
+      },
+      { threshold: 0 }
+    );
+    io.observe(mosaic);
+  }
+
+  if (document.readyState !== "loading") init();
+  else document.addEventListener("DOMContentLoaded", init);
+</script>

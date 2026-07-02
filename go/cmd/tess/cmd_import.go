@@ -7,6 +7,7 @@ import (
 
 	"github.com/ibrahemid/tessera/go/internal/account"
 	"github.com/ibrahemid/tessera/go/internal/base32x"
+	"github.com/ibrahemid/tessera/go/internal/importers"
 	"github.com/ibrahemid/tessera/go/internal/migration"
 	"github.com/ibrahemid/tessera/go/internal/otpauth"
 	"github.com/ibrahemid/tessera/go/internal/qr"
@@ -22,14 +23,16 @@ func newImportCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "import",
-		Short: "Bulk-import accounts from a file, Google exports, otpauth URIs, or QR images",
+		Short: "Bulk-import accounts from a file, other apps, Google exports, otpauth URIs, or QR images",
 		Long: `Import accounts in bulk. Sources combine and can be repeated:
 
   tess import --file accounts.txt              # one otpauth:// or otpauth-migration:// per line
+  tess import --file export.json               # an Aegis, 2FAS, or Raivo export (unencrypted)
   tess import --qr a.png --qr b.png            # multiple QR images (e.g. a multi-screen Google export)
   tess import --migration "otpauth-migration://offline?data=..."
   tess import --otpauth "otpauth://totp/...."
 
+App exports must be unencrypted (Aegis/2FAS: export with the backup password off).
 Duplicate accounts (same type, issuer, account and secret) are skipped.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var imported []account.Account
@@ -105,6 +108,14 @@ func importFromFile(path string) ([]account.Account, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read import file: %w", err)
+	}
+	// A JSON export from another app (Aegis, 2FAS, Raivo) takes precedence over
+	// the line-based otpauth format.
+	if accts, source, ok, perr := importers.Parse(data); ok {
+		if perr != nil {
+			return nil, fmt.Errorf("%s import: %w", source, perr)
+		}
+		return accts, nil
 	}
 	var out []account.Account
 	for n, raw := range strings.Split(string(data), "\n") {

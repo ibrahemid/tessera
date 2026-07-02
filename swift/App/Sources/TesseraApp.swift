@@ -14,13 +14,14 @@ struct TesseraApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var model = AppModel()
     @AppStorage("tessera.theme") private var theme: AppTheme = .system
+    @AppStorage("tessera.compact") private var compact = false
 
     var body: some Scene {
         WindowGroup(id: "main") {
             RootView()
                 .environmentObject(model)
                 .preferredColorScheme(theme.colorScheme)
-                .frame(minWidth: 720, minHeight: 470)
+                .frame(minWidth: compact ? 380 : 720, minHeight: 470)
         }
         .defaultSize(width: 920, height: 620)
         .commands {

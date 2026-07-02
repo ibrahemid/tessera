@@ -85,11 +85,13 @@ do {
     for c in arr("parse", o) {
         let a = try OTPAuth.parse(c["uri"] as! String)
         if a.issuer != (c["issuer"] as! String) || a.account != (c["account"] as! String) { allOK = false }
+        if a.type.rawValue != (c["type"] as! String) || a.digits != (c["digits"] as! Int) { allOK = false }
         let wantSecret = try Base32.decode(c["secret_b32"] as! String)
         if a.secret != wantSecret { allOK = false }
         // round-trip
         let reparsed = try OTPAuth.parse(OTPAuth.format(a))
         if reparsed.secret != a.secret || reparsed.issuer != a.issuer { allOK = false }
+        if reparsed.type != a.type || reparsed.digits != a.digits { allOK = false }
     }
     check(allOK, "otpauth parse + format round-trip")
 }

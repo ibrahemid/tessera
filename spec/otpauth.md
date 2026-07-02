@@ -25,7 +25,7 @@ RFC 6238 base (HMAC-SHA1, period 30, T0 0). Differences:
 Alphabet `A-Z2-7`, case-insensitive (uppercase-normalize), `=` padding (strip then re-pad on decode), strip whitespace. Used ONLY at otpauth import/export boundaries; vault stores raw bytes.
 
 ## otpauth:// URI (Key Uri Format)
-`otpauth://TYPE/LABEL?PARAMS`, TYPE = `totp|hotp`. LABEL = `issuer:account` (URL-encoded; `issuer:` prefix optional). Params:
+`otpauth://TYPE/LABEL?PARAMS`, TYPE = `totp|hotp|steam` (`steam` non-standard, see below). LABEL = `issuer:account` (URL-encoded; `issuer:` prefix optional). Params:
 
 | param | required | default |
 |---|---|---|
@@ -36,7 +36,9 @@ Alphabet `A-Z2-7`, case-insensitive (uppercase-normalize), `=` padding (strip th
 | `period` | no (totp) | `30` |
 | `counter` | yes (hotp) | — |
 
-Steam is non-standard in otpauth; Tessera also accepts a `steam` type label and `otpauth://totp/...?issuer=Steam` heuristics, documented at the import boundary.
+Steam in otpauth (both directions MUST match):
+- Parse: type `steam`, or the heuristic `otpauth://totp/...` with issuer `Steam` (case-insensitive), yields a Steam account. Steam digits default to `5`; a `digits` param other than `5` is rejected. Non-integer `digits`/`period` are rejected for all types.
+- Emit: Steam accounts export as `otpauth://steam/...` with `digits=5` (compatible with Aegis and other steam-aware clients).
 
 Emit (export): URL-encode label and issuer; secret base32 no-pad; include issuer param.
 

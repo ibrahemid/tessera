@@ -19,7 +19,7 @@ Tessera ships free what other Mac authenticators paywall (menu bar, Touch ID, au
 - Import: `otpauth://`, Google Authenticator export (`otpauth-migration://`), QR images (CLI) / on-screen QR (app)
 - Encrypted vault: random DEK, XChaCha20-Poly1305 payload, argon2id passphrase wrap, optional Touch ID (Secure Enclave) wrap
 - Search, folders, tags, pinning
-- The CLI and the app open the same vault file
+- The app opens a CLI-created vault in place (asks for its passphrase once, then unlocks via the Secure Enclave; the CLI keeps working on the same file). App-created vaults are Secure-Enclave-bound; move them to the CLI with the app's encrypted export.
 
 ## CLI quick start
 

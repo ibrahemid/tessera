@@ -1,31 +1,251 @@
 @import "tailwindcss";
 
-@theme {
-  --color-ink: #16181f;
-  --color-ink-soft: #5b606e;
-  --color-paper: #fcfcfd;
-  --color-surface: #ffffff;
-  --color-line: rgba(22, 24, 31, 0.08);
-  --color-gold: #9a6b12;
-  --color-gold-bright: #e3b23c;
-  --color-night: #131419;
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
-  --font-display: ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
-  --font-body: system-ui, -apple-system, "Segoe UI", sans-serif;
+/* ============================================================
+   Tessera — tokens. Light ("Atrium") default; dark ("Tessellate").
+   See DESIGN.md. Gold is the single UI accent in both themes.
+   ============================================================ */
+
+:root {
+  color-scheme: light;
+
+  --paper: #fbfaf7;
+  --surface: #ffffff;
+  --surface-sunken: #f3f1ec;
+  --ink: #17181d;
+  --ink-soft: #595e6b;
+  --ink-faint: #8a8f9c;
+  --line: rgba(23, 24, 29, 0.09);
+  --line-strong: rgba(23, 24, 29, 0.14);
+
+  --gold: #b07d1a;
+  --gold-solid: #c8901e;
+  --gold-bright: #e3b23c;
+  --on-gold: #1a1206;
+  --gold-tint: rgba(227, 178, 60, 0.12);
+
+  --coral: #e5643e;
+  --teal: #2bb3a3;
+  --violet: #7c6cf0;
+  --blue: #3b6fe0;
+  --green: #2e9e5b;
+
+  --grout: rgba(23, 24, 29, 0.04);
+
+  --tile-shadow: 0 1px 1px rgba(23, 24, 29, 0.03),
+    0 2px 6px rgba(23, 24, 29, 0.05), 0 18px 40px -22px rgba(23, 24, 29, 0.18);
+  --tile-shadow-lift: 0 1px 1px rgba(23, 24, 29, 0.04),
+    0 4px 12px rgba(23, 24, 29, 0.08), 0 28px 56px -26px rgba(23, 24, 29, 0.22);
+  --gold-glow: 0 8px 26px -10px rgba(200, 144, 30, 0.5);
+
+  --ease: cubic-bezier(0.33, 1, 0.68, 1);
+  --spring: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --font-display: "Schibsted Grotesk Variable", system-ui, sans-serif;
+  --font-body: "Hanken Grotesk Variable", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --maxw: 72rem;
+  --prose: 38rem;
 }
 
+html.dark {
+  color-scheme: dark;
+
+  --paper: #0e0f13;
+  --surface: #16181f;
+  --surface-sunken: #0a0b0e;
+  --ink: #ecedf1;
+  --ink-soft: #9398a6;
+  --ink-faint: #6a6f7c;
+  --line: rgba(255, 255, 255, 0.09);
+  --line-strong: rgba(255, 255, 255, 0.16);
+
+  --gold: #e3b23c;
+  --gold-solid: #e3b23c;
+  --gold-bright: #f0c45a;
+  --on-gold: #1a1206;
+  --gold-tint: rgba(227, 178, 60, 0.13);
+
+  --grout: rgba(255, 255, 255, 0.035);
+
+  --tile-shadow: 0 1px 2px rgba(0, 0, 0, 0.4),
+    0 18px 44px -22px rgba(0, 0, 0, 0.7);
+  --tile-shadow-lift: 0 2px 6px rgba(0, 0, 0, 0.45),
+    0 30px 64px -26px rgba(0, 0, 0, 0.8);
+  --gold-glow: 0 8px 30px -10px rgba(227, 178, 60, 0.4);
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-ink-faint: var(--ink-faint);
+  --color-line: var(--line);
+  --color-gold: var(--gold);
+  --color-gold-bright: var(--gold-bright);
+  --color-coral: var(--coral);
+  --color-teal: var(--teal);
+  --color-violet: var(--violet);
+  --color-blue: var(--blue);
+  --color-green: var(--green);
+  --font-display: var(--font-display);
+  --font-body: var(--font-body);
+  --font-mono: var(--font-mono);
+}
+
+/* ---------- base ---------- */
+
 html {
-  background: var(--color-paper);
-  color: var(--color-ink);
+  background: var(--paper);
+  color: var(--ink);
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   scroll-behavior: smooth;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
-  * { animation: none !important; transition: none !important; }
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 1rem;
+  line-height: 1.6;
 }
 
-a { color: inherit; }
+::selection {
+  background: var(--gold-tint);
+  color: var(--ink);
+}
+
+h1, h2, h3 {
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 1.04;
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+a { color: inherit; text-decoration: none; }
+
+:focus-visible {
+  outline: 2px solid var(--gold-bright);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar { width: 11px; height: 11px; }
+::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 99px;
+  border: 3px solid var(--paper);
+}
+
+/* ---------- typographic utilities ---------- */
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  font-weight: 500;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.tnum { font-variant-numeric: tabular-nums; }
+
+.lede {
+  font-size: clamp(1.05rem, 1.6vw, 1.28rem);
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+/* ---------- buttons ---------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 3rem;
+  padding: 0 1.4rem;
+  border-radius: 0.8rem;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.97rem;
+  border: 1px solid transparent;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease),
+    background 0.18s var(--ease), border-color 0.18s var(--ease);
+}
+.btn-gold {
+  background: var(--gold-solid);
+  color: var(--on-gold);
+  box-shadow: var(--gold-glow);
+}
+.btn-gold:hover { transform: translateY(-2px); }
+.btn-ghost {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+.btn-ghost:hover { background: var(--surface); transform: translateY(-2px); border-color: var(--gold); }
+
+/* ---------- tile (the tessera) ---------- */
+
+.tile {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 1.15rem;
+  box-shadow: var(--tile-shadow);
+}
+.tile-hover {
+  transition: transform 0.22s var(--ease), box-shadow 0.22s var(--ease),
+    border-color 0.22s var(--ease);
+}
+.tile-hover:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--tile-shadow-lift);
+  border-color: var(--line-strong);
+}
+
+/* wordmark glyph: 2x2 of tiles, one gold */
+.glyph {
+  display: inline-grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  aspect-ratio: 1;
+}
+.glyph span { border-radius: 30%; }
+
+/* ---------- scroll reveal ---------- */
+
+.reveal {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.7s var(--ease), transform 0.7s var(--ease);
+  will-change: opacity, transform;
+}
+.reveal.in { opacity: 1; transform: none; }
+
+/* ---------- grout backdrop ---------- */
+
+.grout-bg {
+  background-image: linear-gradient(var(--grout) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grout) 1px, transparent 1px);
+  background-size: 46px 46px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .reveal { opacity: 1; transform: none; transition: none; }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

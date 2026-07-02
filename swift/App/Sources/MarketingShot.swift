@@ -42,10 +42,8 @@ enum MarketingShot {
     private static func render(_ view: some View, to path: String) {
         let r = ImageRenderer(content: view.frame(width: 1280, height: 800))
         r.scale = 2 // → 2560×1600
-        guard let img = r.nsImage, let tiff = img.tiffRepresentation,
-              let rep = NSBitmapImageRep(data: tiff),
-              let png = rep.representation(using: .png, properties: [:]) else { return }
-        try? png.write(to: URL(fileURLWithPath: path))
+        guard let img = r.nsImage else { return }
+        try? QRImage.writePNG(img, to: URL(fileURLWithPath: path))
     }
 }
 
@@ -105,7 +103,7 @@ private struct WindowMock: View {
                     AccountRowView(account: a, remaining: [27, 19, 11, 4, 23][i],
                                    code: ["318 204", "907 551", "642 119", "VHHQY", "775 380"][i],
                                    copied: i == 0, reduceMotion: true,
-                                   onCopy: {}, onPin: {}, onDelete: {}, onAdvance: {})
+                                   onCopy: {}, onAdvance: {})
                 }
             }.padding(14)
             Spacer(minLength: 0)

@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tessera — sample 2FA & import testing</title>
+<style>
+  :root { color-scheme: light dark; --bg:#0f1115; --panel:#171a21; --line:#262b36;
+    --text:#e7e9ee; --dim:#9aa3b2; --accent:#6ea8fe; --good:#3fb950; }
+  @media (prefers-color-scheme: light) { :root { --bg:#f6f7f9; --panel:#fff; --line:#e3e6ea;
+    --text:#1a1d23; --dim:#5c6470; --accent:#2f6feb; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"SF Pro Text",Segoe UI,sans-serif; }
+  main { max-width:920px; margin:0 auto; padding:40px 24px 80px; }
+  h1 { font-size:26px; margin:0 0 6px; letter-spacing:-.01em; }
+  .sub { color:var(--dim); margin:0 0 32px; }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim);
+    margin:40px 0 14px; }
+  .step { display:inline-block; width:22px; height:22px; border-radius:6px; background:var(--accent);
+    color:#fff; text-align:center; line-height:22px; font-size:12px; font-weight:600; margin-right:8px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:14px; }
+  .card { display:flex; gap:14px; background:var(--panel); border:1px solid var(--line);
+    border-radius:12px; padding:14px; }
+  .qr { background:#fff; border-radius:8px; padding:6px; width:110px; height:110px; image-rendering:pixelated; }
+  .card-body { min-width:0; display:flex; flex-direction:column; gap:2px; }
+  .issuer { font-weight:600; }
+  .acct { color:var(--dim); font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .meta { color:var(--dim); font-size:11px; margin-bottom:6px; }
+  .secret { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11px; color:var(--dim);
+    word-break:break-all; margin-bottom:8px; }
+  button.copy, .btn { font:inherit; font-size:12px; font-weight:600; color:var(--accent);
+    background:transparent; border:1px solid var(--line); border-radius:7px; padding:5px 10px;
+    cursor:pointer; align-self:flex-start; }
+  button.copy.done { color:var(--good); border-color:var(--good); }
+  .apps { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:12px; }
+  .app { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px; }
+  .app-head { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:4px; }
+  .app-name { font-weight:600; }
+  .app-plat { color:var(--dim); font-size:11px; }
+  .app-links { font-size:13px; margin-bottom:8px; }
+  .app-how { font-size:13px; margin-bottom:6px; }
+  .app-note { font-size:12px; color:var(--dim); }
+  a { color:var(--accent); }
+  .bar { display:flex; gap:10px; flex-wrap:wrap; margin:10px 0 0; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px 18px; }
+  code.inline { font-family:ui-monospace,Menlo,monospace; font-size:12px; background:rgba(127,127,127,.14);
+    padding:1px 6px; border-radius:5px; }
+  ol { padding-left:20px; } ol li { margin:4px 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Tessera — sample accounts & import testing</h1>
+  <p class="sub">Add test 2FA accounts, then export them from other apps so we can test importing them into Tessera.</p>
+
+  <h2><span class="step">1</span>Add these sample accounts</h2>
+  <p class="sub" style="margin-bottom:14px">Scan a QR with any authenticator (phone or Tessera → Add → Scan), or copy its otpauth link. None are real accounts.</p>
+  <div class="bar">
+    <button class="btn" id="dl-all">Download all 5 as links.txt</button>
+    <span class="app-note" style="align-self:center">Import into Tessera or any app with one file: <code class="inline">tess import --file links.txt</code></span>
+  </div>
+  <div class="grid" style="margin-top:14px">
+    <div class="card">
+      <img class="qr" src="data:image/png;base64,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" alt="QR for GitHub" width="150" height="150">
+      <div class="card-body">
+        <div class="issuer">GitHub</div>
+        <div class="acct">john@example.com</div>
+        <div class="meta">TOTP · SHA1 · 6 digits · 30s</div>
+        <code class="secret">JBSWY3DPEHPK3PXP</code>
+        <button class="copy" data-uri="otpauth://totp/GitHub:john@example.com?secret=JBSWY3DPEHPK3PXP&amp;issuer=GitHub&amp;algorithm=SHA1&amp;digits=6&amp;period=30">Copy otpauth link</button>
+      </div>
+    </div>
+    <div class="card">
+      <img class="qr" src="data:image/png;base64,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" alt="QR for Google" width="150" height="150">
+      <div class="card-body">
+        <div class="issuer">Google</div>
+        <div class="acct">john@example.com</div>
+        <div class="meta">TOTP · SHA1 · 6 digits · 30s</div>
+        <code class="secret">MFRGG2DFMZTWQ2LK</code>
+        <button class="copy" data-uri="otpauth://totp/Google:john@example.com?secret=MFRGG2DFMZTWQ2LK&amp;issuer=Google&amp;algorithm=SHA1&amp;digits=6&amp;period=30">Copy otpauth link</button>
+      </div>
+    </div>
+    <div class="card">
+      <img class="qr" src="data:image/png;base64,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" alt="QR for AWS" width="150" height="150">
+      <div class="card-body">
+        <div class="issuer">AWS</div>
+        <div class="acct">root</div>
+        <div class="meta">TOTP · SHA256 · 6 digits · 30s</div>
+        <code class="secret">GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ</code>
+        <button class="copy" data-uri="otpauth://totp/AWS:root?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&amp;issuer=AWS&amp;algorithm=SHA256&amp;digits=6&amp;period=30">Copy otpauth link</button>
+      </div>
+    </div>
+    <div class="card">
+      <img class="qr" src="data:image/png;base64,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" alt="QR for Cloudflare" width="150" height="150">
+      <div class="card-body">
+        <div class="issuer">Cloudflare</div>
+        <div class="acct">ibra@ibrahemid.com</div>
+        <div class="meta">TOTP · SHA1 · 8 digits · 30s</div>
+        <code class="secret">KRUGS4ZANFZSAYJB</code>
+        <button class="copy" data-uri="otpauth://totp/Cloudflare:ibra@ibrahemid.com?secret=KRUGS4ZANFZSAYJB&amp;issuer=Cloudflare&amp;algorithm=SHA1&amp;digits=8&amp;period=30">Copy otpauth link</button>
+      </div>
+    </div>
+    <div class="card">
+      <img class="qr" src="data:image/png;base64,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" alt="QR for Bank" width="150" height="150">
+      <div class="card-body">
+        <div class="issuer">Bank</div>
+        <div class="acct">checking</div>
+        <div class="meta">HOTP · SHA1 · 6 digits · counter 0</div>
+        <code class="secret">NFXHA5LUNNSXSIDB</code>
+        <button class="copy" data-uri="otpauth://hotp/Bank:checking?secret=NFXHA5LUNNSXSIDB&amp;issuer=Bank&amp;algorithm=SHA1&amp;digits=6&amp;counter=0">Copy otpauth link</button>
+      </div>
+    </div>
+  </div>
+
+  <h2><span class="step">2</span>Get the apps to migrate from</h2>
+  <div class="apps">
+    <div class="app">
+      <div class="app-head">
+        <span class="app-name">2FAS</span>
+        <span class="app-plat">iOS, Android · open source</span>
+      </div>
+      <div class="app-links"><a href="https://2fas.com" target="_blank" rel="noopener">download / site</a> · <a href="https://github.com/twofas" target="_blank" rel="noopener">source</a></div>
+      <div class="app-how"><b>Export:</b> Settings → Backup → Export. If it offers a password, leave it OFF. Saves a .2fas file (it&#x27;s JSON).</div>
+      <div class="app-note">Encrypted only if you set a backup password — leave it off for the plain importer.</div>
+    </div>
+    <div class="app">
+      <div class="app-head">
+        <span class="app-name">Aegis</span>
+        <span class="app-plat">Android · open source</span>
+      </div>
+      <div class="app-links"><a href="https://getaegis.app" target="_blank" rel="noopener">download / site</a> · <a href="https://github.com/beemdevelopment/Aegis" target="_blank" rel="noopener">source</a></div>
+      <div class="app-how"><b>Export:</b> Settings → Import &amp; Export → Export. Untick “Encrypt the vault”. Saves a .json file.</div>
+      <div class="app-note">Encrypted by default — untick encryption when exporting.</div>
+    </div>
+    <div class="app">
+      <div class="app-head">
+        <span class="app-name">Raivo</span>
+        <span class="app-plat">iOS, macOS · open source</span>
+      </div>
+      <div class="app-links"><a href="https://raivo-otp.com" target="_blank" rel="noopener">download / site</a> · <a href="https://github.com/raivo-otp/ios-application" target="_blank" rel="noopener">source</a></div>
+      <div class="app-how"><b>Export:</b> Settings → Export → JSON. You get a .json (sometimes inside a .zip — unzip it).</div>
+      <div class="app-note">Plain JSON — works as-is.</div>
+    </div>
+    <div class="app">
+      <div class="app-head">
+        <span class="app-name">Ente Auth</span>
+        <span class="app-plat">iOS, Android, desktop · open source</span>
+      </div>
+      <div class="app-links"><a href="https://ente.io/auth" target="_blank" rel="noopener">download / site</a> · <a href="https://github.com/ente-io/ente" target="_blank" rel="noopener">source</a></div>
+      <div class="app-how"><b>Export:</b> Settings → Data → Export → plain text. Saves a .txt of otpauth:// links.</div>
+      <div class="app-note">Plain otpauth links — import with tess import --file.</div>
+    </div>
+    <div class="app">
+      <div class="app-head">
+        <span class="app-name">Google Authenticator</span>
+        <span class="app-plat">iOS, Android</span>
+      </div>
+      <div class="app-links"><a href="https://support.google.com/accounts/answer/1066447" target="_blank" rel="noopener">download / site</a></div>
+      <div class="app-how"><b>Export:</b> ⋮ → Transfer accounts → Export. It shows QR code(s) on screen — no file. In Tessera use Add → Scan, or screenshot and “Read QR from an image”.</div>
+      <div class="app-note">No file export — use the on-screen QR path.</div>
+    </div>
+    <div class="app">
+      <div class="app-head">
+        <span class="app-name">Authy</span>
+        <span class="app-plat">iOS, Android</span>
+      </div>
+      <div class="app-links"><a href="https://authy.com" target="_blank" rel="noopener">download / site</a></div>
+      <div class="app-how"><b>Export:</b> No usable export (the desktop app that allowed it is retired). Skip unless you already have a backup.</div>
+      <div class="app-note">Not exportable — listed for completeness.</div>
+    </div>
+  </div>
+
+  <h2><span class="step">3</span>Export from each app, then send me the file</h2>
+  <div class="panel">
+    <ol>
+      <li>In the app, add the sample accounts (step 1), then run its <b>Export</b> (step 2).</li>
+      <li><b>Export unencrypted</b> where there's a choice — those import right now (Aegis, 2FAS, Raivo, Ente).</li>
+      <li>Drop the files in the repo at <code class="inline">docs/import-samples/</code> and tell me which app each came from.</li>
+      <li>Want encrypted-export support too? Also send one <b>encrypted</b> export per app (with the password you used) and I'll add decryption.</li>
+    </ol>
+  </div>
+
+  <h2>What works today</h2>
+  <div class="panel">
+    Tessera already imports: <b>otpauth links</b>, <b>Google Authenticator</b> QR exports, <b>QR images/on-screen</b>, and unencrypted <b>Aegis / 2FAS / Raivo / Ente</b> files (drag the file into Add → or <code class="inline">tess import --file export.json</code>). Encrypted app exports are detected and tell you to export unencrypted — full decryption is the next step.
+  </div>
+</main>
+<script>
+  const ALL = "otpauth://totp/GitHub:john@example.com?secret=JBSWY3DPEHPK3PXP&issuer=GitHub&algorithm=SHA1&digits=6&period=30\\notpauth://totp/Google:john@example.com?secret=MFRGG2DFMZTWQ2LK&issuer=Google&algorithm=SHA1&digits=6&period=30\\notpauth://totp/AWS:root?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=AWS&algorithm=SHA256&digits=6&period=30\\notpauth://totp/Cloudflare:ibra@ibrahemid.com?secret=KRUGS4ZANFZSAYJB&issuer=Cloudflare&algorithm=SHA1&digits=8&period=30\\notpauth://hotp/Bank:checking?secret=NFXHA5LUNNSXSIDB&issuer=Bank&algorithm=SHA1&digits=6&counter=0";
+  document.querySelectorAll('button.copy').forEach(b => b.addEventListener('click', async () => {
+    await navigator.clipboard.writeText(b.dataset.uri);
+    const t = b.textContent; b.textContent = 'Copied'; b.classList.add('done');
+    setTimeout(() => { b.textContent = t; b.classList.remove('done'); }, 1200);
+  }));
+  document.getElementById('dl-all').addEventListener('click', () => {
+    const blob = new Blob([ALL.replace(/\\n/g, String.fromCharCode(10))], {type:'text/plain'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = 'links.txt'; a.click(); URL.revokeObjectURL(a.href);
+  });
+</script>
+</body>
+</html>

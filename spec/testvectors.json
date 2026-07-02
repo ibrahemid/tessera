@@ -38,7 +38,11 @@
       { "uri": "otpauth://totp/ACME%20Co:john@example.com?secret=JBSWY3DPEHPK3PXP&issuer=ACME%20Co&period=30&digits=6&algorithm=SHA1",
         "type": "totp", "issuer": "ACME Co", "account": "john@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "period": 30, "digits": 6, "algorithm": "SHA1" },
       { "uri": "otpauth://hotp/Example:alice@example.com?secret=GEZDGNBVGY3TQOJQ&issuer=Example&counter=5&digits=6",
-        "type": "hotp", "issuer": "Example", "account": "alice@example.com", "secret_b32": "GEZDGNBVGY3TQOJQ", "counter": 5, "digits": 6, "algorithm": "SHA1" }
+        "type": "hotp", "issuer": "Example", "account": "alice@example.com", "secret_b32": "GEZDGNBVGY3TQOJQ", "counter": 5, "digits": 6, "algorithm": "SHA1" },
+      { "uri": "otpauth://steam/Steam:gabe?secret=JBSWY3DPEHPK3PXP&issuer=Steam&digits=5",
+        "type": "steam", "issuer": "Steam", "account": "gabe", "secret_b32": "JBSWY3DPEHPK3PXP", "period": 30, "digits": 5, "algorithm": "SHA1" },
+      { "uri": "otpauth://totp/Steam:gabe?secret=JBSWY3DPEHPK3PXP&issuer=Steam",
+        "type": "steam", "issuer": "Steam", "account": "gabe", "secret_b32": "JBSWY3DPEHPK3PXP", "period": 30, "digits": 5, "algorithm": "SHA1" }
     ]
   },
   "migration": {

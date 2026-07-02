@@ -18,16 +18,20 @@ enum SecureEnclaveWrap {
 
     static var isAvailable: Bool { SecureEnclave.isAvailable }
 
-    /// Add (or replace) the SE wrap for the given DEK. Requires biometric consent.
-    static func enable(on env: inout Envelope, dek: Data) throws {
+    /// Add (or replace) the SE wrap for the given DEK. When `requireBiometrics`
+    /// is true the key is gated by `.biometryCurrentSet` (opening prompts Touch
+    /// ID); otherwise it opens silently while the Mac is unlocked. Both keep the
+    /// DEK non-extractable and off disk.
+    static func enable(on env: inout Envelope, dek: Data, requireBiometrics: Bool) throws {
         guard SecureEnclave.isAvailable else { throw SEError.notAvailable }
+        let flags: SecAccessControlCreateFlags =
+            requireBiometrics ? [.privateKeyUsage, .biometryCurrentSet] : [.privateKeyUsage]
         let access = try SecAccessControlCreateWithFlags(
-            nil, kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-            [.privateKeyUsage, .biometryCurrentSet], nil
+            nil, kSecAttrAccessibleWhenUnlockedThisDeviceOnly, flags, nil
         ).get()
         let priv = try SecureEnclave.P256.KeyAgreement.PrivateKey(accessControl: access)
         let wrapKey = try deriveWrapKey(priv: priv)
-        let nonce = randomData(XChaCha.nonceSize)
+        let nonce = AppKey.randomBytes(XChaCha.nonceSize)
         let ct = try XChaCha.seal(dek, key: wrapKey, nonce: nonce)
 
         let wrap = VaultWrap(
@@ -71,11 +75,6 @@ enum SecureEnclaveWrap {
         return key.withUnsafeBytes { Data($0) }
     }
 
-    private static func randomData(_ n: Int) -> Data {
-        var d = Data(count: n)
-        _ = d.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, n, $0.baseAddress!) }
-        return d
-    }
 }
 
 private extension Optional where Wrapped == SecAccessControl {

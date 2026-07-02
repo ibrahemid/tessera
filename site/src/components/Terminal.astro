@@ -1,0 +1,116 @@
+---
+// A real `tess watch` terminal frame (the best of the CLI-first identity).
+const rows = [
+  { name: "github", code: "824 159", color: "var(--violet)", w: 78 },
+  { name: "google", code: "317 042", color: "var(--blue)", w: 78 },
+  { name: "cloudflare", code: "660 318", color: "var(--coral)", w: 78 },
+  { name: "steam", code: "K7M T2", color: "var(--teal)", w: 78 },
+  { name: "aws", code: "471 962", color: "var(--gold-bright)", w: 78 },
+];
+---
+<div class="term tile">
+  <div class="term-bar">
+    <span class="tl" style="background:#ff5f57"></span>
+    <span class="tl" style="background:#febc2e"></span>
+    <span class="tl" style="background:#28c840"></span>
+    <span class="term-title mono">tess watch</span>
+  </div>
+  <div class="term-body mono">
+    <div class="term-line"><span class="prompt">$</span> tess watch</div>
+    <div class="term-head">ISSUER<span>CODE</span><span>EXPIRES</span></div>
+    {rows.map((r, i) => (
+      <div class="term-row" style={`--c:${r.color}; --i:${i}`}>
+        <span class="term-name">{r.name}</span>
+        <span class="term-code">{r.code}</span>
+        <span class="term-bar-wrap"><span class="term-fill"></span></span>
+      </div>
+    ))}
+    <div class="term-hint">/ search · ↵ copy · q quit</div>
+  </div>
+</div>
+
+<style>
+  .term {
+    overflow: hidden;
+    border-radius: 0.9rem;
+    font-size: 0.86rem;
+  }
+  .term-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.7rem 0.9rem;
+    background: var(--surface-sunken);
+    border-bottom: 1px solid var(--line);
+  }
+  .tl { width: 11px; height: 11px; border-radius: 99px; flex: none; }
+  .term-title {
+    margin-left: 0.4rem;
+    font-size: 0.74rem;
+    color: var(--ink-faint);
+  }
+  .term-body {
+    padding: 1rem 1.1rem 1.15rem;
+    background: var(--surface);
+    line-height: 1.9;
+  }
+  .term-line { color: var(--ink-soft); }
+  .prompt { color: var(--green); margin-right: 0.5rem; }
+  .term-head {
+    display: grid;
+    grid-template-columns: 1fr 5.5rem 4.5rem;
+    gap: 0.5rem;
+    font-size: 0.66rem;
+    letter-spacing: 0.1em;
+    color: var(--ink-faint);
+    margin-top: 0.5rem;
+    padding-bottom: 0.3rem;
+  }
+  .term-row {
+    display: grid;
+    grid-template-columns: 1fr 5.5rem 4.5rem;
+    gap: 0.5rem;
+    align-items: center;
+    animation: termin 0.5s var(--ease) backwards;
+    animation-delay: calc(var(--i) * 80ms + 200ms);
+  }
+  .term-name { color: var(--ink); }
+  .term-name::before { content: "● "; color: var(--c); }
+  .term-code {
+    color: var(--gold);
+    font-weight: 500;
+    letter-spacing: 0.06em;
+  }
+  .term-bar-wrap {
+    height: 6px;
+    border-radius: 99px;
+    background: var(--line);
+    overflow: hidden;
+  }
+  .term-fill {
+    display: block;
+    height: 100%;
+    border-radius: 99px;
+    background: var(--gold-bright);
+    transform-origin: left;
+    animation: drain 30s linear infinite;
+    animation-delay: calc(var(--i) * -2.2s);
+  }
+  .term-hint {
+    margin-top: 0.7rem;
+    color: var(--ink-faint);
+    font-size: 0.74rem;
+  }
+  @keyframes termin {
+    from { opacity: 0; transform: translateX(-6px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes drain {
+    from { transform: scaleX(1); background: var(--gold-bright); }
+    to { transform: scaleX(0); background: var(--coral); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .term-row { animation: none; }
+    .term-fill { animation: none; transform: scaleX(0.55); }
+  }
+</style>

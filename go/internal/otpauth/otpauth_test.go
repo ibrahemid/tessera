@@ -73,6 +73,34 @@ func TestFormatRoundTrip(t *testing.T) {
 	}
 }
 
+func TestSteamRoundTrip(t *testing.T) {
+	a := account.Account{
+		ID: "s", Type: account.Steam, Issuer: "Steam", Account: "gabe",
+		Secret: []byte("12345678901234567890"), Algorithm: "SHA1", Digits: 5, Period: 30,
+	}
+	uri := Format(a)
+	back, err := Parse(uri)
+	if err != nil {
+		t.Fatalf("reparse %q: %v", uri, err)
+	}
+	if back.Type != account.Steam || back.Digits != 5 ||
+		string(back.Secret) != string(a.Secret) || back.Issuer != a.Issuer {
+		t.Errorf("round trip mismatch: %s -> %+v", uri, back)
+	}
+}
+
+func TestSteamRejectsWrongDigits(t *testing.T) {
+	for _, bad := range []string{
+		"otpauth://steam/Steam:x?secret=JBSWY3DPEHPK3PXP&digits=6",
+		"otpauth://totp/Steam:x?secret=JBSWY3DPEHPK3PXP&issuer=Steam&digits=8",
+		"otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&digits=5",
+	} {
+		if _, err := Parse(bad); err == nil {
+			t.Errorf("expected error for %q", bad)
+		}
+	}
+}
+
 func TestParseRejectsNonOTPAuth(t *testing.T) {
 	for _, bad := range []string{"https://example.com", "otpauth://bogus/x?secret=AA", "otpauth://totp/x"} {
 		if _, err := Parse(bad); err == nil {

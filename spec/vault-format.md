@@ -4,7 +4,7 @@ Source of truth for the encrypted vault. Both the Go core and the Swift core MUS
 
 ## Load-bearing decision: envelope encryption
 
-A random 256-bit **Data Encryption Key (DEK)** encrypts the account payload. The DEK is wrapped independently by each unlock method; every wrap is stored in the envelope. This lets a Secure-Enclave (Mac) vault be opened by the passphrase CLI and lets CloudKit round-trip without breaking the single shared format. Adding/removing an unlock method re-wraps the DEK; it does NOT re-encrypt the payload.
+A random 256-bit **Data Encryption Key (DEK)** encrypts the account payload. The DEK is wrapped independently by each unlock method; every wrap is stored in the envelope. This lets one vault carry a Secure-Enclave (Mac app) wrap and a passphrase wrap side by side — the CLI opens the passphrase wrap, the app opens either — and lets CloudKit round-trip without breaking the single shared format. Adding/removing an unlock method re-wraps the DEK; it does NOT re-encrypt the payload.
 
 ## File
 
@@ -19,6 +19,7 @@ UTF-8 JSON, no BOM. Top-level object:
 }
 ```
 
+- `wraps` MUST be non-empty on disk. An implementation may hold a zero-wrap envelope in memory while assembling one (Swift `Envelope.createUnwrapped`), but MUST attach at least one wrap before persisting; a zero-wrap file is permanently unopenable.
 - `aead` is always `xchacha20poly1305`. Nonces are 24 bytes, fresh per encryption (192-bit space removes nonce-reuse risk). `ct` = ciphertext with the 16-byte Poly1305 tag appended (libsodium/`chacha20poly1305` combined-mode layout).
 - `payload.ct` = `XChaCha20-Poly1305(seal(canonical_json(accounts), key=DEK, nonce=payload.nonce))`.
 
@@ -44,7 +45,7 @@ UTF-8 JSON, no BOM. Top-level object:
   "ct":    "<seal(DEK), b64>"
 }
 ```
-A biometric-gated (`.biometryCurrentSet`), non-extractable SE P-256 key. `wrapKey = HKDF-SHA256(ECDH(se_priv, se_pub_ephemeral)) -> 32 bytes`, exact KDF info/salt pinned when the Swift core lands. Plaintext DEK never rests on disk.
+A non-extractable SE P-256 key, created with `.privateKeyUsage` and, when the user enables "Require Touch ID", `.biometryCurrentSet`. `wrapKey = HKDF-SHA256(ECDH(se_priv, se_pub)) -> 32 bytes` (self key-agreement; salt `tessera.se.salt.v1`, info `tessera.se.dek.v1`). `ct = XChaCha20-Poly1305(seal(DEK, wrapKey, nonce))`. The plaintext DEK never rests on disk; the biometric flag is an OS access-control attribute and does not change the wire format. This is the Mac app's default daily-unlock wrap (no argon2); the passphrase wrap is the cross-platform/export path and the SE-unavailable fallback.
 
 ## Base64
 

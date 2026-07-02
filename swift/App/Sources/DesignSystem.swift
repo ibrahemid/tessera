@@ -36,6 +36,10 @@ enum Palette {
     // Antique gold accent — the tessera.
     static let accent     = Color.themed(light: 0xA9791F, dark: 0xE3B23C)
     static let accentSoft = Color.themed(light: 0xEBD9AE, dark: 0x4A3C1C)
+    // Tinted accent surface for selected nav / toggle states.
+    static let accentWash = Color.themed(light: 0xF2E6C8, dark: 0x2A2616)
+    // Readable label on top of `accent` (dark ink on bright gold, white on deep gold).
+    static let onAccent   = Color.themed(light: 0xFFFFFF, dark: 0x1C1505)
     static let ringTrack  = Color.themed(light: 0xE8E8EC, dark: 0x2E313C)
     static let warning    = Color.themed(light: 0xC2410C, dark: 0xF97316)
 

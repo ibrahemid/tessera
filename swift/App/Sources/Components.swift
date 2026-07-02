@@ -1,70 +1,60 @@
 import SwiftUI
 import TesseraCore
 
-/// The signature element: a depleting ring around a colored issuer monogram.
-/// The ring warms from gold to burnt-orange in the final seconds.
-struct TesseraTile: View {
-    let account: Account
-    let remaining: Int
-    var reduceMotion: Bool
+/// The one naming rule for rows, toasts, and sheets: issuer, or the account
+/// label when there is no issuer.
+extension Account {
+    var displayName: String { issuer.isEmpty ? account : issuer }
+}
 
-    private var fraction: Double {
-        guard account.type != .hotp, account.period > 0 else { return 1 }
-        return max(0, min(1, Double(remaining) / Double(account.period)))
-    }
-    private var low: Bool { account.type != .hotp && remaining <= 5 }
-    private var monogram: String {
-        let s = account.issuer.isEmpty ? account.account : account.issuer
-        return String(s.prefix(1)).uppercased()
-    }
+/// The leading mark on every row: a colored rounded square holding the issuer's
+/// monogram. Color is deterministic per issuer (see Palette.tileColor).
+struct GlyphSquare: View {
+    let account: Account
+    var size: CGFloat = 40
+
     private var hue: Color { Palette.tileColor(for: account.issuer + account.account) }
+    private var monogram: String {
+        String(account.displayName.prefix(1)).uppercased()
+    }
 
     var body: some View {
-        ZStack {
-            if account.type == .hotp {
-                Circle().fill(hue.opacity(0.16))
-                Image(systemName: "number")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(hue)
-            } else {
-                Circle().stroke(Palette.ringTrack, lineWidth: 3)
-                Circle()
-                    .trim(from: 0, to: fraction)
-                    .stroke(low ? Palette.warning : Palette.accent,
-                            style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                    .animation(reduceMotion ? nil : .linear(duration: 1), value: fraction)
-                Circle().fill(hue.opacity(0.16)).padding(6)
+        RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
+            .fill(hue)
+            .frame(width: size, height: size)
+            .overlay(
                 Text(monogram)
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
-                    .foregroundStyle(hue)
-            }
-        }
-        .frame(width: 38, height: 38)
+                    .font(.system(size: size * 0.4, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+            )
     }
 }
 
-/// Pressable container that gives tactile feedback on hover/press.
-struct PressableTile<Content: View>: View {
-    var action: () -> Void
-    @ViewBuilder var content: Content
-    @State private var hovering = false
+/// The signature element: a depleting ring with the seconds-remaining inside it.
+/// Sits at a row's trailing edge and warms from gold to burnt-orange in the final
+/// seconds. HOTP rows show an advance glyph instead of this ring.
+struct CountdownRing: View {
+    let fraction: Double
+    let remaining: Int
+    let low: Bool
+    var size: CGFloat = 30
+    var reduceMotion: Bool = false
 
     var body: some View {
-        Button(action: action) { content }
-            .buttonStyle(.plain)
-            .background(
-                RoundedRectangle(cornerRadius: Metrics.tileRadius)
-                    .fill(Palette.surface)
-                    .shadow(color: .black.opacity(hovering ? 0.10 : 0.05),
-                            radius: hovering ? 7 : 3, y: hovering ? 3 : 1)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Metrics.tileRadius)
-                    .stroke(Palette.border, lineWidth: 1)
-            )
-            .onHover { hovering = $0 }
-            .animation(.easeOut(duration: 0.15), value: hovering)
+        ZStack {
+            Circle().stroke(Palette.ringTrack, lineWidth: 2.6)
+            Circle()
+                .trim(from: 0, to: fraction)
+                .stroke(low ? Palette.warning : Palette.accent,
+                        style: StrokeStyle(lineWidth: 2.6, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .animation(reduceMotion ? nil : .linear(duration: 1), value: fraction)
+            Text("\(remaining)")
+                .font(.system(size: size * 0.34, weight: .medium, design: .monospaced))
+                .monospacedDigit()
+                .foregroundStyle(low ? Palette.warning : Palette.textSecondary)
+        }
+        .frame(width: size, height: size)
     }
 }
 

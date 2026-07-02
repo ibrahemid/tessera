@@ -1,31 +1,63 @@
 ---
 import Base from "../layouts/Base.astro";
+const repo = "https://github.com/ibrahemid/tessera";
+const sections = [
+  {
+    h: "What Tessera stores",
+    b: "Your two-factor accounts (issuer, label, and secret keys) are kept in an encrypted vault on your Mac. The vault is sealed with XChaCha20-Poly1305 under a random key, which is wrapped by a key derived from your passphrase with argon2id. On devices with a Secure Enclave, that key can also be protected by Touch ID.",
+  },
+  {
+    h: "What Tessera transmits",
+    b: "Nothing. Codes are generated entirely offline. Tessera connects to no server we operate and contains no analytics, advertising, or crash-reporting SDKs.",
+  },
+  {
+    h: "Permissions",
+    b: "Tessera runs in the macOS App Sandbox. On-screen QR scanning asks macOS for Screen Recording permission, used only to read a QR code at the moment you trigger a scan. Importing a file asks you to pick that file. Tessera requests nothing else.",
+  },
+  {
+    h: "Data collection",
+    b: "Tessera collects no data, as Apple's App Privacy guidelines define it. We cannot see your accounts or your codes. The Mac App Store privacy label reads “Data Not Collected.”",
+  },
+];
 ---
-<Base title="Privacy — Tessera" description="Tessera collects nothing. Your 2FA secrets are encrypted on your device and never transmitted.">
-  <article class="py-12 max-w-2xl">
-    <h1 class="text-3xl font-semibold mb-2" style="font-family: var(--font-display)">Privacy Policy</h1>
-    <p class="text-sm mb-8" style="color: var(--color-ink-soft)">Last updated: June 2026</p>
+<Base title="Privacy · Tessera" description="Tessera collects nothing. Your 2FA secrets are encrypted on your device and never transmitted.">
+  <article class="mx-auto w-full max-w-[var(--prose)] px-5 sm:px-7 py-16 sm:py-20">
+    <span class="eyebrow">Privacy</span>
+    <h1 class="mt-4" style="font-size: clamp(2rem, 5vw, 3rem)">Nothing to collect.</h1>
+    <p class="mono text-xs mt-3" style="color: var(--ink-faint)">Last updated June 2026</p>
 
-    <div class="space-y-6 leading-relaxed" style="color: var(--color-ink)">
-      <p><strong>Short version:</strong> Tessera collects nothing. There are no accounts, no servers we operate, and no analytics or tracking of any kind. Your data stays on your device.</p>
+    <div class="tile p-6 sm:p-7 mt-9">
+      <p class="leading-relaxed" style="color: var(--ink)">
+        <strong>The short version:</strong> Tessera has no accounts, no servers we
+        operate, and no analytics or tracking of any kind. Your data stays on your
+        device, encrypted, and we have no way to see it.
+      </p>
+    </div>
 
-      <h2 class="text-xl font-semibold pt-2" style="font-family: var(--font-display)">What Tessera stores</h2>
-      <p>Your two-factor accounts (issuer, label, and secret keys) are stored in an encrypted vault on your Mac. The vault is encrypted with a key derived from your passphrase (argon2id) and sealed with XChaCha20-Poly1305. On devices with a Secure Enclave, the vault key can be additionally protected by Touch ID.</p>
+    <div class="mt-10 space-y-9">
+      {sections.map((s) => (
+        <section>
+          <h2 style="font-size: 1.25rem">{s.h}</h2>
+          <p class="mt-2.5 leading-relaxed" style="color: var(--ink-soft)">{s.b}</p>
+        </section>
+      ))}
 
-      <h2 class="text-xl font-semibold pt-2" style="font-family: var(--font-display)">What Tessera transmits</h2>
-      <p>Nothing. Tessera generates codes entirely offline. It does not connect to any Tessera-operated server, and it contains no analytics, advertising, or crash-reporting SDKs.</p>
+      <section>
+        <h2 style="font-size: 1.25rem">Open source</h2>
+        <p class="mt-2.5 leading-relaxed" style="color: var(--ink-soft)">
+          Tessera is open source under Apache-2.0. You can read exactly what it does
+          and build it yourself:
+          <a class="font-medium" style="color: var(--gold)" href={repo} rel="noopener"> github.com/ibrahemid/tessera</a>.
+        </p>
+      </section>
 
-      <h2 class="text-xl font-semibold pt-2" style="font-family: var(--font-display)">Permissions</h2>
-      <p>Tessera runs in the macOS App Sandbox. If you use on-screen QR scanning, macOS asks for Screen Recording permission, used only to read a QR code at the moment you trigger a scan. If you import a file, macOS asks you to pick that file. Tessera requests no other access.</p>
-
-      <h2 class="text-xl font-semibold pt-2" style="font-family: var(--font-display)">Data collection</h2>
-      <p>Tessera does not collect any data, as defined by Apple's App Privacy guidelines. We cannot see your accounts or codes.</p>
-
-      <h2 class="text-xl font-semibold pt-2" style="font-family: var(--font-display)">Open source</h2>
-      <p>Tessera is open source under the Apache-2.0 license. You can read exactly what it does and build it yourself: <a class="underline" style="color: var(--color-gold)" href="https://github.com/ibrahemid/tessera">github.com/ibrahemid/tessera</a>.</p>
-
-      <h2 class="text-xl font-semibold pt-2" style="font-family: var(--font-display)">Contact</h2>
-      <p>Questions about privacy: <a class="underline" style="color: var(--color-gold)" href="mailto:support@ibrahemid.com">support@ibrahemid.com</a>.</p>
+      <section>
+        <h2 style="font-size: 1.25rem">Contact</h2>
+        <p class="mt-2.5 leading-relaxed" style="color: var(--ink-soft)">
+          Questions about privacy:
+          <a class="font-medium" style="color: var(--gold)" href="mailto:support@ibrahemid.com"> support@ibrahemid.com</a>.
+        </p>
+      </section>
     </div>
   </article>
 </Base>
