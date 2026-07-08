@@ -15,3 +15,5 @@ site/dist/
 site/.astro/
 /tmp/
 swift/.swiftpm/
+AGENTS.md
+worktrees/

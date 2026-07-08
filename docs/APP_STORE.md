@@ -66,12 +66,11 @@ GitHub remote exists, proving Go↔Swift cross-decrypt on every change.
 
 `swift/App/Resources/Tessera.entitlements`:
 - `com.apple.security.app-sandbox` — required.
-- `com.apple.security.files.user-selected.read-write` + `…files.bookmarks.app-scope`
-  — so the app can open the CLI-shared vault folder via a security-scoped
-  bookmark instead of relocating the vault.
-- `com.apple.security.network.client` — for CloudKit sync (fast-follow). Remove
-  it for the first release if sync isn't shipping, to keep the permission set
-  minimal (reviewers reject unused permissions).
+- `com.apple.security.files.user-selected.read-write` — open/save panels for
+  backups, imports, and QR exports.
+
+Nothing else. Add `com.apple.security.network.client` only when CloudKit sync
+ships (reviewers reject unused permissions).
 
 No camera entitlement (on-screen QR uses ScreenCaptureKit, which is TCC-gated at
 runtime, not entitlement-gated). Local Keychain/Secure Enclave needs no
