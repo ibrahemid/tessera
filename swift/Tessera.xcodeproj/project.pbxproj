@@ -41,7 +41,7 @@
 		14C1CA4855CC4252BFD8F5DA /* swift */ = {isa = PBXFileReference; lastKnownFileType = folder; name = swift; path = .; sourceTree = SOURCE_ROOT; };
 		23134BAC77C4B97440D991AD /* Views.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views.swift; sourceTree = "<group>"; };
 		2DBAA510C3D19FC1992EAFA4 /* QRCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRCapture.swift; sourceTree = "<group>"; };
-		4AB934F98BB11F34E2AB22A4 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		4AB934F98BB11F34E2AB22A4 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		6824C6C919ABC8568702C44A /* VaultStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultStore.swift; sourceTree = "<group>"; };
 		6ACB1EA702E8FB216F872413 /* MarketingShot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketingShot.swift; sourceTree = "<group>"; };
 		6C7CBA90826111445BF73CF5 /* AppKey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppKey.swift; sourceTree = "<group>"; };
@@ -368,7 +368,6 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 5C6Y52822Q;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = App/Resources/Info.plist;
@@ -392,7 +391,6 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 5C6Y52822Q;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = App/Resources/Info.plist;
