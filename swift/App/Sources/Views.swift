@@ -206,6 +206,7 @@ struct VaultView: View {
     @State private var showingAdd = false
     @State private var copiedID: String?
     @State private var qrAccount: Account?
+    @State private var editAccount: Account?
     /// Density: roomy windowed layout (sidebar) vs a narrow menu-bar-friendly
     /// one (sidebar folded into a filter row). Persisted across launches.
     @AppStorage(AppModel.compactPrefKey) private var compact = false
@@ -227,7 +228,7 @@ struct VaultView: View {
         }
         if !query.isEmpty {
             let q = query.lowercased()
-            list = list.filter { "\($0.issuer) \($0.account)".lowercased().contains(q) }
+            list = list.filter { "\($0.issuer) \($0.account) \($0.handle)".lowercased().contains(q) }
         }
         return list
     }
@@ -301,6 +302,7 @@ struct VaultView: View {
         }
         .sheet(isPresented: $showingAdd) { AddAccountView() }
         .sheet(item: $qrAccount) { QRExportView(account: $0) }
+        .sheet(item: $editAccount) { EditAccountView(account: $0) }
         // Secondary drop target: dropping export files or QR images onto the main
         // window imports them; the summary shows in the status capsule.
         .onDrop(of: [.fileURL], isTargeted: $mainDropTargeted) { providers in
@@ -511,6 +513,7 @@ struct VaultView: View {
         Button(account.pinned ? "Unpin" : "Pin", systemImage: "pin") { model.togglePin(account) }
         if account.type == .hotp { Button("Advance code", systemImage: "forward") { model.advanceHOTP(account) } }
         Button("Copy code", systemImage: "doc.on.doc") { copy(account) }
+        Button("Edit alias…", systemImage: "character.cursor.ibeam") { editAccount = account }
         Button("Show QR code", systemImage: "qrcode") { qrAccount = account }
         Menu("Add to List") {
             ForEach(folders, id: \.self) { f in
@@ -583,6 +586,15 @@ struct AccountRowView: View {
                         Text(primaryName)
                             .font(Typo.label(compact ? 13.5 : 14.5, .semibold))
                             .foregroundStyle(Palette.textPrimary).lineLimit(1)
+                        if !account.handle.isEmpty {
+                            Text(account.handle)
+                                .font(Typo.code(compact ? 10.5 : 11.5))
+                                .foregroundStyle(Palette.accent)
+                                .padding(.horizontal, 5).padding(.vertical, 1)
+                                .background(RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                    .fill(Palette.accentWash))
+                                .fixedSize()
+                        }
                         if account.pinned {
                             Image(systemName: "star.fill")
                                 .font(.system(size: compact ? 8 : 9))
@@ -943,6 +955,50 @@ struct QRExportView: View {
         } catch {
             saveError = "Couldn't save the image: \(error.localizedDescription)"
         }
+    }
+}
+
+// MARK: Edit alias
+
+/// Rename an account's handle (alias) — the short identifier shown on the row and
+/// accepted wherever an account is looked up. Charset and vault-uniqueness are
+/// validated on save, with a factual inline reason on rejection.
+struct EditAccountView: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.dismiss) var dismiss
+    let account: Account
+    @State private var alias: String
+    @State private var error: String?
+
+    init(account: Account) {
+        self.account = account
+        _alias = State(initialValue: account.handle)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(spacing: 2) {
+                Text(account.displayName).font(Typo.display(16)).foregroundStyle(Palette.textPrimary)
+                Text("Short alias for search and lookup").font(Typo.label(11)).foregroundStyle(Palette.textSecondary)
+            }.frame(maxWidth: .infinity)
+
+            FieldBox {
+                TextField("Alias", text: $alias)
+                    .font(Typo.code(13)).textFieldStyle(.plain).autocorrectionDisabled()
+                    .onChange(of: alias) { error = nil }
+            }
+            if let e = error { ErrorLine(e) }
+
+            HStack {
+                Button("Cancel") { dismiss() }.buttonStyle(.plain).foregroundStyle(Palette.textSecondary)
+                Spacer()
+                ActionButton("Save", enabled: !alias.isEmpty) {
+                    if let reason = model.setHandle(account, to: alias) { error = reason }
+                    else { dismiss() }
+                }
+            }.font(Typo.label(12, .medium))
+        }
+        .padding(24).frame(width: 300).background(Palette.background)
     }
 }
 

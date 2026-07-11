@@ -19,6 +19,7 @@ public struct Account: Sendable, Equatable {
     public var period: Int
     public var counter: Int64
     public var folder: String
+    public var handle: String   // OPTIONAL short unique identifier; see /spec/vault-format.md
     public var tags: [String]
     public var pinned: Bool
     public var createdAt: Int64
@@ -26,11 +27,11 @@ public struct Account: Sendable, Equatable {
 
     public init(id: String, type: OTPType, issuer: String, account: String, secret: Data,
                 algorithm: String = "SHA1", digits: Int = 6, period: Int = 30, counter: Int64 = 0,
-                folder: String = "", tags: [String] = [], pinned: Bool = false,
+                folder: String = "", handle: String = "", tags: [String] = [], pinned: Bool = false,
                 createdAt: Int64 = 0, updatedAt: Int64 = 0) {
         self.id = id; self.type = type; self.issuer = issuer; self.account = account
         self.secret = secret; self.algorithm = algorithm; self.digits = digits; self.period = period
-        self.counter = counter; self.folder = folder; self.tags = tags; self.pinned = pinned
+        self.counter = counter; self.folder = folder; self.handle = handle; self.tags = tags; self.pinned = pinned
         self.createdAt = createdAt; self.updatedAt = updatedAt
     }
 }
@@ -53,6 +54,9 @@ public extension Account {
         }
         if type != .hotp && period <= 0 {
             throw AccountError.invalid("account \(id): period must be positive")
+        }
+        if !handle.isEmpty && !Handles.isValid(handle) {
+            throw AccountError.invalid("account \(id): invalid handle \(handle)")
         }
     }
 }
@@ -92,6 +96,8 @@ public enum CanonicalJSON {
         s += "\"created_at\":\(a.createdAt),"
         s += "\"digits\":\(a.digits),"
         s += "\"folder\":\(str(a.folder)),"
+        // Optional; omitted when empty. Sorts between "folder" and "id" by byte order.
+        if !a.handle.isEmpty { s += "\"handle\":\(str(a.handle))," }
         s += "\"id\":\(str(a.id)),"
         s += "\"issuer\":\(str(a.issuer)),"
         s += "\"period\":\(a.period),"
@@ -144,7 +150,7 @@ public enum CanonicalJSON {
         return Account(id: sval("id"), type: type, issuer: sval("issuer"), account: sval("account"),
                        secret: secret, algorithm: sval("algorithm"), digits: ival("digits"),
                        period: ival("period"), counter: i64("counter"), folder: sval("folder"),
-                       tags: tags, pinned: (o["pinned"] as? Bool) ?? false,
+                       handle: sval("handle"), tags: tags, pinned: (o["pinned"] as? Bool) ?? false,
                        createdAt: i64("created_at"), updatedAt: i64("updated_at"))
     }
 

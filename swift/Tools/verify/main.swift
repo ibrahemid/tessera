@@ -200,6 +200,34 @@ do {
     check(try resealed.open(passphrase: "pw", argon2: stub).count == 2, "reseal updates accounts")
 }
 
+// 10. Handles: deterministic assignment + canonical serialization vectors.
+do {
+    let h = dict("handles", V)
+    var allOK = true
+    for c in arr("assignment", h) {
+        var accts = (c["accounts"] as! [[String: Any]]).map { a in
+            Account(id: a["id"] as! String, type: .totp, issuer: a["issuer"] as? String ?? "",
+                    account: a["account"] as? String ?? "", secret: Data("x".utf8),
+                    handle: a["handle"] as? String ?? "", createdAt: Int64((a["created_at"] as! NSNumber).intValue))
+        }
+        Handles.assign(&accts)
+        let want = c["expected"] as! [String: String]
+        for a in accts where a.handle != want[a.id] { allOK = false }
+        // Assignment is idempotent: a second pass changes nothing.
+        var again = accts
+        if Handles.assign(&again) || again.map(\.handle) != accts.map(\.handle) { allOK = false }
+    }
+    check(allOK, "handle assignment vectors (deterministic, idempotent)")
+
+    let canon = dict("canonical", h)["expected_canonical_json"] as! String
+    let a = Account(id: "00000000-0000-4000-8000-000000000010", type: .totp, issuer: "ACME",
+                    account: "alice@example.com", secret: Data("12345678901234567890".utf8),
+                    algorithm: "SHA1", digits: 6, period: 30, handle: "ac",
+                    createdAt: 1700000000, updatedAt: 1700000000)
+    let got = String(decoding: CanonicalJSON.encode([a]), as: UTF8.self)
+    check(got == canon, "handle canonical serialization is byte-identical to Go")
+}
+
 print("")
 if failures == 0 { print("ALL SWIFT INTEROP CHECKS PASSED") } else { print("\(failures) CHECK(S) FAILED") }
 exit(failures == 0 ? 0 : 1)
