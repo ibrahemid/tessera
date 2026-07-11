@@ -47,6 +47,11 @@
   code.inline { font-family:ui-monospace,Menlo,monospace; font-size:12px; background:rgba(127,127,127,.14);
     padding:1px 6px; border-radius:5px; }
   ol { padding-left:20px; } ol li { margin:4px 0; }
+  table.cases { width:100%; border-collapse:collapse; font-size:13px; }
+  table.cases th { text-align:left; color:var(--dim); font-weight:600; font-size:11px;
+    text-transform:uppercase; letter-spacing:.06em; padding:0 10px 8px; }
+  table.cases td { padding:10px; border-top:1px solid var(--line); vertical-align:top; }
+  table.cases td:first-child, table.cases th:first-child { padding-left:0; }
 </style>
 </head>
 <body>
@@ -181,9 +186,66 @@
     </ol>
   </div>
 
+  <h2><span class="step">4</span>Manual test cases for this batch</h2>
+  <div class="panel">
+    <table class="cases">
+      <tr><th>Case</th><th>Steps</th><th>Expect</th></tr>
+      <tr>
+        <td>Bare setup key</td>
+        <td>Add field: paste <code class="inline">ZB573K4APD63E6RLD3WAHI3QFZ35RLEP</code>, then a lowercase / spaced / dashed variant of the same key</td>
+        <td>Detected as a setup key; TOTP, SHA1, 6 digits, 30s; empty issuer and account; all three variants produce the same account</td>
+      </tr>
+      <tr>
+        <td>Multi-QR image</td>
+        <td>Add: drop one image containing two or more QR codes</td>
+        <td>Both accounts import from the single file</td>
+      </tr>
+      <tr>
+        <td>Multiple images</td>
+        <td>Add: drop several QR images in one drag</td>
+        <td>Each image decodes and imports on its own</td>
+      </tr>
+      <tr>
+        <td>Mixed valid/invalid batch</td>
+        <td>Drop or <code class="inline">tess import</code> a set mixing valid otpauth lines/images with a garbage line and a corrupt image</td>
+        <td>Every valid item imports; each failure lists its source and reason; a non-zero exit or failed report only when nothing imported</td>
+      </tr>
+      <tr>
+        <td>Migration URI in a file</td>
+        <td>Drop a .txt containing one <code class="inline">otpauth-migration://</code> line</td>
+        <td>Every account in that migration payload imports</td>
+      </tr>
+      <tr>
+        <td>.2fas / Aegis file drop</td>
+        <td>Drop an exported .2fas or Aegis .json file directly onto the add sheet or main window</td>
+        <td>Imports the same as <code class="inline">tess import --file</code> on the same file</td>
+      </tr>
+      <tr>
+        <td>CLI HEIC limitation</td>
+        <td><code class="inline">tess import export.heic</code></td>
+        <td>Reports the format as unsupported (HEIC decodes in the app only); the same file imports when dropped in the app</td>
+      </tr>
+      <tr>
+        <td><code class="inline">tess vault reset</code></td>
+        <td>Run without <code class="inline">--force</code>, then with it</td>
+        <td>Without: prompts for the vault filename before deleting. With: deletes immediately, no prompt</td>
+      </tr>
+      <tr>
+        <td>Shared vault, CLI → app</td>
+        <td>In the app, Settings → Open existing vault… on the CLI's vault, then run <code class="inline">tess add</code> in the terminal</td>
+        <td>Foregrounding the app shows the new account without a manual reopen</td>
+      </tr>
+      <tr>
+        <td>Shared vault, app → CLI</td>
+        <td>Add an account in the app, then run <code class="inline">tess ls</code></td>
+        <td>The CLI sees the new account after the app's atomic vault rewrite</td>
+      </tr>
+    </table>
+  </div>
+
   <h2>What works today</h2>
   <div class="panel">
-    Tessera already imports: <b>otpauth links</b>, <b>Google Authenticator</b> QR exports, <b>QR images/on-screen</b>, and unencrypted <b>Aegis / 2FAS / Raivo / Ente</b> files (drag the file into Add → or <code class="inline">tess import --file export.json</code>). Encrypted app exports are detected and tell you to export unencrypted — full decryption is the next step.
+    Tessera already imports: <b>otpauth links</b>, bare <b>setup keys</b>, <b>Google Authenticator</b> migration QR/links, <b>QR images</b> (PNG, JPEG, WebP, TIFF, BMP on the CLI; those plus HEIC and GIF in the app; multiple QR codes per image), and unencrypted <b>Aegis / 2FAS / Raivo / Ente</b> files (drag the file into Add → or <code class="inline">tess import --file export.json</code>). Drops and <code class="inline">tess import</code> both take multiple files at once and import whatever parses, reporting each failure individually. The app and CLI can share one vault (Settings → Open existing vault…), and <code class="inline">tess vault reset</code> clears a vault to start over. Encrypted app exports are detected and tell you to export unencrypted — full decryption is the next step.
   </div>
 </main>
 <script>

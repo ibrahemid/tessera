@@ -68,6 +68,9 @@ GitHub remote exists, proving Go↔Swift cross-decrypt on every change.
 - `com.apple.security.app-sandbox` — required.
 - `com.apple.security.files.user-selected.read-write` — open/save panels for
   backups, imports, and QR exports.
+- `com.apple.security.files.bookmarks.app-scope` — persist a security-scoped
+  bookmark to a vault file the user opens (a vault shared with the `tess` CLI),
+  so the app reopens it on later launches without re-prompting.
 
 Nothing else. Add `com.apple.security.network.client` only when CloudKit sync
 ships (reviewers reject unused permissions).

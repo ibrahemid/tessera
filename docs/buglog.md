@@ -51,6 +51,24 @@ Cumulative additional fixes (target ~20): **20 / 20 — audit loop complete**
 - HOTP `remaining(for:)` divide-by-zero: `OTP.remainingSeconds` already guards `period <= 0`. Safe.
 - Drag-to-reorder as a `Button` row: the original shipped row (`PressableTile`) was already a Button with `.onMove`; no regression.
 
+## Batch 3 — import/add hardening
+
+| # | Bug | Fix | Status |
+|---|-----|-----|--------|
+| B1 | CLI QR decode only read the first code per image | `qr.DecodeAll` returns every code in an image; `tess add`/`tess import` import all of them | fixed |
+| B2 | CLI import aborted on the first bad line/file | `tess import` is batch-resilient: imports everything that parses, records a per-item error block, exits non-zero only when nothing imported | fixed |
+| B3 | CLI images limited to PNG/JPEG | Added WebP, TIFF, BMP via `x/image` (HEIC stays app-only; no cgo in the security-audited Go module) | fixed |
+| B4 | Bare setup key rejected everywhere (app Link field, `tess add`) | Both cores classify a bare base32 key (spaces/dashes stripped, `^[A-Za-z2-7]+$`, ≥16 chars) as a setup key and default it to TOTP/SHA1/6/30 | fixed |
+| B5 | No drag-and-drop for images or export files | Add sheet and main window accept multiple dropped images/export files; per-item import report | fixed |
+| B6 | App and CLI kept separate default vaults — root cause: `TESSERA_VAULT` set for the CLI's shell wasn't inherited by the app process | "Open existing vault…" persists a security-scoped bookmark so the app and CLI point at the same vault file | fixed |
+| B7 | No way to clear a vault and start over | `tess vault reset [--force]`; without `--force` it prompts for the vault filename before deleting | fixed |
+
+### Needs a signed, sandboxed build to confirm
+
+- Bookmark survives a `tess` atomic vault rewrite while the app is backgrounded, then reflects it on foreground (`vaultUnreachable` should never trigger for a live external vault — only for a missing/unreadable one).
+- The macOS powerbox panel for "Open existing vault…" (security-scoped bookmark creation needs the real sandbox).
+- Drag-and-drop of images/export files onto the add sheet and main window at runtime.
+
 ## Loop stopped at 20 — remaining items need a real build, not more blind edits
 
 These are the honest next steps, each needing Xcode to validate (so the loop would only be guessing):
