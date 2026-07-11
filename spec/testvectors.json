@@ -107,5 +107,148 @@
       "wrong_passphrase": "incorrect horse battery staple",
       "base64url_secret_rejected": true
     }
+  },
+  "handles": {
+    "_status": "Deterministic handle assignment + canonical serialization. Both cores MUST produce identical handles and identical canonical bytes.",
+    "assignment": [
+      {
+        "name": "multi-word",
+        "accounts": [
+          {
+            "id": "m1",
+            "issuer": "Google Cloud",
+            "account": "",
+            "created_at": 1
+          }
+        ],
+        "expected": {
+          "m1": "gc"
+        }
+      },
+      {
+        "name": "github-single-word-caps",
+        "accounts": [
+          {
+            "id": "g1",
+            "issuer": "GitHub",
+            "account": "",
+            "created_at": 1
+          },
+          {
+            "id": "g2",
+            "issuer": "GitHub",
+            "account": "",
+            "created_at": 2
+          }
+        ],
+        "expected": {
+          "g1": "gi",
+          "g2": "gi2"
+        }
+      },
+      {
+        "name": "digit-leading",
+        "accounts": [
+          {
+            "id": "d1",
+            "issuer": "1Password",
+            "account": "",
+            "created_at": 1
+          }
+        ],
+        "expected": {
+          "d1": "x1p"
+        }
+      },
+      {
+        "name": "empty-issuer-email",
+        "accounts": [
+          {
+            "id": "e1",
+            "issuer": "",
+            "account": "alice@example.com",
+            "created_at": 1
+          }
+        ],
+        "expected": {
+          "e1": "al"
+        }
+      },
+      {
+        "name": "empty-issuer-and-account",
+        "accounts": [
+          {
+            "id": "z1",
+            "issuer": "",
+            "account": "",
+            "created_at": 1
+          }
+        ],
+        "expected": {
+          "z1": "acct"
+        }
+      },
+      {
+        "name": "collision-chain",
+        "accounts": [
+          {
+            "id": "c1",
+            "issuer": "ACME",
+            "account": "",
+            "created_at": 1
+          },
+          {
+            "id": "c2",
+            "issuer": "ACME",
+            "account": "",
+            "created_at": 2
+          },
+          {
+            "id": "c3",
+            "issuer": "ACME",
+            "account": "",
+            "created_at": 3
+          }
+        ],
+        "expected": {
+          "c1": "ac",
+          "c2": "ac2",
+          "c3": "ac3"
+        }
+      },
+      {
+        "name": "user-edited-skip",
+        "accounts": [
+          {
+            "id": "u1",
+            "issuer": "ACME",
+            "account": "",
+            "created_at": 1,
+            "handle": "ac"
+          },
+          {
+            "id": "u2",
+            "issuer": "ACME",
+            "account": "",
+            "created_at": 2,
+            "handle": "ac2"
+          },
+          {
+            "id": "u3",
+            "issuer": "ACME",
+            "account": "",
+            "created_at": 3
+          }
+        ],
+        "expected": {
+          "u1": "ac",
+          "u2": "ac2",
+          "u3": "ac3"
+        }
+      }
+    ],
+    "canonical": {
+      "expected_canonical_json": "[{\"account\":\"alice@example.com\",\"algorithm\":\"SHA1\",\"counter\":0,\"created_at\":1700000000,\"digits\":6,\"folder\":\"\",\"handle\":\"ac\",\"id\":\"00000000-0000-4000-8000-000000000010\",\"issuer\":\"ACME\",\"period\":30,\"pinned\":false,\"secret\":\"MTIzNDU2Nzg5MDEyMzQ1Njc4OTA=\",\"tags\":[],\"type\":\"totp\",\"updated_at\":1700000000}]"
+    }
   }
 }
