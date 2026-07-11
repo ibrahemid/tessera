@@ -3,13 +3,12 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
 	"github.com/ibrahemid/tessera/go/internal/base32x"
-	"github.com/ibrahemid/tessera/go/internal/importers"
-	"github.com/ibrahemid/tessera/go/internal/migration"
-	"github.com/ibrahemid/tessera/go/internal/otpauth"
+	"github.com/ibrahemid/tessera/go/internal/detect"
 	"github.com/ibrahemid/tessera/go/internal/qr"
 	"github.com/spf13/cobra"
 )
@@ -19,132 +18,179 @@ func newImportCmd() *cobra.Command {
 		migrationURIs []string
 		otpauthURIs   []string
 		qrPaths       []string
-		filePath      string
+		filePaths     []string
 	)
 	cmd := &cobra.Command{
-		Use:   "import",
-		Short: "Bulk-import accounts from a file, other apps, Google exports, otpauth URIs, or QR images",
-		Long: `Import accounts in bulk. Sources combine and can be repeated:
+		Use:   "import [path...]",
+		Short: "Bulk-import accounts from files, other apps, Google exports, otpauth URIs, or QR images",
+		Args:  cobra.ArbitraryArgs,
+		Long: `Import accounts in bulk. Sources combine and can be repeated; everything that
+parses is imported, and items that fail are listed without aborting the batch:
 
-  tess import --file accounts.txt              # one otpauth:// or otpauth-migration:// per line
-  tess import --file export.json               # an Aegis, 2FAS, or Raivo export (unencrypted)
-  tess import --qr a.png --qr b.png            # multiple QR images (e.g. a multi-screen Google export)
+  tess import accounts.txt export.json code.png   # paths auto-detect by content
+  tess import --file accounts.txt                 # otpauth:// / otpauth-migration:// lines, or a setup key per line
+  tess import --file export.json                  # an Aegis, 2FAS, or Raivo export (unencrypted)
+  tess import --qr a.png --qr b.png               # QR images (multiple codes per image are all read)
   tess import --migration "otpauth-migration://offline?data=..."
   tess import --otpauth "otpauth://totp/...."
 
 App exports must be unencrypted (Aegis/2FAS: export with the backup password off).
 Duplicate accounts (same type, issuer, account and secret) are skipped.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var imported []account.Account
-
-			if filePath != "" {
-				accts, err := importFromFile(filePath)
-				if err != nil {
-					return err
-				}
-				imported = append(imported, accts...)
+			batch := collectImport(qrPaths, filePaths, migrationURIs, otpauthURIs, args)
+			if len(batch.accounts) == 0 && len(batch.problems) == 0 {
+				return fmt.Errorf("specify --file, --qr, --migration, --otpauth, or a file path")
 			}
-			for _, uri := range migrationURIs {
-				accts, err := migration.Parse(uri)
-				if err != nil {
-					return fmt.Errorf("migration import: %w", err)
-				}
-				imported = append(imported, accts...)
-			}
-			for _, uri := range otpauthURIs {
-				a, err := otpauth.Parse(uri)
-				if err != nil {
-					return fmt.Errorf("otpauth import: %w", err)
-				}
-				imported = append(imported, a)
-			}
-			for _, path := range qrPaths {
-				payload, err := qr.DecodeFile(path)
-				if err != nil {
-					return fmt.Errorf("qr %s: %w", path, err)
-				}
-				accts, err := importFromPayload(payload)
-				if err != nil {
-					return fmt.Errorf("qr %s: %w", path, err)
-				}
-				imported = append(imported, accts...)
-			}
-
-			if len(imported) == 0 {
-				return fmt.Errorf("specify --file, --qr, --migration, or --otpauth")
+			if len(batch.accounts) == 0 {
+				printProblems(cmd, batch.problems)
+				return fmt.Errorf("no accounts imported")
 			}
 
 			s, err := openSession()
 			if err != nil {
 				return err
 			}
-			added, skipped := mergeAccounts(s, imported)
-			if added == 0 {
-				out(cmd, "No new accounts (%d duplicate(s) skipped).", skipped)
-				return nil
+			added, skipped := mergeAccounts(s, batch.accounts)
+			if added > 0 {
+				if err := s.save(); err != nil {
+					return err
+				}
 			}
-			if err := s.save(); err != nil {
-				return err
-			}
-			if skipped > 0 {
-				out(cmd, "Imported %d account(s); skipped %d duplicate(s).", added, skipped)
-			} else {
-				out(cmd, "Imported %d account(s).", added)
+			printImportSummary(cmd, added, skipped)
+			printProblems(cmd, batch.problems)
+			if added == 0 && len(batch.problems) > 0 {
+				return fmt.Errorf("no accounts imported")
 			}
 			return nil
 		},
 	}
 	f := cmd.Flags()
-	f.StringVar(&filePath, "file", "", "text file with one otpauth:// or otpauth-migration:// URI per line")
+	f.StringArrayVar(&filePaths, "file", nil, "text or JSON export file (repeatable)")
 	f.StringArrayVar(&migrationURIs, "migration", nil, "Google Authenticator otpauth-migration:// URI (repeatable)")
 	f.StringArrayVar(&otpauthURIs, "otpauth", nil, "single otpauth:// URI (repeatable)")
-	f.StringArrayVar(&qrPaths, "qr", nil, "QR image file (repeatable; png/jpeg)")
+	f.StringArrayVar(&qrPaths, "qr", nil, "QR image file (repeatable; png/jpeg/webp/tiff/bmp)")
 	return cmd
 }
 
-// importFromFile parses a text file of otpauth/otpauth-migration URIs, one per
-// line. Blank lines and lines starting with '#' are ignored.
-func importFromFile(path string) ([]account.Account, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read import file: %w", err)
-	}
-	// A JSON export from another app (Aegis, 2FAS, Raivo) takes precedence over
-	// the line-based otpauth format.
-	if accts, source, ok, perr := importers.Parse(data); ok {
-		if perr != nil {
-			return nil, fmt.Errorf("%s import: %w", source, perr)
-		}
-		return accts, nil
-	}
-	var out []account.Account
-	for n, raw := range strings.Split(string(data), "\n") {
-		line := strings.TrimSpace(raw)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		accts, err := importFromPayload(line)
-		if err != nil {
-			return nil, fmt.Errorf("line %d: %w", n+1, err)
-		}
-		out = append(out, accts...)
-	}
-	return out, nil
+// importBatch accumulates the accounts parsed from every source in one run along
+// with a per-item problem for each source that failed. Collecting the batch does
+// no vault I/O, so it is unit-testable without a session.
+type importBatch struct {
+	accounts []account.Account
+	problems []importProblem
 }
 
-// importFromPayload dispatches a single URI/payload to the right parser.
-func importFromPayload(payload string) ([]account.Account, error) {
-	switch {
-	case strings.HasPrefix(payload, "otpauth-migration://"):
-		return migration.Parse(payload)
-	case strings.HasPrefix(payload, "otpauth://"):
-		a, err := otpauth.Parse(payload)
-		if err != nil {
-			return nil, err
+// importProblem names one item that could not be imported. reason never contains
+// a raw secret; source is a file path (optionally with a line or QR index).
+type importProblem struct {
+	source string
+	reason string
+}
+
+// collectImport parses every source into one batch. QR flags decode images;
+// --file reads text/JSON; --migration/--otpauth parse a single URI; positional
+// paths auto-detect image vs text by extension.
+func collectImport(qrPaths, filePaths, migrationURIs, otpauthURIs, args []string) *importBatch {
+	b := &importBatch{}
+	for _, p := range qrPaths {
+		b.addImage(p)
+	}
+	for _, p := range filePaths {
+		b.addTextFile(p)
+	}
+	for _, uri := range migrationURIs {
+		b.addPayload("--migration", uri)
+	}
+	for _, uri := range otpauthURIs {
+		b.addPayload("--otpauth", uri)
+	}
+	for _, arg := range args {
+		if isImagePath(arg) {
+			b.addImage(arg)
+		} else {
+			b.addTextFile(arg)
 		}
-		return []account.Account{a}, nil
-	default:
-		return nil, fmt.Errorf("unrecognized payload (expected otpauth:// or otpauth-migration://)")
+	}
+	return b
+}
+
+// addImage decodes every QR code in an image file and parses each payload.
+func (b *importBatch) addImage(path string) {
+	payloads, err := qr.DecodeFileAll(path)
+	if err != nil {
+		reason := "no QR code found"
+		if strings.Contains(err.Error(), "decode image") {
+			reason = "unreadable image"
+		}
+		b.problems = append(b.problems, importProblem{path, reason})
+		return
+	}
+	for i, payload := range payloads {
+		src := path
+		if len(payloads) > 1 {
+			src = fmt.Sprintf("%s (QR %d)", path, i+1)
+		}
+		accts, errs := detect.ParseText(payload)
+		b.accounts = append(b.accounts, accts...)
+		for _, e := range errs {
+			b.problems = append(b.problems, importProblem{src, e.Err.Error()})
+		}
+	}
+}
+
+// addTextFile reads a file and parses it as text/JSON, recording per-line
+// failures against the file path and line number.
+func (b *importBatch) addTextFile(path string) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		b.problems = append(b.problems, importProblem{path, "could not read file"})
+		return
+	}
+	accts, errs := detect.ParseText(string(data))
+	b.accounts = append(b.accounts, accts...)
+	for _, e := range errs {
+		src := path
+		if e.Line > 0 {
+			src = fmt.Sprintf("%s line %d", path, e.Line)
+		}
+		b.problems = append(b.problems, importProblem{src, e.Err.Error()})
+	}
+}
+
+// addPayload parses a single URI passed via a flag.
+func (b *importBatch) addPayload(source, text string) {
+	accts, errs := detect.ParseText(text)
+	b.accounts = append(b.accounts, accts...)
+	for _, e := range errs {
+		b.problems = append(b.problems, importProblem{source, e.Err.Error()})
+	}
+}
+
+// imageExts are the file extensions routed through QR decoding.
+var imageExts = map[string]bool{
+	".png": true, ".jpg": true, ".jpeg": true,
+	".webp": true, ".tiff": true, ".tif": true, ".bmp": true, ".gif": true,
+}
+
+func isImagePath(path string) bool {
+	return imageExts[strings.ToLower(filepath.Ext(path))]
+}
+
+func printImportSummary(cmd *cobra.Command, added, skipped int) {
+	if skipped > 0 {
+		out(cmd, "Imported %d, skipped %d duplicate(s)", added, skipped)
+	} else {
+		out(cmd, "Imported %d", added)
+	}
+}
+
+func printProblems(cmd *cobra.Command, problems []importProblem) {
+	if len(problems) == 0 {
+		return
+	}
+	out(cmd, "Could not import %d item(s):", len(problems))
+	for _, p := range problems {
+		out(cmd, "  %s: %s", p.source, p.reason)
 	}
 }
 
