@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 import TesseraCore
 
 extension Account: @retroactive Identifiable {}
@@ -15,6 +16,8 @@ struct RootView: View {
             Group {
                 if model.needsReset {
                     ResetPromptView()
+                } else if model.vaultUnreachable {
+                    VaultUnreachableView()
                 } else if model.isOpening {
                     LaunchView()
                 } else if model.needsPassphrase {
@@ -166,6 +169,28 @@ struct ResetPromptView: View {
     }
 }
 
+/// The external vault (a file shared with the tess CLI) is configured but can't
+/// be read this launch. Never offers to delete it — only to relocate or detach.
+struct VaultUnreachableView: View {
+    @EnvironmentObject var model: AppModel
+    var body: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            MosaicMark(side: 50)
+            Text("Can't reach your vault").font(Typo.display(20)).foregroundStyle(Palette.textPrimary)
+            Text("The vault file you opened isn't available. It may have moved, or the disk isn't mounted.")
+                .multilineTextAlignment(.center).font(Typo.label(13)).foregroundStyle(Palette.textSecondary)
+                .frame(maxWidth: 360)
+            PrimaryButton("Locate vault…") { model.openExistingVault() }.frame(maxWidth: 260)
+            Button("Use built-in vault") { model.useBuiltInVault() }
+                .buttonStyle(.plain).font(Typo.label(12)).foregroundStyle(Palette.textSecondary)
+            if let e = model.errorMessage { ErrorLine(e) }
+            Spacer()
+        }
+        .padding(32)
+    }
+}
+
 // MARK: Vault (windowed)
 
 private enum SidebarItem: Hashable {
@@ -188,6 +213,7 @@ struct VaultView: View {
     @FocusState private var searchFocused: Bool
     @State private var listSheetAccount: Account?   // account being assigned to a new list
     @State private var newListName = ""
+    @State private var mainDropTargeted = false
 
     private var folders: [String] { model.folders }
 
@@ -275,6 +301,16 @@ struct VaultView: View {
         }
         .sheet(isPresented: $showingAdd) { AddAccountView() }
         .sheet(item: $qrAccount) { QRExportView(account: $0) }
+        // Secondary drop target: dropping export files or QR images onto the main
+        // window imports them; the summary shows in the status capsule.
+        .onDrop(of: [.fileURL], isTargeted: $mainDropTargeted) { providers in
+            loadDroppedURLs(providers) { urls in
+                guard !urls.isEmpty else { return }
+                _ = model.importDroppedFiles(urls)
+                if let r = model.importReport, !r.isEmpty { model.status = r.line }
+            }
+            return true
+        }
         .alert("New List", isPresented: Binding(
             get: { listSheetAccount != nil },
             set: { if !$0 { listSheetAccount = nil; newListName = "" } }
@@ -386,7 +422,8 @@ struct VaultView: View {
 
     @ViewBuilder private var detailContent: some View {
         if model.accounts.isEmpty {
-            EmptyState { showingAdd = true }
+            EmptyState(add: { showingAdd = true },
+                       openExisting: model.isExternalVault ? nil : { model.openExistingVault() })
         } else if visible.isEmpty {
             emptyResults
         } else {
@@ -599,73 +636,167 @@ struct AccountRowView: View {
 struct AddAccountView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) var dismiss
-    private enum Mode: String, CaseIterable, Identifiable { case link = "Link", manual = "Manual", scan = "Scan"; var id: String { rawValue } }
-    @State private var mode: Mode = .link
-    @State private var uri = ""
+    @State private var input = ""
+    @State private var showManual = false
+    @State private var manualSecret = ""
     @State private var scanning = false
+    @State private var dropTargeted = false
+
+    private var trimmed: String { input.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var kind: InputDetect.InputKind { InputDetect.classify(input) }
+    private var isSetupKey: Bool { kind == .setupKey }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack { Text("Add accounts").font(Typo.display(18)).foregroundStyle(Palette.textPrimary); Spacer() }
-            Picker("", selection: $mode) {
-                ForEach(Mode.allCases) { Text($0.rawValue).tag($0) }
-            }.pickerStyle(.segmented).labelsHidden()
-                .onChange(of: mode) { _, _ in model.errorMessage = nil; model.status = nil }
-
-            switch mode {
-            case .link: linkMode
-            case .manual: ManualEntryForm { dismiss() }
-            case .scan: scanMode
-            }
-
-            if mode != .manual {
-                if let e = model.errorMessage { ErrorLine(e) }
-                else if let s = model.status { StatusLine(s) }
+            if showManual {
+                ManualEntryForm(prefillSecret: manualSecret) { dismiss() }
+                Button("Back to paste") { showManual = false; model.errorMessage = nil }
+                    .buttonStyle(.plain).font(Typo.label(12)).foregroundStyle(Palette.textSecondary)
+            } else {
+                primaryField
+                secondaryActions
+                resultArea
+                footer
             }
         }
         .padding(20).frame(width: 440).background(Palette.background)
-        .onAppear { model.errorMessage = nil; model.status = nil }
+        .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { handleDrop($0) }
+        .overlay { if dropTargeted { dropOverlay } }
+        .onAppear { model.errorMessage = nil; model.status = nil; model.importReport = nil }
     }
 
-    @ViewBuilder private var linkMode: some View {
-        Text("Paste one or more otpauth or Google Authenticator links, one per line.")
+    @ViewBuilder private var primaryField: some View {
+        Text("Paste an otpauth link, an app or Google Authenticator export, or a setup key. One per line.")
             .font(Typo.label(12)).foregroundStyle(Palette.textSecondary)
-        FieldBox { TextField("otpauth://…", text: $uri, axis: .vertical).lineLimit(3...8) }
-        Button { if model.importFromFile() { dismiss() } } label: {
-            Label("Import a file or app export…", systemImage: "doc.text").font(Typo.label(12, .medium))
-        }.buttonStyle(.plain).foregroundStyle(Palette.accent)
+        FieldBox { TextField("otpauth://…", text: $input, axis: .vertical).lineLimit(3...8) }
+        if let r = readout {
+            Text(r).font(Typo.label(11, .medium)).foregroundStyle(Palette.textSecondary)
+        }
+    }
+
+    @ViewBuilder private var secondaryActions: some View {
+        HStack(spacing: 16) {
+            Button {
+                scanning = true
+                Task { defer { scanning = false }
+                    do {
+                        let payloads = try await QRCapture.scanScreen()
+                        finish(model.importReporting(payloads.joined(separator: "\n")))
+                    } catch { model.errorMessage = "\(error)" } }
+            } label: {
+                Label(scanning ? "Scanning…" : "Scan screen", systemImage: "qrcode.viewfinder").font(Typo.label(12, .medium))
+            }.buttonStyle(.plain).foregroundStyle(Palette.accent).disabled(scanning)
+            Button { finish(model.importPickedFiles()) } label: {
+                Label("Import from images or files", systemImage: "doc.text").font(Typo.label(12, .medium))
+            }.buttonStyle(.plain).foregroundStyle(Palette.accent)
+        }
+    }
+
+    @ViewBuilder private var resultArea: some View {
+        if let report = model.importReport, !report.isEmpty {
+            ImportReportView(report: report)
+        } else if let e = model.errorMessage {
+            ErrorLine(e)
+        }
+    }
+
+    private var footer: some View {
         HStack {
             Spacer()
             Button("Cancel") { dismiss() }.buttonStyle(.plain).foregroundStyle(Palette.textSecondary)
                 .keyboardShortcut(.cancelAction)
-            ActionButton("Add", enabled: !uri.isEmpty) {
-                if model.importReporting(uri) { dismiss() }
-            }
+            ActionButton(isSetupKey ? "Continue" : "Add", enabled: !trimmed.isEmpty) { primaryAction() }
         }
     }
 
-    @ViewBuilder private var scanMode: some View {
-        Text("Scan every 2FA QR on your screen at once, or read them from image files.")
-            .font(Typo.label(12)).foregroundStyle(Palette.textSecondary)
-        Button {
-            scanning = true
-            Task { defer { scanning = false }
-                do {
-                    let payloads = try await QRCapture.scanScreen()
-                    if model.importReporting(payloads.joined(separator: "\n")) { dismiss() }
-                } catch { model.errorMessage = "\(error)" } }
-        } label: {
-            Label(scanning ? "Scanning…" : "Scan QR codes on screen", systemImage: "qrcode.viewfinder").font(Typo.label(12, .medium))
-        }.buttonStyle(.plain).foregroundStyle(Palette.accent).disabled(scanning)
-        Button { if model.importQRImage() { dismiss() } } label: {
-            Label("Read QR from images…", systemImage: "photo").font(Typo.label(12, .medium))
-        }.buttonStyle(.plain).foregroundStyle(Palette.accent)
-        HStack { Spacer(); Button("Cancel") { dismiss() }.buttonStyle(.plain).foregroundStyle(Palette.textSecondary) }
+    private func primaryAction() {
+        if isSetupKey {
+            manualSecret = trimmed
+            model.errorMessage = nil
+            model.importReport = nil
+            showManual = true
+        } else {
+            finish(model.importReporting(input))
+        }
+    }
+
+    /// Dismiss on a clean success; stay so the per-item report stays visible when
+    /// anything failed.
+    private func finish(_ added: Bool) {
+        if added, model.importReport?.hasDetail == false { dismiss() }
+    }
+
+    /// A factual one-line readout of what the field currently holds.
+    private var readout: String? {
+        if trimmed.isEmpty { return nil }
+        switch kind {
+        case .otpauth: return "otpauth link"
+        case .migration:
+            let n = (try? Migration.parse(input).count) ?? 0
+            return n > 0 ? "Google Authenticator export (\(n) account\(n == 1 ? "" : "s"))"
+                         : "Google Authenticator export"
+        case .exportJSON:
+            if let found = try? Importers.parse(Data(input.utf8)) {
+                let n = found.accounts.count
+                return "\(found.source) export (\(n) account\(n == 1 ? "" : "s"))"
+            }
+            return "App export"
+        case .setupKey: return "Setup key"
+        case .invalid:
+            return (trimmed.count >= 4 && !input.contains(where: \.isNewline)) ? "Not recognized" : nil
+        }
+    }
+
+    private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
+        loadDroppedURLs(providers) { urls in
+            guard !urls.isEmpty else { return }
+            _ = model.importDroppedFiles(urls)
+        }
+        return true
+    }
+
+    private var dropOverlay: some View {
+        RoundedRectangle(cornerRadius: 12)
+            .stroke(Palette.accent, style: StrokeStyle(lineWidth: 2, dash: [6]))
+            .background(Palette.accentWash.opacity(0.4), in: RoundedRectangle(cornerRadius: 12))
+            .overlay(Text("Drop images or export files").font(Typo.label(12, .medium)).foregroundStyle(Palette.accent))
+            .allowsHitTesting(false)
+    }
+}
+
+/// Per-item outcome of a bulk import: a summary line plus a scrollable list of
+/// anything that did not import (source and reason, never a full secret).
+struct ImportReportView: View {
+    let report: ImportSummary
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if report.added > 0 { StatusLine(report.line) } else { ErrorLine(report.line) }
+            if report.hasDetail {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(report.failures) { f in
+                            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                Text(f.source).font(Typo.label(11, .medium)).foregroundStyle(Palette.textSecondary)
+                                Text(f.display.isEmpty ? f.reason : "\(f.display): \(f.reason)")
+                                    .font(Typo.label(11)).foregroundStyle(Palette.textFaint)
+                                    .lineLimit(1).truncationMode(.middle)
+                                Spacer(minLength: 0)
+                            }
+                        }
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }.frame(maxHeight: 120)
+            }
+        }
+        .padding(.horizontal, 11).padding(.vertical, 9)
+        .background(Palette.surfaceHi, in: RoundedRectangle(cornerRadius: 9))
+        .overlay(RoundedRectangle(cornerRadius: 9).stroke(Palette.border, lineWidth: 1))
     }
 }
 
 struct ManualEntryForm: View {
     @EnvironmentObject var model: AppModel
+    var prefillSecret: String = ""
     var onAdded: () -> Void
     @State private var type: OTPType = .totp
     @State private var issuer = ""
@@ -706,6 +837,26 @@ struct ManualEntryForm: View {
                 }
             }
         }
+        .onAppear { if secret.isEmpty { secret = prefillSecret } }
+    }
+}
+
+/// Resolve dropped file URLs from item providers, then call `completion` on the
+/// main actor once every provider has loaded.
+func loadDroppedURLs(_ providers: [NSItemProvider], completion: @escaping @MainActor ([URL]) -> Void) {
+    let group = DispatchGroup()
+    let lock = NSLock()
+    var urls: [URL] = []
+    for p in providers where p.canLoadObject(ofClass: URL.self) {
+        group.enter()
+        _ = p.loadObject(ofClass: URL.self) { url, _ in
+            if let url { lock.lock(); urls.append(url); lock.unlock() }
+            group.leave()
+        }
+    }
+    group.notify(queue: .main) {
+        let resolved = urls
+        Task { @MainActor in completion(resolved) }
     }
 }
 
@@ -848,8 +999,16 @@ struct SettingsView: View {
                         .font(Typo.label(11)).foregroundStyle(Palette.textSecondary)
                 }
             }
+            Section("Vault") {
+                LabeledContent("Location", value: model.vaultPathDisplay)
+                Button(model.isExternalVault ? "Change vault…" : "Open existing vault…") {
+                    model.openExistingVault()
+                }
+                if model.isExternalVault {
+                    Button("Use built-in vault") { model.useBuiltInVault() }
+                }
+            }
             Section {
-                LabeledContent("Vault", value: model.vaultPathDisplay)
                 LabeledContent("Version", value: Self.appVersion)
             }
             Section {
@@ -1023,6 +1182,7 @@ struct StatusLine: View {
 
 struct EmptyState: View {
     var add: () -> Void
+    var openExisting: (() -> Void)? = nil
     var body: some View {
         VStack(spacing: 12) {
             MosaicMark(side: 44)
@@ -1032,6 +1192,11 @@ struct EmptyState: View {
             Button(action: add) {
                 Label("Add account", systemImage: "plus").font(Typo.label(12, .semibold)).foregroundStyle(Palette.accent)
             }.buttonStyle(.plain).padding(.top, 2)
+            if let openExisting {
+                Button(action: openExisting) {
+                    Text("Use a vault created by the tess CLI").font(Typo.label(12)).foregroundStyle(Palette.textSecondary)
+                }.buttonStyle(.plain)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
