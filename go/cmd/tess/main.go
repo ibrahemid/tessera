@@ -43,6 +43,7 @@ func newRootCmd() *cobra.Command {
 		newExportCmd(),
 		newRemoveCmd(),
 		newRenameCmd(),
+		newAliasCmd(),
 		newMoveCmd(),
 		newTagCmd(),
 	)

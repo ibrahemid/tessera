@@ -46,6 +46,8 @@ tess import --migration "otpauth-migration://offline?data=..."
 tess                                 # print current codes (colored, with countdown bars)
 tess watch                           # live TUI: countdown bars, search (/), copy (enter/c), q to quit
 tess code acme -c                    # code for one account, copied to the clipboard
+tess code ac -c                      # reference an account by its handle (shown by `tess list`)
+tess alias ac work                   # set an account's handle
 tess code --json                     # machine-readable output for scripts
 tess ls --json                       # alias for `tess list`
 tess vault remember                  # store the passphrase in the macOS login keychain

@@ -25,11 +25,21 @@ func newCodeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			idx, err := s.find(args[0])
+			idxs, err := s.resolveMatches(args[0])
 			if err != nil {
 				return err
 			}
-			a := &s.accounts[idx]
+			if len(idxs) > 1 {
+				// Without --copy, showing every match's code fulfills the request;
+				// with --copy there is no single code to place on the clipboard.
+				if doCopy {
+					printMatchTable(cmd, s.accounts, idxs, false)
+					return fmt.Errorf("be specific: use a handle")
+				}
+				printMatchTable(cmd, s.accounts, idxs, true)
+				return nil
+			}
+			a := &s.accounts[idxs[0]]
 			if a.Type == account.HOTP && next {
 				a.Counter++
 				a.UpdatedAt = now().Unix()
@@ -88,22 +98,23 @@ func runCodeAll(cmd *cobra.Command, asJSON bool) error {
 		return nil
 	}
 	t := now()
+	hw := handleWidth(accts)
 	for _, a := range accts {
-		mono := ui.Monogram(a.Issuer+a.Account, labelText(a))
+		tag := ui.Handle(a.Issuer+a.Account, padRight(a.Handle, hw))
 		name := ui.IssuerStyle.Render(padRight(labelText(a), 26))
 		if a.Type == account.HOTP {
-			meta := ui.SubtleStyle.Render(fmt.Sprintf("hotp #%d  (tess code %q --next)", a.Counter, shortQuery(a)))
-			out(cmd, "%s %s  %s  %s", mono, name, ui.CodeStyle.Render(padRight("------", 9)), meta)
+			meta := ui.SubtleStyle.Render(fmt.Sprintf("hotp #%d  (tess code %s --next)", a.Counter, a.Handle))
+			out(cmd, "%s  %s  %s  %s", tag, name, ui.CodeStyle.Render(padRight("------", 9)), meta)
 			continue
 		}
 		c, err := genCode(a, t)
 		if err != nil {
-			out(cmd, "%s %s  %s", mono, name, ui.WarnStyle.Render(err.Error()))
+			out(cmd, "%s  %s  %s", tag, name, ui.WarnStyle.Render(err.Error()))
 			continue
 		}
 		rem := code.Remaining(a, t)
 		bar := ui.Bar(rem, a.Period, 10)
-		out(cmd, "%s %s  %s  %s %s", mono, name,
+		out(cmd, "%s  %s  %s  %s %s", tag, name,
 			ui.CodeStyle.Render(padRight(ui.GroupCode(c), 9)), bar,
 			ui.SubtleStyle.Render(fmt.Sprintf("%2ds", rem)))
 	}

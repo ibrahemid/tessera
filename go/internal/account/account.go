@@ -33,6 +33,7 @@ type Account struct {
 	Period    int
 	Counter   int64
 	Folder    string
+	Handle    string // OPTIONAL short unique identifier; see /spec/vault-format.md
 	Tags      []string
 	Pinned    bool
 	CreatedAt int64
@@ -63,13 +64,16 @@ func (a Account) Validate() error {
 	if a.Type != HOTP && a.Period <= 0 {
 		return fmt.Errorf("account %q: period must be positive, got %d", a.ID, a.Period)
 	}
+	if a.Handle != "" && !ValidHandle(a.Handle) {
+		return fmt.Errorf("account %q: invalid handle %q", a.ID, a.Handle)
+	}
 	return nil
 }
 
 // toMap renders an account as a map keyed exactly as the canonical schema. Map
 // marshaling sorts keys by byte order, satisfying rule 1 of canonical JSON.
 func (a Account) toMap() map[string]any {
-	return map[string]any{
+	m := map[string]any{
 		"account":    a.Account,
 		"algorithm":  a.Algorithm,
 		"counter":    a.Counter,
@@ -85,6 +89,11 @@ func (a Account) toMap() map[string]any {
 		"type":       string(a.Type),
 		"updated_at": a.UpdatedAt,
 	}
+	// Optional; omitted when empty. Sorts between "folder" and "id" by byte order.
+	if a.Handle != "" {
+		m["handle"] = a.Handle
+	}
+	return m
 }
 
 func tagsOrEmpty(t []string) []string {
@@ -116,6 +125,11 @@ func CanonicalJSON(accounts []Account) ([]byte, error) {
 }
 
 // ParseCanonicalJSON decodes canonical payload bytes, rejecting duplicate keys.
+// Unknown account fields are tolerated (not DisallowUnknownFields): the payload
+// is AEAD-authenticated, so a field a newer writer added is safe to ignore, and
+// this keeps an older reader forward-compatible with additive schema changes. On
+// re-seal the account is re-encoded from the spec fields only, so an unknown
+// field is dropped rather than preserved.
 func ParseCanonicalJSON(data []byte) ([]Account, error) {
 	if err := rejectDuplicateKeys(data); err != nil {
 		return nil, err
@@ -127,6 +141,7 @@ func ParseCanonicalJSON(data []byte) ([]Account, error) {
 		CreatedAt int64    `json:"created_at"`
 		Digits    int      `json:"digits"`
 		Folder    string   `json:"folder"`
+		Handle    string   `json:"handle"`
 		ID        string   `json:"id"`
 		Issuer    string   `json:"issuer"`
 		Period    int      `json:"period"`
@@ -137,7 +152,6 @@ func ParseCanonicalJSON(data []byte) ([]Account, error) {
 		UpdatedAt int64    `json:"updated_at"`
 	}
 	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
 	if err := dec.Decode(&raw); err != nil {
 		return nil, fmt.Errorf("account: parse canonical json: %w", err)
 	}
@@ -146,7 +160,7 @@ func ParseCanonicalJSON(data []byte) ([]Account, error) {
 		out[i] = Account{
 			ID: r.ID, Type: Type(r.Type), Issuer: r.Issuer, Account: r.Account,
 			Secret: r.Secret, Algorithm: r.Algorithm, Digits: r.Digits, Period: r.Period,
-			Counter: r.Counter, Folder: r.Folder, Tags: tagsOrEmpty(r.Tags), Pinned: r.Pinned,
+			Counter: r.Counter, Folder: r.Folder, Handle: r.Handle, Tags: tagsOrEmpty(r.Tags), Pinned: r.Pinned,
 			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		}
 	}

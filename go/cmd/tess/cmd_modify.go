@@ -14,7 +14,7 @@ func newRemoveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			idx, err := s.find(args[0])
+			idx, err := s.single(cmd, args[0])
 			if err != nil {
 				return err
 			}
@@ -30,19 +30,24 @@ func newRemoveCmd() *cobra.Command {
 }
 
 func newRenameCmd() *cobra.Command {
-	var issuer, acct string
+	var issuer, acct, handle string
 	cmd := &cobra.Command{
 		Use:   "rename <query>",
-		Short: "Rename an account's issuer and/or account label",
+		Short: "Rename an account's issuer, account label, and/or handle",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := openSession()
 			if err != nil {
 				return err
 			}
-			idx, err := s.find(args[0])
+			idx, err := s.single(cmd, args[0])
 			if err != nil {
 				return err
+			}
+			if cmd.Flags().Changed("handle") {
+				if err := setHandle(s, idx, handle); err != nil {
+					return err
+				}
 			}
 			if cmd.Flags().Changed("issuer") {
 				s.accounts[idx].Issuer = issuer
@@ -54,13 +59,40 @@ func newRenameCmd() *cobra.Command {
 			if err := s.save(); err != nil {
 				return err
 			}
-			out(cmd, "Renamed to %s", label(s.accounts[idx]))
+			out(cmd, "Renamed %s (handle %s)", label(s.accounts[idx]), s.accounts[idx].Handle)
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&issuer, "issuer", "", "new issuer")
 	cmd.Flags().StringVar(&acct, "account", "", "new account label")
+	cmd.Flags().StringVar(&handle, "handle", "", "new handle (short identifier)")
 	return cmd
+}
+
+func newAliasCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "alias <account> <handle>",
+		Short: "Set an account's handle (the short name you type to reference it)",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := openSession()
+			if err != nil {
+				return err
+			}
+			idx, err := s.single(cmd, args[0])
+			if err != nil {
+				return err
+			}
+			if err := setHandle(s, idx, args[1]); err != nil {
+				return err
+			}
+			if err := s.save(); err != nil {
+				return err
+			}
+			out(cmd, "Set handle of %s to %s", label(s.accounts[idx]), s.accounts[idx].Handle)
+			return nil
+		},
+	}
 }
 
 func newMoveCmd() *cobra.Command {
@@ -73,7 +105,7 @@ func newMoveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			idx, err := s.find(args[0])
+			idx, err := s.single(cmd, args[0])
 			if err != nil {
 				return err
 			}
@@ -99,7 +131,7 @@ func newTagCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			idx, err := s.find(args[0])
+			idx, err := s.single(cmd, args[0])
 			if err != nil {
 				return err
 			}

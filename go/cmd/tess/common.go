@@ -13,6 +13,7 @@ import (
 	"github.com/ibrahemid/tessera/go/internal/code"
 	"github.com/ibrahemid/tessera/go/internal/keychain"
 	"github.com/ibrahemid/tessera/go/internal/store"
+	"github.com/ibrahemid/tessera/go/internal/ui"
 	"github.com/ibrahemid/tessera/go/internal/vault"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -133,39 +134,133 @@ func openSession() (*session, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &session{path: path, env: env, passphrase: pass, accounts: accts}, nil
+	s := &session{path: path, env: env, passphrase: pass, accounts: accts}
+	// Migration: accounts written before handles existed gain one deterministically
+	// at unlock. Persist the assignment once, atomically (wraps untouched). A
+	// read-only vault keeps the handles in memory only; the same algorithm
+	// reproduces them on the next writable unlock.
+	if account.AssignHandles(s.accounts) {
+		if err := env.UpdateAccounts(pass, s.accounts); err == nil {
+			_ = store.Save(path, env)
+		}
+	}
+	return s, nil
 }
 
-// save re-seals the (possibly mutated) account list and persists the vault.
+// save assigns handles to any new accounts, then re-seals the (possibly mutated)
+// account list and persists the vault.
 func (s *session) save() error {
+	account.AssignHandles(s.accounts)
+	if err := account.CheckHandleUniqueness(s.accounts); err != nil {
+		return err
+	}
 	if err := s.env.UpdateAccounts(s.passphrase, s.accounts); err != nil {
 		return err
 	}
 	return store.Save(s.path, s.env)
 }
 
-// find returns the index of the single account matching query (by id, or
-// case-insensitive substring of "issuer:account"), erroring on none/ambiguous.
-func (s *session) find(query string) (int, error) {
-	q := strings.ToLower(query)
-	var matches []int
+// resolveMatches applies the spec account-resolution precedence and returns the
+// indices matched by the first stage that matches anything: exact handle, then
+// exact issuer/account (case-insensitive), then unique substring over
+// handle/issuer/account. A single index is a unique resolution; more than one
+// means the caller must disambiguate. Zero total matches is an error.
+func (s *session) resolveMatches(query string) ([]int, error) {
+	q := strings.ToLower(strings.TrimSpace(query))
+	if q == "" {
+		return nil, fmt.Errorf("empty query")
+	}
+	var stage []int
 	for i, a := range s.accounts {
-		if a.ID == query {
-			return i, nil
-		}
-		label := strings.ToLower(a.Issuer + ":" + a.Account)
-		if strings.Contains(label, q) {
-			matches = append(matches, i)
+		if a.Handle != "" && a.Handle == q {
+			stage = append(stage, i)
 		}
 	}
-	switch len(matches) {
-	case 0:
-		return -1, fmt.Errorf("no account matches %q", query)
-	case 1:
-		return matches[0], nil
-	default:
-		return -1, fmt.Errorf("%q is ambiguous (%d matches); use the account id", query, len(matches))
+	if len(stage) > 0 {
+		return stage, nil
 	}
+	for i, a := range s.accounts {
+		if strings.ToLower(a.Issuer) == q || strings.ToLower(a.Account) == q {
+			stage = append(stage, i)
+		}
+	}
+	if len(stage) > 0 {
+		return stage, nil
+	}
+	for i, a := range s.accounts {
+		hay := strings.ToLower(a.Handle + " " + a.Issuer + " " + a.Account)
+		if strings.Contains(hay, q) {
+			stage = append(stage, i)
+		}
+	}
+	if len(stage) > 0 {
+		return stage, nil
+	}
+	return nil, fmt.Errorf("no account matches %q", query)
+}
+
+// single resolves query to exactly one account index. On multiple matches it
+// prints the disambiguation table and returns an error so the command exits
+// non-zero (it cannot act without a unique target).
+func (s *session) single(cmd *cobra.Command, query string) (int, error) {
+	idxs, err := s.resolveMatches(query)
+	if err != nil {
+		return -1, err
+	}
+	if len(idxs) > 1 {
+		printMatchTable(cmd, s.accounts, idxs, false)
+		return -1, fmt.Errorf("be specific: use a handle")
+	}
+	return idxs[0], nil
+}
+
+// printMatchTable renders the ambiguous matches as an aligned handle/issuer/
+// account table so the user can pick a unique reference. With withCodes it adds
+// each account's current code (used by `tess code` without --copy). The handle
+// column is never truncated: it is the string the user types.
+func printMatchTable(cmd *cobra.Command, accts []account.Account, idxs []int, withCodes bool) {
+	hw, iw, aw := len("handle"), len("issuer"), len("account")
+	for _, i := range idxs {
+		hw = max(hw, len(accts[i].Handle))
+		iw = max(iw, len([]rune(accts[i].Issuer)))
+		aw = max(aw, len([]rune(accts[i].Account)))
+	}
+	header := fmt.Sprintf("%s  %s  %s", padRight("handle", hw), padRight("issuer", iw), "account")
+	if withCodes {
+		header = fmt.Sprintf("%s  %s  %s  %s", padRight("handle", hw), padRight("issuer", iw), padRight("account", aw), "code")
+	}
+	out(cmd, "%s", ui.SubtleStyle.Render(header))
+	t := now()
+	for _, i := range idxs {
+		a := accts[i]
+		h := ui.Handle(a.Issuer+a.Account, padRight(a.Handle, hw))
+		if withCodes {
+			c, err := genCode(a, t)
+			if err != nil {
+				c = "------"
+			}
+			out(cmd, "%s  %s  %s  %s", h, padRight(a.Issuer, iw), padRight(a.Account, aw), ui.CodeStyle.Render(ui.GroupCode(c)))
+			continue
+		}
+		out(cmd, "%s  %s  %s", h, padRight(a.Issuer, iw), a.Account)
+	}
+}
+
+// setHandle validates and assigns a new handle to account idx (charset +
+// vault-uniqueness), freeing the old value. It does not persist.
+func setHandle(s *session, idx int, newHandle string) error {
+	h := strings.ToLower(strings.TrimSpace(newHandle))
+	if !account.ValidHandle(h) {
+		return fmt.Errorf("invalid handle %q: 1-12 chars, lowercase letter first, then letters/digits", newHandle)
+	}
+	for i, a := range s.accounts {
+		if i != idx && a.Handle == h {
+			return fmt.Errorf("handle %q already used by %s", h, label(a))
+		}
+	}
+	s.accounts[idx].Handle = h
+	s.accounts[idx].UpdatedAt = now().Unix()
+	return nil
 }
 
 // genCode computes the current code for an account at time t.
@@ -188,8 +283,17 @@ func labelText(a account.Account) string {
 	return a.Account
 }
 
-// shortQuery is a convenient query string for an account in hints.
-func shortQuery(a account.Account) string { return labelText(a) }
+// handleWidth returns the widest handle among accts, so the handle column can
+// be padded without ever truncating the string the user types.
+func handleWidth(accts []account.Account) int {
+	w := 0
+	for _, a := range accts {
+		if len(a.Handle) > w {
+			w = len(a.Handle)
+		}
+	}
+	return w
+}
 
 // padRight pads or ellipsizes s to n runes.
 func padRight(s string, n int) string {

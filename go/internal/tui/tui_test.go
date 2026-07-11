@@ -32,6 +32,17 @@ func TestFilteredByQuery(t *testing.T) {
 	}
 }
 
+func TestFilteredByHandle(t *testing.T) {
+	accts := sample()
+	accts[2].Handle = "bk" // Bank
+	m := New(accts, nil)
+	m.query = "bk"
+	rows := m.filtered()
+	if len(rows) != 1 || rows[0].ID != "3" {
+		t.Errorf("handle search failed: %+v", rows)
+	}
+}
+
 func TestViewRendersAccounts(t *testing.T) {
 	m := New(sample(), nil)
 	v := m.View()

@@ -43,6 +43,7 @@ func newListCmd() *cobra.Command {
 				out(cmd, "%s", ui.SubtleStyle.Render("No accounts."))
 				return nil
 			}
+			hw := handleWidth(accts)
 			for _, a := range accts {
 				meta := string(a.Type)
 				if a.Folder != "" {
@@ -55,7 +56,7 @@ func newListCmd() *cobra.Command {
 				if a.Pinned {
 					pin = ui.AccentStyle.Render("★ ")
 				}
-				out(cmd, "%s%s %s  %s", pin, ui.Monogram(a.Issuer+a.Account, labelText(a)),
+				out(cmd, "%s%s  %s  %s", pin, ui.Handle(a.Issuer+a.Account, padRight(a.Handle, hw)),
 					ui.IssuerStyle.Render(padRight(label(a), 34)), ui.SubtleStyle.Render(meta))
 			}
 			return nil

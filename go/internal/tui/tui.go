@@ -56,7 +56,7 @@ func (m Model) filtered() []account.Account {
 	out := make([]account.Account, 0, len(m.accounts))
 	q := strings.ToLower(m.query)
 	for _, a := range m.accounts {
-		if q == "" || strings.Contains(strings.ToLower(a.Issuer+" "+a.Account), q) {
+		if q == "" || strings.Contains(strings.ToLower(a.Handle+" "+a.Issuer+" "+a.Account), q) {
 			out = append(out, a)
 		}
 	}
@@ -184,8 +184,14 @@ func (m Model) View() string {
 		b.WriteString(ui.SubtleStyle.Render("  No accounts match.\n"))
 	}
 
+	hw := 0
+	for _, a := range rows {
+		if len(a.Handle) > hw {
+			hw = len(a.Handle)
+		}
+	}
 	for i, a := range rows {
-		b.WriteString(m.renderRow(a, i == m.cursor))
+		b.WriteString(m.renderRow(a, i == m.cursor, hw))
 	}
 
 	b.WriteString("\n")
@@ -199,12 +205,12 @@ func (m Model) View() string {
 	return b.String()
 }
 
-func (m Model) renderRow(a account.Account, selected bool) string {
+func (m Model) renderRow(a account.Account, selected bool, hw int) string {
 	cursor := "  "
 	if selected {
 		cursor = ui.AccentStyle.Render("▸ ")
 	}
-	mono := ui.Monogram(a.Issuer+a.Account, label1(a))
+	tag := ui.Handle(a.Issuer+a.Account, pad(a.Handle, hw))
 	name := ui.IssuerStyle.Render(pad(labelOf(a), 26))
 
 	c, err := code.For(a, m.now)
@@ -225,7 +231,7 @@ func (m Model) renderRow(a account.Account, selected bool) string {
 	if a.Pinned {
 		pin = ui.AccentStyle.Render("★ ")
 	}
-	line := fmt.Sprintf("%s%s%s %s  %s  %s", cursor, pin, mono, name, codeCell, meter)
+	line := fmt.Sprintf("%s%s%s  %s  %s  %s", cursor, pin, tag, name, codeCell, meter)
 	if selected {
 		line = lipgloss.NewStyle().Background(lipgloss.AdaptiveColor{Light: "#F0ECE0", Dark: "#242732"}).Render(line)
 	}
@@ -238,8 +244,6 @@ func labelOf(a account.Account) string {
 	}
 	return a.Account
 }
-
-func label1(a account.Account) string { return labelOf(a) }
 
 func at(rows []account.Account, i int) (account.Account, bool) {
 	if i < 0 || i >= len(rows) {

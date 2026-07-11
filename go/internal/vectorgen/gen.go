@@ -28,7 +28,80 @@ func main() {
 	argon2Vectors()
 	aeadVector()
 	hchachaVector()
+	handlesVectors()
 	vaultVector()
+}
+
+// handlesVectors pins handle assignment and the canonical serialization of an
+// account carrying a handle. Expected handles are computed by the reference
+// implementation (account.AssignHandles), so the block is always self-consistent
+// with Go; the Swift core MUST reproduce it byte-for-byte. Paste the emitted
+// object into /spec/testvectors.json under "handles".
+func handlesVectors() {
+	type inAcct struct {
+		ID        string `json:"id"`
+		Issuer    string `json:"issuer"`
+		Account   string `json:"account"`
+		CreatedAt int64  `json:"created_at"`
+		Handle    string `json:"handle,omitempty"`
+	}
+	type acase struct {
+		Name     string            `json:"name"`
+		Accounts []inAcct          `json:"accounts"`
+		Expected map[string]string `json:"expected"`
+	}
+
+	cases := [][]inAcct{
+		{{ID: "m1", Issuer: "Google Cloud", CreatedAt: 1}}, // multi-word -> gc
+		{ // single word with internal caps: lowercase then first two chars, NO camelCase split -> gi/gi2
+			{ID: "g1", Issuer: "GitHub", CreatedAt: 1},
+			{ID: "g2", Issuer: "GitHub", CreatedAt: 2},
+		},
+		{{ID: "d1", Issuer: "1Password", CreatedAt: 1}},                      // digit-leading -> x1p
+		{{ID: "e1", Issuer: "", Account: "alice@example.com", CreatedAt: 1}}, // empty issuer, email local part -> al
+		{{ID: "z1", Issuer: "", Account: "", CreatedAt: 1}},                  // empty issuer and account -> acct
+		{ // collision chain -> base, base2, base3 (assignment order created_at asc)
+			{ID: "c1", Issuer: "ACME", CreatedAt: 1},
+			{ID: "c2", Issuer: "ACME", CreatedAt: 2},
+			{ID: "c3", Issuer: "ACME", CreatedAt: 3},
+		},
+		{ // a user-edited handle occupies base2 so the next auto-assign skips to base3
+			{ID: "u1", Issuer: "ACME", CreatedAt: 1, Handle: "ac"},
+			{ID: "u2", Issuer: "ACME", CreatedAt: 2, Handle: "ac2"},
+			{ID: "u3", Issuer: "ACME", CreatedAt: 3},
+		},
+	}
+	names := []string{"multi-word", "github-single-word-caps", "digit-leading", "empty-issuer-email", "empty-issuer-and-account", "collision-chain", "user-edited-skip"}
+
+	var out []acase
+	for i, in := range cases {
+		accts := make([]account.Account, len(in))
+		for j, a := range in {
+			accts[j] = account.Account{ID: a.ID, Issuer: a.Issuer, Account: a.Account, CreatedAt: a.CreatedAt, Handle: a.Handle}
+		}
+		account.AssignHandles(accts)
+		exp := make(map[string]string, len(accts))
+		for _, a := range accts {
+			exp[a.ID] = a.Handle
+		}
+		out = append(out, acase{Name: names[i], Accounts: in, Expected: exp})
+	}
+
+	canon, err := account.CanonicalJSON([]account.Account{{
+		ID: "00000000-0000-4000-8000-000000000010", Type: account.TOTP,
+		Issuer: "ACME", Account: "alice@example.com", Handle: "ac",
+		Secret: []byte("12345678901234567890"), Algorithm: "SHA1", Digits: 6, Period: 30,
+		CreatedAt: 1700000000, UpdatedAt: 1700000000,
+	}})
+	if err != nil {
+		panic(err)
+	}
+
+	emit("handles", map[string]any{
+		"_status":    "Deterministic handle assignment + canonical serialization. Both cores MUST produce identical handles and identical canonical bytes.",
+		"canonical":  map[string]string{"expected_canonical_json": string(canon)},
+		"assignment": out,
+	})
 }
 
 // hchachaVector pins an HChaCha20 known-answer test (draft-irtf-cfrg-xchacha

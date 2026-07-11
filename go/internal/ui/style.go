@@ -34,18 +34,20 @@ var tileHues = []string{
 	"#3E7D4F", "#4F5BB0", "#B0506E", "#B08A2E",
 }
 
-// Monogram renders a colored single-letter tile for an issuer/account key.
-func Monogram(key, label string) string {
+// hueFor picks a stable per-account color from the app's tile palette.
+func hueFor(key string) string {
 	var hash uint32 = 2166136261
 	for _, b := range []byte(key) {
 		hash = (hash ^ uint32(b)) * 16777619
 	}
-	hue := tileHues[hash%uint32(len(tileHues))]
-	letter := "?"
-	if label != "" {
-		letter = strings.ToUpper(string([]rune(label)[0]))
-	}
-	return lipgloss.NewStyle().Foreground(lipgloss.Color(hue)).Bold(true).Render(letter)
+	return tileHues[hash%uint32(len(tileHues))]
+}
+
+// Handle renders an account's handle as its colored row identifier, using the
+// same stable per-account hue the app tiles use. handle is expected already
+// padded to the display column width by the caller.
+func Handle(key, handle string) string {
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(hueFor(key))).Bold(true).Render(handle)
 }
 
 // GroupCode formats a 6-digit code as "123 456"; others pass through.
