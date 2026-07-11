@@ -983,11 +983,9 @@ struct SettingsView: View {
                     )).disabled(model.isLocked)
                 }
             }
-            Section("Backup & restore") {
+            Section("Backup") {
                 Button("Export encrypted backup…") { exporting = true }
                     .disabled(model.isLocked || model.accounts.isEmpty)
-                Button("Restore from backup…") { restoring = true }
-                    .disabled(model.isLocked)
                 Button("Export as otpauth links…") { model.exportPlaintextLinks() }
                     .disabled(model.isLocked || model.accounts.isEmpty)
             }
@@ -1001,11 +999,22 @@ struct SettingsView: View {
             }
             Section("Vault") {
                 LabeledContent("Location", value: model.vaultPathDisplay)
-                Button(model.isExternalVault ? "Change vault…" : "Open existing vault…") {
-                    model.openExistingVault()
-                }
+                Text(model.vaultStateLine)
+                    .font(Typo.label(11)).foregroundStyle(Palette.textSecondary)
+                VaultActionButton(
+                    title: "Use another vault file…",
+                    subtitle: "Switches the app to that file in place. Use this to share one vault with the tess CLI."
+                ) { model.openExistingVault(guardSwitch: true) }
+                VaultActionButton(
+                    title: "Restore from backup…",
+                    subtitle: "Adds the accounts from an encrypted backup into the current vault. The backup file is not modified."
+                ) { restoring = true }
+                    .disabled(model.isLocked)
                 if model.isExternalVault {
-                    Button("Use built-in vault") { model.useBuiltInVault() }
+                    VaultActionButton(
+                        title: "Use built-in vault",
+                        subtitle: "Switch back to the app's own vault (\(model.builtInVaultPathDisplay))."
+                    ) { model.useBuiltInVault() }
                 }
             }
             Section {
@@ -1131,6 +1140,27 @@ struct PrimaryButton: View {
         .buttonStyle(.plain)
         .opacity(enabled ? 1 : 0.45)   // dim the whole control; never blend the fill toward the bg
         .disabled(!enabled)
+    }
+}
+
+/// A Settings row action carrying a subtitle that spells out what it does — used
+/// to separate switching the active vault from restoring a backup, two flows that
+/// otherwise look identical.
+struct VaultActionButton: View {
+    let title: String
+    let subtitle: String
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(Typo.label(13)).foregroundStyle(Palette.accent)
+                Text(subtitle).font(Typo.label(11)).foregroundStyle(Palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 

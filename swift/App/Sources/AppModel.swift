@@ -73,6 +73,7 @@ final class AppModel: ObservableObject {
     private var appKey: Data?         // held after unlock; needed to retoggle Touch ID
     private var timer: Timer?
     private var lastVaultModified: Date?   // for detecting an external CLI rewrite
+    private var pendingSwitchMessage: String?   // "Now using X", shown once the switched vault unlocks
 
     init() {
         isDemo = false
@@ -186,6 +187,7 @@ final class AppModel: ObservableObject {
             errorMessage = nil
             isLocked = false
             lastVaultModified = store.modifiedAt
+            emitSwitchStatusIfPending()
         } catch {
             // The Keychain app key didn't open this vault: it belongs to another
             // passphrase (a CLI vault). Ask for it instead of dead-ending.
@@ -202,7 +204,10 @@ final class AppModel: ObservableObject {
     /// CLI), store a security-scoped bookmark, and open it through the normal
     /// unlock flow. Never copies the file — it opens in place so the CLI keeps
     /// working on the same path.
-    func openExistingVault() {
+    /// - Parameter guardSwitch: when true (the Settings switch), a valid pick is
+    ///   confirmed in a dialog before the app repoints at it — the guard against
+    ///   mistaking a backup for the live vault. Onboarding and relocate pass false.
+    func openExistingVault(guardSwitch: Bool = false) {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.json]
         panel.allowsOtherFileTypes = true
@@ -211,14 +216,33 @@ final class AppModel: ObservableObject {
         let hint = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/share/tessera")
         if FileManager.default.fileExists(atPath: hint.path) { panel.directoryURL = hint }
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        // Reject anything that isn't a Tessera vault before touching the bookmark,
+        // so a stray file never becomes the configured vault.
+        guard let data = try? Data(contentsOf: url), (try? Envelope.decode(data)) != nil else {
+            errorMessage = "That file isn't a Tessera vault."; return
+        }
+        if guardSwitch, !confirmVaultSwitch(to: url) { return }
         guard store.setExternal(url) else {
             errorMessage = "Couldn't open that vault"; return
         }
+        pendingSwitchMessage = "Now using \(homeRelative(url))"
         reopenFromStore()
+    }
+
+    /// Modal confirmation naming the file before the app repoints at it. Returns
+    /// true if the user chose to switch.
+    private func confirmVaultSwitch(to url: URL) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Use “\(url.lastPathComponent)” as your vault?"
+        alert.informativeText = "The app will use this file from now on. To copy accounts out of a backup instead, use Restore from backup."
+        alert.addButton(withTitle: "Use this vault")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     /// Return to the built-in vault. Leaves any external file untouched.
     func useBuiltInVault() {
+        pendingSwitchMessage = nil
         store.clearExternal()
         reopenFromStore()
     }
@@ -278,9 +302,23 @@ final class AppModel: ObservableObject {
             self.lastVaultModified = store.modifiedAt
             needsPassphrase = false
             isLocked = false
+            emitSwitchStatusIfPending()
         } catch {
             errorMessage = friendly(error)
         }
+    }
+
+    /// Emit the "Now using X" status once, after a vault the user switched to has
+    /// successfully unlocked.
+    private func emitSwitchStatusIfPending() {
+        guard let m = pendingSwitchMessage else { return }
+        pendingSwitchMessage = nil
+        status = m
+    }
+
+    /// A vault URL rendered relative to the user's home directory.
+    private func homeRelative(_ url: URL) -> String {
+        url.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
     }
 
     /// First run: random DEK wrapped by the Secure Enclave (instant, hardware-
@@ -390,6 +428,7 @@ final class AppModel: ObservableObject {
     /// vault file. For an external vault shared with the CLI, it only detaches
     /// (drops the bookmark) — the app never deletes a file the CLI owns.
     func resetTessera() {
+        pendingSwitchMessage = nil
         if store.isExternal {
             store.clearExternal()
         } else {
@@ -759,8 +798,16 @@ final class AppModel: ObservableObject {
         }
     }
 
-    var vaultPathDisplay: String {
-        store.vaultURL.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+    var vaultPathDisplay: String { homeRelative(store.vaultURL) }
+
+    /// The built-in vault path, home-relative, for the "use built-in vault" copy.
+    var builtInVaultPathDisplay: String { homeRelative(store.containerVaultURL) }
+
+    /// One-line description of which vault is active.
+    var vaultStateLine: String {
+        isExternalVault
+            ? "Shared vault file. The tess CLI reads and writes this same file."
+            : "Built-in vault."
     }
 
     /// Running against a user-selected external vault (shared with the tess CLI).

@@ -74,6 +74,12 @@ final class VaultStore {
         if let env = ProcessInfo.processInfo.environment["TESSERA_VAULT"], !env.isEmpty {
             return URL(fileURLWithPath: (env as NSString).expandingTildeInPath)
         }
+        return containerVaultURL
+    }
+
+    /// The app's own vault under the sandbox container, regardless of any external
+    /// bookmark. Used to name the built-in path when offering to switch back to it.
+    var containerVaultURL: URL {
         let support = (try? fm.url(for: .applicationSupportDirectory, in: .userDomainMask,
                                    appropriateFor: nil, create: true))
             ?? fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
