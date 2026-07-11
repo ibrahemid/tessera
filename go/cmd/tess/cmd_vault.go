@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
+	"github.com/ibrahemid/tessera/go/internal/keychain"
 	"github.com/ibrahemid/tessera/go/internal/store"
 	"github.com/ibrahemid/tessera/go/internal/vault"
 	"github.com/spf13/cobra"
@@ -16,7 +17,14 @@ import (
 
 func newVaultCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "vault", Short: "Manage the vault"}
-	cmd.AddCommand(newVaultInitCmd(), newVaultPasswdCmd(), newVaultResetCmd())
+	cmd.AddCommand(
+		newVaultInitCmd(),
+		newVaultPasswdCmd(),
+		newVaultResetCmd(),
+		newVaultRememberCmd(),
+		newVaultForgetCmd(),
+		newVaultStatusCmd(),
+	)
 	return cmd
 }
 
@@ -88,6 +96,99 @@ to create a new empty vault. Use --force to skip the confirmation in scripts.`,
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "skip the confirmation prompt")
 	return cmd
+}
+
+func newVaultRememberCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "remember",
+		Short: "Store the vault passphrase in the login keychain",
+		Long: `Store the vault passphrase in the macOS login keychain so tess stops
+prompting. The passphrase is verified against the vault before it is stored.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !keychain.Supported() {
+				return keychain.ErrUnsupported
+			}
+			path, err := store.Resolve(vaultPath)
+			if err != nil {
+				return err
+			}
+			env, err := store.Load(path)
+			if err != nil {
+				return err
+			}
+			pass, err := readPassphrase("Vault passphrase: ")
+			if err != nil {
+				return err
+			}
+			if _, err := env.Open(pass); err != nil {
+				return err
+			}
+			if err := keychain.Store(path, pass); err != nil {
+				return err
+			}
+			out(cmd, "Stored passphrase for %s in the login keychain", path)
+			return nil
+		},
+	}
+}
+
+func newVaultForgetCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "forget",
+		Short: "Remove the vault passphrase from the login keychain",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			path, err := store.Resolve(vaultPath)
+			if err != nil {
+				return err
+			}
+			if err := keychain.Delete(path); err != nil {
+				return err
+			}
+			out(cmd, "Removed any keychain entry for %s", path)
+			return nil
+		},
+	}
+}
+
+func newVaultStatusCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Show the vault path, file details, and wrap methods",
+		Long: `Report the resolved vault path, whether the file exists, its size and
+modification time, the wrap methods in the envelope header, and whether a login
+keychain entry exists. Nothing is decrypted and the passphrase is never shown.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			path, err := store.Resolve(vaultPath)
+			if err != nil {
+				return err
+			}
+			out(cmd, "Path:     %s", path)
+			if info, err := os.Stat(path); err != nil {
+				out(cmd, "File:     not found")
+			} else {
+				out(cmd, "File:     %d bytes, modified %s", info.Size(), info.ModTime().Format("2006-01-02 15:04"))
+				if env, err := store.Load(path); err != nil {
+					out(cmd, "Wraps:    unreadable (%v)", err)
+				} else {
+					out(cmd, "Wraps:    %s", strings.Join(env.WrapTypes(), ", "))
+				}
+			}
+			if !keychain.Supported() {
+				out(cmd, "Keychain: unsupported on this platform")
+				return nil
+			}
+			has, err := keychain.Has(path)
+			switch {
+			case err != nil:
+				out(cmd, "Keychain: unknown (%v)", err)
+			case has:
+				out(cmd, "Keychain: entry present")
+			default:
+				out(cmd, "Keychain: no entry")
+			}
+			return nil
+		},
+	}
 }
 
 func newVaultPasswdCmd() *cobra.Command {

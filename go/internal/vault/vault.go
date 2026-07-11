@@ -255,6 +255,16 @@ func (e *Envelope) UpdateAccounts(passphrase string, accounts []account.Account)
 	return nil
 }
 
+// WrapTypes returns the type of each wrap present in the envelope (e.g.
+// "passphrase", "secure-enclave") without decrypting anything.
+func (e *Envelope) WrapTypes() []string {
+	types := make([]string, 0, len(e.Wraps))
+	for _, w := range e.Wraps {
+		types = append(types, w.Type)
+	}
+	return types
+}
+
 // Marshal serializes the envelope to JSON bytes for storage.
 func (e *Envelope) Marshal() ([]byte, error) {
 	return json.MarshalIndent(e, "", "  ")

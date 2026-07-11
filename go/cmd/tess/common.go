@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/ibrahemid/tessera/go/internal/account"
 	"github.com/ibrahemid/tessera/go/internal/code"
+	"github.com/ibrahemid/tessera/go/internal/keychain"
 	"github.com/ibrahemid/tessera/go/internal/store"
 	"github.com/ibrahemid/tessera/go/internal/vault"
 	"github.com/spf13/cobra"
@@ -29,6 +31,12 @@ func readPassphrase(prompt string) (string, error) {
 	if p := os.Getenv("TESSERA_PASSPHRASE"); p != "" {
 		return p, nil
 	}
+	return promptPassphrase(prompt)
+}
+
+// promptPassphrase reads a passphrase from the terminal without echo, ignoring
+// $TESSERA_PASSPHRASE (env resolution is handled by the caller).
+func promptPassphrase(prompt string) (string, error) {
 	fmt.Fprint(os.Stderr, prompt)
 	b, err := term.ReadPassword(int(os.Stdin.Fd()))
 	fmt.Fprintln(os.Stderr)
@@ -38,7 +46,71 @@ func readPassphrase(prompt string) (string, error) {
 	return string(b), nil
 }
 
-// openSession resolves the vault path, loads the envelope, and decrypts it.
+// confirmYN prints prompt and returns true only for an explicit y/yes.
+func confirmYN(prompt string) bool {
+	fmt.Fprint(os.Stderr, prompt)
+	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+	s := strings.ToLower(strings.TrimSpace(line))
+	return s == "y" || s == "yes"
+}
+
+// unlockProvider supplies the side effects of passphrase resolution so the
+// ordering logic in resolvePassphrase stays pure and unit-testable.
+type unlockProvider struct {
+	envPass     string                              // $TESSERA_PASSPHRASE ("" if unset)
+	lookup      func() (string, bool, error)        // silent keychain lookup for this vault
+	store       func(pass string) error             // persist pass to the keychain
+	prompt      func(prompt string) (string, error) // interactive passphrase prompt
+	confirm     func(prompt string) bool            // y/N prompt
+	tryOpen     func(pass string) ([]account.Account, error)
+	canRemember bool // keychain available AND interactive: only then may we offer to store
+}
+
+// resolvePassphrase applies the unlock order: $TESSERA_PASSPHRASE, then a silent
+// keychain lookup, then an interactive prompt. After a successful interactive
+// unlock (and only then) it may offer to remember the passphrase. It returns the
+// passphrase and the opened accounts so the vault is decrypted exactly once.
+func resolvePassphrase(p unlockProvider) (string, []account.Account, error) {
+	if p.envPass != "" {
+		accts, err := p.tryOpen(p.envPass)
+		if err != nil {
+			return "", nil, err
+		}
+		return p.envPass, accts, nil
+	}
+
+	stale := false // a keychain passphrase that no longer opens the vault (rekeyed)
+	if kp, hit, err := p.lookup(); err == nil && hit {
+		if accts, oerr := p.tryOpen(kp); oerr == nil {
+			return kp, accts, nil
+		}
+		stale = true
+	}
+
+	entered, err := p.prompt("Vault passphrase: ")
+	if err != nil {
+		return "", nil, err
+	}
+	accts, err := p.tryOpen(entered)
+	if err != nil {
+		return "", nil, err
+	}
+	if p.canRemember {
+		q := "Remember in the login keychain so tess stops prompting? [y/N] "
+		if stale {
+			q = "Stored passphrase no longer opens the vault. Update the keychain entry? [y/N] "
+		}
+		if p.confirm(q) {
+			if serr := p.store(entered); serr != nil {
+				fmt.Fprintln(os.Stderr, "warning:", serr)
+			}
+		}
+	}
+	return entered, accts, nil
+}
+
+// openSession resolves the vault path, loads the envelope, and decrypts it,
+// resolving the passphrase from env, the login keychain, or an interactive prompt.
 func openSession() (*session, error) {
 	path, err := store.Resolve(vaultPath)
 	if err != nil {
@@ -48,11 +120,16 @@ func openSession() (*session, error) {
 	if err != nil {
 		return nil, err
 	}
-	pass, err := readPassphrase("Vault passphrase: ")
-	if err != nil {
-		return nil, err
-	}
-	accts, err := env.Open(pass)
+	isTTY := term.IsTerminal(int(os.Stdin.Fd()))
+	pass, accts, err := resolvePassphrase(unlockProvider{
+		envPass:     os.Getenv("TESSERA_PASSPHRASE"),
+		lookup:      func() (string, bool, error) { return keychain.Lookup(path) },
+		store:       func(p string) error { return keychain.Store(path, p) },
+		prompt:      promptPassphrase,
+		confirm:     confirmYN,
+		tryOpen:     env.Open,
+		canRemember: keychain.Supported() && isTTY,
+	})
 	if err != nil {
 		return nil, err
 	}

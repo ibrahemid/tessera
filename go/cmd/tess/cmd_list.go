@@ -13,8 +13,9 @@ func newListCmd() *cobra.Command {
 	var folder, tag string
 	var asJSON bool
 	cmd := &cobra.Command{
-		Use:   "list",
-		Short: "List accounts (without codes)",
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List accounts (without codes)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := openSession()
 			if err != nil {

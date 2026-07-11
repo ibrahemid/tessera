@@ -47,7 +47,9 @@ tess                                 # print current codes (colored, with countd
 tess watch                           # live TUI: countdown bars, search (/), copy (enter/c), q to quit
 tess code acme -c                    # code for one account, copied to the clipboard
 tess code --json                     # machine-readable output for scripts
-tess list --json
+tess ls --json                       # alias for `tess list`
+tess vault remember                  # store the passphrase in the macOS login keychain
+tess vault status                    # path, file details, wrap methods, keychain state
 tess export --uri acme               # otpauth URI (cleartext secret)
 tess completion zsh > ...            # shell completions (bash/zsh/fish)
 ```
@@ -55,6 +57,8 @@ tess completion zsh > ...            # shell completions (bash/zsh/fish)
 Colored output auto-disables when piped or when `NO_COLOR` is set.
 
 Vault path: `$TESSERA_VAULT` or `~/.local/share/tessera/vault.json`. For scripting, set `TESSERA_PASSPHRASE` to avoid the prompt.
+
+On macOS, `tess vault remember` opts into storing the passphrase in the login keychain (`tess vault forget` removes it) so `tess` stops prompting; the entry is protected by the login keychain at the same trust level as an ssh key on disk.
 
 ## Security model
 
