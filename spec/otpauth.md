@@ -59,3 +59,44 @@ message MigrationPayload {
 }
 ```
 `secret` is RAW bytes (NOT base32). Multi-QR exports share `batch_id`, indexed `batch_index` of `batch_size`; merge before completing import. Map `ALGORITHM_MD5` -> reject with a clear error (not supported by RFC TOTP clients).
+
+## Input detection
+Both cores classify a text payload by the first matching rule, in order (Go `internal/detect`, Swift `InputDetect`, byte-identical):
+
+1. Prefix `otpauth-migration://` (case-insensitive scheme) -> Google Authenticator migration parse (multi-account).
+2. Prefix `otpauth://` (case-insensitive scheme) -> single-account otpauth parse.
+3. App-export JSON: first non-whitespace byte `[` -> Raivo, `{` -> Aegis (`db` key) / 2FAS (`services`/`servicesEncrypted` key) -> existing importers.
+4. Bare base32 setup key (guardrail below) -> TOTP, defaults SHA1 / 6 digits / period 30, empty issuer and account.
+
+No rule matches -> `invalid`.
+
+Multiline input: split on line breaks, classify each non-empty line independently by the same precedence. A single line is the one-line case of this rule.
+
+Base32 setup-key guardrail (rule 4). Prevents prose (e.g. `hello world`) from being read as a key. After stripping ASCII spaces and `-`, the input qualifies as a setup key only if it is a single token matching `^[A-Za-z2-7]+$` case-insensitively, length >= 16 chars (>= 10 secret bytes), and it decodes cleanly under the lenient base32 rules above (§ base32). Otherwise it is not a setup key and falls through to `invalid`.
+
+Partial-failure semantics. Batch inputs (multiline, multi-file, multi-QR) import every item that parses. Each failure is recorded per item (source, line/file index, reason) and never aborts the batch.
+
+## Supported image formats
+The app decodes images via ImageIO: PNG, JPEG, HEIC, WebP, TIFF, GIF, BMP. The CLI decodes via Go `x/image`: PNG, JPEG, WebP, TIFF, BMP. HEIC is app-only (no cgo in the security-audited Go module). Multiple QR codes in one image are all decoded; each decoded payload is classified via the text precedence above.
+
+## Detection test table
+Canonical classification cases. Both suites port these; `kind` is one of `migration | otpauth | export-json | setup-key | invalid`.
+
+| input | kind | notable |
+|---|---|---|
+| `ZB573K4APD63E6RLD3WAHI3QFZ35RLEP` | setup-key | 32 chars; SHA1/6/30 defaults; empty issuer+account |
+| `zb573k4a pd63e6rl d3wahi3q fz35rlep` | setup-key | spaces stripped; same key as above |
+| `zb573k4a-pd63e6rl-d3wahi3q-fz35rlep` | setup-key | dashes stripped; same key |
+| `GEZDGNBV` | invalid | 8 chars < 16 min |
+| `hello world` | invalid | two tokens; not `^[A-Za-z2-7]+$` |
+| `otpauth://totp/Example:alice@google.com?secret=JBSWY3DPEHPK3PXP&issuer=Example` | otpauth | TOTP; secret base32 |
+| `otpauth://hotp/Bank:ops?secret=JBSWY3DPEHPK3PXP&counter=5&digits=8` | otpauth | HOTP; counter=5 |
+| `otpauth://steam/Steam:me?secret=ONSWG4TFOQ&digits=5` | otpauth | steam; digits=5 |
+| `otpauth-migration://offline?data=CjEKCkhlbGxvId6tvu8SGEV4YW1wbGU6YWxpY2VAZ29vZ2xlLmNvbRoHRXhhbXBsZSABKAEwAhABGAEgACjr4JKkBg%3D%3D` | migration | 1 account (Example:alice) |
+| `[{ "issuer": "GitHub", "account": "john@example.com", "secret": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": "6", "kind": "TOTP", "timer": "30", "counter": "0" }]` | export-json | Raivo (`[` lead) |
+| `{ "schemaVersion": 4, "services": [{ "name": "GitHub", "secret": "JBSWY3DPEHPK3PXP", "otp": { "tokenType": "TOTP" } }] }` | export-json | 2FAS (`services` key) |
+| `{ "version": 1, "db": { "version": 3, "entries": [] } }` | export-json | Aegis (`db` key) |
+| `otpauth://totp/A?secret=JBSWY3DPEHPK3PXP`<br>`hello world`<br>`ZB573K4APD63E6RLD3WAHI3QFZ35RLEP` | otpauth, invalid, setup-key | per-line: line1 otpauth, line2 invalid, line3 setup-key |
+| `` (empty) | invalid | no non-whitespace |
+| `   \t  ` (whitespace only) | invalid | no non-whitespace |
+| `SGVsbG8gd29ybGQhISE=` | invalid | base64 not base32 (`=` mid/tail, non-`A-Z2-7`) |
