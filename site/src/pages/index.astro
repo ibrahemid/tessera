@@ -120,16 +120,16 @@ const cliCmds = [
           <div class="flex items-center gap-3">
             <span class="grid place-items-center w-9 h-9 rounded-[0.6rem] text-white font-mono text-xs font-semibold" style="background: var(--violet)">{`{ }`}</span>
             <span class="font-semibold">GitHub</span>
-            <span class="ml-auto mono text-xs" style="color: var(--ink-faint)">the issuer</span>
+            <span class="ml-auto text-xs" style="color: var(--ink-faint)">the issuer</span>
           </div>
           <div class="mt-6 mono tnum" style="font-size: 2.6rem; letter-spacing: 0.06em; line-height: 1">824 159</div>
-          <div class="mt-2 mono text-xs" style="color: var(--ink-faint)">your six-digit code, right now</div>
+          <div class="mt-2 text-xs" style="color: var(--ink-faint)">your six-digit code, right now</div>
           <div class="mt-6 h-px" style="background: var(--line)"></div>
           <div class="mt-5 flex items-center gap-3">
             <div class="flex-1 h-2 rounded-full overflow-hidden" style="background: var(--line)">
               <div class="h-full rounded-full" style="width: 60%; background: var(--gold-bright)"></div>
             </div>
-            <span class="mono text-xs" style="color: var(--ink-faint)">rolls in 18s</span>
+            <span class="text-xs tnum" style="color: var(--ink-faint)">rolls in 18s</span>
           </div>
         </figure>
       </div>
@@ -155,7 +155,7 @@ const cliCmds = [
             <span class="grid place-items-center w-9 h-9 rounded-[0.6rem]" style={`background: color-mix(in srgb, ${f.c} 15%, transparent)`}>
               <span class="w-3 h-3 rounded-[0.25rem]" style={`background: ${f.c}`}></span>
             </span>
-            <span class="mono text-xs" style="color: var(--ink-faint)">{f.k}</span>
+            <span class="text-xs tnum" style="color: var(--ink-faint)">{f.k}</span>
           </div>
           <h3 class="mt-5" style="font-size: 1.15rem">{f.t}</h3>
           <p class="mt-2 text-sm leading-relaxed" style="color: var(--ink-soft)">{f.b}</p>
@@ -225,7 +225,7 @@ const cliCmds = [
           <h3 style="font-size: 1.2rem">No tracking</h3>
           <p class="mt-3 text-sm leading-relaxed" style="color: var(--ink-soft)">
             No analytics, no ads, no crash SDKs. Apple's privacy label reads
-            <span class="mono" style="color: var(--ink)"> Data Not Collected</span>.
+            <span class="font-medium" style="color: var(--ink)"> Data Not Collected</span>.
             This very site ships zero trackers and self-hosts its fonts.
           </p>
         </article>
@@ -236,9 +236,9 @@ const cliCmds = [
           <span class="eyebrow" style="color: var(--ink-faint)">The crypto, plainly</span>
           <p class="text-sm leading-relaxed" style="color: var(--ink-soft)">
             A random 256-bit key encrypts your accounts with
-            <span class="mono" style="color: var(--ink)"> XChaCha20-Poly1305</span>. That key is
+            <span class="font-medium" style="color: var(--ink)"> XChaCha20-Poly1305</span>. That key is
             wrapped by a key derived from your passphrase with
-            <span class="mono" style="color: var(--ink)"> argon2id</span>, and on a Mac it can also
+            <span class="font-medium" style="color: var(--ink)"> argon2id</span>, and on a Mac it can also
             be sealed by the <span style="color: var(--ink)">Secure Enclave</span> behind Touch ID.
             Two independent builds, Go and Swift, prove they read the same vault
             on every change. Secrets live as raw bytes; they're never logged.
@@ -327,13 +327,13 @@ const cliCmds = [
         <div class="mt-5 rounded-xl overflow-hidden border border-line">
           <div class="flex items-center justify-between px-4 py-2.5" style="background: var(--surface-sunken)">
             <span class="mono text-xs" style="color: var(--ink-faint)">terminal</span>
-            <button type="button" class="copy-btn mono text-xs px-2 py-1 rounded-md" data-copy={"go install github.com/ibrahemid/tessera/go/cmd/tess@latest\ntess vault init\ntess watch"} style="color: var(--gold); background: var(--gold-tint)">Copy</button>
+            <button type="button" class="copy-btn text-xs font-semibold px-2 py-1 rounded-md" data-copy={"go install github.com/ibrahemid/tessera/go/cmd/tess@latest\ntess vault init\ntess watch"} style="color: var(--gold); background: var(--gold-tint)">Copy</button>
           </div>
           <pre class="mono text-sm overflow-x-auto p-4 leading-relaxed" style="background: var(--surface)"><code><span style="color: var(--green)">$</span> go install github.com/ibrahemid/tessera/go/cmd/tess@latest
 <span style="color: var(--green)">$</span> tess vault init
 <span style="color: var(--green)">$</span> tess watch</code></pre>
         </div>
-        <p class="mt-3 mono text-xs" style="color: var(--ink-faint)">Needs Go 1.26+. Vault: ~/.local/share/tessera/vault.json</p>
+        <p class="mt-3 text-xs" style="color: var(--ink-faint)">Needs Go 1.26+. Vault: <span class="mono">~/.local/share/tessera/vault.json</span></p>
       </article>
 
       <article class="tile p-7 sm:p-8 reveal flex flex-col">
@@ -343,7 +343,7 @@ const cliCmds = [
           <a href={appStore} rel="noopener" class="inline-flex items-center gap-3 px-5 py-3 rounded-xl border border-line tile-hover" style="background: var(--surface-sunken)" aria-label="Download Tessera on the Mac App Store">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="color: var(--ink)"><path d="M16.36 12.78c-.02-2.3 1.88-3.4 1.96-3.46-1.07-1.56-2.73-1.78-3.32-1.8-1.41-.14-2.76.83-3.48.83-.72 0-1.82-.81-3-.79-1.54.02-2.96.9-3.75 2.28-1.6 2.78-.41 6.89 1.15 9.14.76 1.1 1.67 2.34 2.86 2.3 1.15-.05 1.58-.74 2.97-.74 1.38 0 1.77.74 2.98.72 1.23-.02 2.01-1.12 2.76-2.23.87-1.28 1.23-2.52 1.25-2.58-.03-.01-2.4-.92-2.42-3.64zM14.13 6.13c.64-.78 1.07-1.85.95-2.93-.92.04-2.03.61-2.69 1.38-.59.69-1.11 1.79-.97 2.85 1.02.08 2.07-.52 2.71-1.3z"/></svg>
             <div class="text-left leading-tight">
-              <div class="text-[0.6rem] mono" style="color: var(--ink-faint)">Download on the</div>
+              <div class="text-[0.6rem] uppercase tracking-wide" style="color: var(--ink-faint)">Download on the</div>
               <div class="font-semibold text-sm" style="color: var(--ink)">Mac App Store</div>
             </div>
           </a>
@@ -370,9 +370,9 @@ const cliCmds = [
   .dotcheck-faint::after { background: var(--ink-faint); }
 
   .status {
-    font-family: var(--font-mono);
+    font-family: var(--font-body);
     font-size: 0.66rem;
-    font-weight: 500;
+    font-weight: 650;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     padding: 0.2rem 0.55rem;

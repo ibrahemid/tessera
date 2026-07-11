@@ -29,7 +29,12 @@ const repo = "https://github.com/ibrahemid/tessera";
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://tessera.ibrahemid.com" />
-    <meta name="twitter:card" content="summary" />
+    <meta property="og:image" content="https://tessera.ibrahemid.com/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="https://tessera.ibrahemid.com/og.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="canonical" href={new URL(Astro.url.pathname, "https://tessera.ibrahemid.com")} />
     <script is:inline>
       // Default to light on first visit (house rule: never default to dark);
@@ -103,8 +108,8 @@ const repo = "https://github.com/ibrahemid/tessera";
           </nav>
         </div>
         <div class="mt-10 pt-6 border-t border-line flex flex-wrap items-center justify-between gap-3 text-xs" style="color: var(--ink-faint)">
-          <span class="mono">© {year} Tessera · Apache-2.0</span>
-          <span class="mono">No accounts · No servers · No tracking</span>
+          <span>© {year} Tessera · Apache-2.0</span>
+          <span>No accounts · No servers · No tracking</span>
         </div>
       </div>
     </footer>

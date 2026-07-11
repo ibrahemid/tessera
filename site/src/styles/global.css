@@ -145,10 +145,10 @@ a { color: inherit; text-decoration: none; }
 /* ---------- typographic utilities ---------- */
 
 .eyebrow {
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
   font-size: 0.76rem;
-  font-weight: 500;
-  letter-spacing: 0.13em;
+  font-weight: 650;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--gold);
 }
