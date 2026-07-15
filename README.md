@@ -4,7 +4,7 @@
 
 # Tessera
 
-A TOTP/2FA authenticator for macOS. CLI-first, with a native menu-bar app.
+A TOTP/2FA authenticator for macOS. CLI-first, with a native app.
 
 [![CI](https://img.shields.io/github/actions/workflow/status/ibrahemid/tessera/ci.yml?branch=main&label=CI&logo=github)](https://github.com/ibrahemid/tessera/actions)
 [![License](https://img.shields.io/github/license/ibrahemid/tessera)](LICENSE)
@@ -16,7 +16,7 @@ A TOTP/2FA authenticator for macOS. CLI-first, with a native menu-bar app.
 
 <img src="docs/media/tess-cli.gif" alt="tess in a terminal: creating a vault, adding an account, printing codes with countdown bars, copying a code, and filtering the live watch view" width="100%">
 
-Tessera keeps your 2FA codes in an encrypted vault on your Mac, reachable from the menu bar and a real command line. It ships free what other Mac authenticators paywall (menu bar, Touch ID, auto-launch), and adds what they lack: a CLI, HOTP, Steam Guard, folders and tags, and one vault that the CLI and the app share. Free, open source, Apache-2.0.
+Tessera keeps your 2FA codes in an encrypted vault on your Mac, reachable from a native app and a real command line. It ships free what other Mac authenticators paywall (Touch ID, auto-launch), and adds what they lack: a CLI, HOTP, Steam Guard, folders and tags, and one vault that the CLI and the app share. Free, open source, Apache-2.0.
 
 ## Features
 
@@ -24,16 +24,16 @@ Tessera keeps your 2FA codes in an encrypted vault on your Mac, reachable from t
 - Import: `otpauth://`, Google Authenticator export (`otpauth-migration://`), QR images (CLI) / on-screen QR (app)
 - Encrypted vault: random DEK, XChaCha20-Poly1305 payload, argon2id passphrase wrap, optional Touch ID (Secure Enclave) wrap
 - Search, folders, tags, pinning
-- No account, no server, no analytics. Optional sync uses your own iCloud (CloudKit private DB), end-to-end encrypted
+- No account, no server, no analytics, no network
 
 ## The app
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/appstore-assets/01-vault-light.png">
-  <img src="docs/appstore-assets/01-vault-dark.png" alt="Tessera menu-bar app showing accounts with live codes and countdown rings" width="100%">
+  <img src="docs/appstore-assets/01-vault-dark.png" alt="Tessera app showing accounts with live codes and countdown rings" width="100%">
 </picture>
 
-A native SwiftUI menu-bar app: live codes with countdown rings, one-click copy, on-screen QR scanning, Touch ID unlock. It opens a CLI-created vault in place (asks for its passphrase once, then unlocks via the Secure Enclave; the CLI keeps working on the same file). App-created vaults are Secure-Enclave-bound; move them to the CLI with the app's encrypted export.
+A native SwiftUI app: live codes with countdown rings, one-click copy, on-screen QR scanning, Touch ID unlock. It opens a CLI-created vault in place (asks for its passphrase once, then unlocks via the Secure Enclave; the CLI keeps working on the same file). App-created vaults are Secure-Enclave-bound; move them to the CLI with the app's encrypted export.
 
 ## CLI quick start
 
@@ -77,7 +77,7 @@ The exact rules live in [`spec/vault-format.md`](spec/vault-format.md) and [`spe
 |------|------|
 | `spec/` | Source of truth: vault format, otpauth/OTP rules, shared interop test vectors |
 | `go/` | The `tess` CLI and its core (Go 1.26) |
-| `swift/` | `TesseraCore` library + the SwiftUI menu-bar app |
+| `swift/` | `TesseraCore` library + the SwiftUI app |
 | `interop` / CI | Both implementations are checked against `spec/testvectors.json` |
 
 Build instructions in [`docs/BUILD.md`](docs/BUILD.md).

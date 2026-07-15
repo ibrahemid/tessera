@@ -3,7 +3,7 @@ import Base from "../layouts/Base.astro";
 const repo = "https://github.com/ibrahemid/tessera";
 
 const steps = [
-  ["Pick where your codes live", "Open the menu-bar app, or run tess vault init in the terminal. Choose a passphrase you'll remember: it's the one thing that can't be reset."],
+  ["Pick where your codes live", "Open the app, or run tess vault init in the terminal. Choose a passphrase you'll remember: it's the one thing that can't be reset."],
   ["Bring your accounts in", "On a site's security page, choose “authenticator app.” Scan the QR with the app, or paste the otpauth link. Moving from Google Authenticator? Export and import the whole set at once."],
   ["Use a code when asked", "When a site asks for a 2FA code, open Tessera, copy the six digits for that account, and paste. They refresh every 30 seconds, so grab the current one."],
 ];
@@ -11,7 +11,7 @@ const steps = [
 const faqs = [
   ["How do I import my existing accounts?", "From Google Authenticator: Transfer accounts → Export, then scan the QR (app) or run tess import --migration \"otpauth-migration://…\". You can also paste otpauth links or import a file of many at once."],
   ["Where are my codes stored?", "In an encrypted vault on your Mac. The app keeps it in its sandbox container; the CLI keeps it at ~/.local/share/tessera/vault.json. Point both at one file with the TESSERA_VAULT environment variable."],
-  ["I forgot my passphrase.", "The vault is end-to-end encrypted and can't be recovered without it. That's the point. Keep a backup with tess export and store your passphrase somewhere safe, like a password manager."],
+  ["I forgot my passphrase.", "The vault can't be decrypted without it. That's the point. Keep a backup with tess export and store your passphrase somewhere safe, like a password manager."],
   ["Can I use it on more than one Mac?", "Yes. Move a vault between machines with an encrypted export, then import it on the other side. Point the app and CLI at the same file with the TESSERA_VAULT environment variable to keep one vault in one place."],
   ["Is it really free?", "Yes, completely. It's open source under Apache-2.0, so there's nothing to buy and no account to make."],
   ["Which services work with Tessera?", "Any service that offers an authenticator app (TOTP), plus HOTP and Steam Guard. If you can scan its QR or copy its setup link, Tessera can hold it."],
