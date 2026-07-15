@@ -17,7 +17,9 @@ struct TesseraApp: App {
     @AppStorage("tessera.compact") private var compact = false
 
     var body: some Scene {
-        WindowGroup(id: "main") {
+        // Single Window scene (not WindowGroup): lists "Tessera" in the Window
+        // menu so the main window can be reopened after close (App Review 4.0).
+        Window("Tessera", id: "main") {
             RootView()
                 .environmentObject(model)
                 .preferredColorScheme(theme.colorScheme)
