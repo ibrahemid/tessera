@@ -72,6 +72,8 @@ No rule matches -> `invalid`.
 
 Multiline input: split on line breaks, classify each non-empty line independently by the same precedence. A single line is the one-line case of this rule.
 
+Wrapped-URI repair (runs before the per-line split). Textareas and mail clients hard-wrap long URIs, so a single URI arriving with embedded line breaks is one URI, not a batch. Repair applies only when ALL of: the trimmed input classifies as `otpauth` or `migration` by prefix; it contains at least one line break; the substring `otpauth` occurs exactly once case-insensitively; and the first non-empty line ALONE fails to parse as that kind (i.e. it is a true fragment — a complete first line means the input is a batch and per-line semantics stand). Then strip ALL whitespace from the whole input and parse the result as that single URI. On success the repaired URI is the entire result; on failure, fall back to the per-line rule unchanged.
+
 Base32 setup-key guardrail (rule 4). Prevents prose (e.g. `hello world`) from being read as a key. After stripping ASCII spaces and `-`, the input qualifies as a setup key only if it is a single token matching `^[A-Za-z2-7]+$` case-insensitively, length >= 16 chars (>= 10 secret bytes), and it decodes cleanly under the lenient base32 rules above (§ base32). Otherwise it is not a setup key and falls through to `invalid`.
 
 Partial-failure semantics. Batch inputs (multiline, multi-file, multi-QR) import every item that parses. Each failure is recorded per item (source, line/file index, reason) and never aborts the batch.
@@ -97,6 +99,9 @@ Canonical classification cases. Both suites port these; `kind` is one of `migrat
 | `{ "schemaVersion": 4, "services": [{ "name": "GitHub", "secret": "JBSWY3DPEHPK3PXP", "otp": { "tokenType": "TOTP" } }] }` | export-json | 2FAS (`services` key) |
 | `{ "version": 1, "db": { "version": 3, "entries": [] } }` | export-json | Aegis (`db` key) |
 | `otpauth://totp/A?secret=JBSWY3DPEHPK3PXP`<br>`hello world`<br>`ZB573K4APD63E6RLD3WAHI3QFZ35RLEP` | otpauth, invalid, setup-key | per-line: line1 otpauth, line2 invalid, line3 setup-key |
+| `otpauth://totp/Demo:reviewer@example.com?`<br>`secret=JBSWY3DPEHPK3PXP&issuer=Demo` | otpauth | wrapped-URI repair: whitespace stripped, parses as one account |
+| `otpauth://totp/A?`<br>`hello world` | otpauth + invalid | repair join fails (`hello world` is not query), falls back per-line: both lines error |
+| `otpauth://totp/A?secret=JBSWY3DPEHPK3PXP`<br>`ZB573K4APD63E6RLD3WAHI3QFZ35RLEP` | otpauth, setup-key | no repair: first line parses alone, so per-line batch (2 accounts) |
 | `` (empty) | invalid | no non-whitespace |
 | `   \t  ` (whitespace only) | invalid | no non-whitespace |
 | `SGVsbG8gd29ybGQhISE=` | invalid | base64 not base32 (`=` mid/tail, non-`A-Z2-7`) |

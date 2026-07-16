@@ -88,6 +88,45 @@ func TestParseTextMixedValidInvalid(t *testing.T) {
 	}
 }
 
+func TestParseTextWrappedURIRepair(t *testing.T) {
+	// A URI hard-wrapped by a textarea or mail client is one URI, not a batch
+	// (spec § input detection, wrapped-URI repair).
+	wrapped := "otpauth://totp/Demo:reviewer@example.com?\nsecret=JBSWY3DPEHPK3PXP&issuer=Demo"
+	accts, errs := ParseText(wrapped)
+	if len(errs) != 0 {
+		t.Fatalf("expected no errors, got %v", errs)
+	}
+	if len(accts) != 1 {
+		t.Fatalf("expected 1 account, got %d", len(accts))
+	}
+	if accts[0].Issuer != "Demo" || accts[0].Account != "reviewer@example.com" {
+		t.Errorf("wrong account parsed: %+v", accts[0])
+	}
+
+	// Repair only applies when the join actually parses; otherwise per-line
+	// semantics are unchanged.
+	broken := "otpauth://totp/A?\nhello world"
+	accts, errs = ParseText(broken)
+	if len(accts) != 0 || len(errs) != 2 {
+		t.Fatalf("expected fallback to per-line (0 accounts, 2 errors), got %d/%v", len(accts), errs)
+	}
+
+	// Two URIs stay a batch: no repair when the scheme appears more than once.
+	batch := "otpauth://totp/A?secret=JBSWY3DPEHPK3PXP\notpauth://totp/B?secret=JBSWY3DPEHPK3PXP"
+	accts, errs = ParseText(batch)
+	if len(accts) != 2 || len(errs) != 0 {
+		t.Fatalf("expected 2 accounts, 0 errors, got %d/%v", len(accts), errs)
+	}
+
+	// A complete first line means batch semantics even if the join would
+	// parse: URI + bare setup key must stay two accounts.
+	uriPlusKey := "otpauth://totp/A?secret=JBSWY3DPEHPK3PXP\nZB573K4APD63E6RLD3WAHI3QFZ35RLEP"
+	accts, errs = ParseText(uriPlusKey)
+	if len(accts) != 2 || len(errs) != 0 {
+		t.Fatalf("expected 2 accounts (uri + setup key), 0 errors, got %d/%v", len(accts), errs)
+	}
+}
+
 func TestParseTextWholeJSONExport(t *testing.T) {
 	pretty := `{
   "version": 1,

@@ -90,6 +90,31 @@ public enum InputDetect {
             }
         }
 
+        // Wrapped-URI repair (spec § input detection): textareas and mail
+        // clients hard-wrap long URIs, so a single URI with embedded line
+        // breaks is one URI, not a batch. Applies only when the whole input
+        // holds exactly one scheme and the first line alone is a true fragment
+        // (fails to parse); a complete first line means the input is a batch.
+        // Matches Go detect.ParseText.
+        if trimmed.contains(where: \.isNewline) {
+            let kind = classify(trimmed)
+            if kind == .otpauth || kind == .migration,
+               trimmed.lowercased().components(separatedBy: "otpauth").count == 2 {
+                let firstLine = trimmed.split(whereSeparator: \.isNewline)
+                    .first.map { String($0).trimmingCharacters(in: .whitespaces) } ?? ""
+                let joined = String(String.UnicodeScalarView(
+                    trimmed.unicodeScalars.filter { !CharacterSet.whitespacesAndNewlines.contains($0) }))
+                if kind == .migration, (try? Migration.parse(firstLine)) == nil,
+                   let parsed = try? Migration.parse(joined) {
+                    return (parsed, [])
+                }
+                if kind == .otpauth, (try? OTPAuth.parse(firstLine)) == nil,
+                   let parsed = try? OTPAuth.parse(joined) {
+                    return ([parsed], [])
+                }
+            }
+        }
+
         let lines = input.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)
         for (i, raw) in lines.enumerated() {
             let line = String(raw)

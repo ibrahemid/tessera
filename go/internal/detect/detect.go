@@ -9,6 +9,7 @@ package detect
 import (
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
 	"github.com/ibrahemid/tessera/go/internal/base32x"
@@ -98,6 +99,18 @@ func IsLikelyBase32Secret(s string) bool {
 	return err == nil
 }
 
+func stripAllWhitespace(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if unicode.IsSpace(r) {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
 func stripSpacesDashes(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))
@@ -159,6 +172,35 @@ func ParseText(text string) ([]account.Account, []ItemError) {
 			return accts, nil
 		}
 		return nil, []ItemError{{Line: 1, Input: redact(Invalid, trimmed), Err: fmt.Errorf("unrecognized JSON export")}}
+	}
+
+	// Wrapped-URI repair (spec § input detection): textareas and mail clients
+	// hard-wrap long URIs, so a single URI with embedded line breaks is one
+	// URI, not a batch. Applies only when the whole input holds exactly one
+	// scheme and the first line alone is a true fragment (fails to parse);
+	// a complete first line means the input is a batch.
+	if strings.ContainsAny(trimmed, "\n\r") {
+		if k := Classify(trimmed); (k == OTPAuth || k == Migration) &&
+			strings.Count(strings.ToLower(trimmed), "otpauth") == 1 {
+			firstLine := strings.TrimSpace(strings.FieldsFunc(trimmed, func(r rune) bool {
+				return r == '\n' || r == '\r'
+			})[0])
+			joined := stripAllWhitespace(trimmed)
+			switch k {
+			case Migration:
+				if _, err := migration.Parse(firstLine); err != nil {
+					if parsed, err := migration.Parse(joined); err == nil {
+						return parsed, nil
+					}
+				}
+			case OTPAuth:
+				if _, err := otpauth.Parse(firstLine); err != nil {
+					if a, err := otpauth.Parse(joined); err == nil {
+						return []account.Account{a}, nil
+					}
+				}
+			}
+		}
 	}
 
 	var accts []account.Account

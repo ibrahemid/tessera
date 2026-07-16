@@ -143,6 +143,30 @@ final class InputDetectTests: XCTestCase {
         XCTAssertEqual(errors[0].reason, "Not recognized")
     }
 
+    func testParseTextWrappedURIRepair() {
+        let wrapped = "otpauth://totp/Demo:reviewer@example.com?\nsecret=JBSWY3DPEHPK3PXP&issuer=Demo"
+        let (accounts, errors) = InputDetect.parseText(wrapped)
+        XCTAssertTrue(errors.isEmpty, "\(errors)")
+        XCTAssertEqual(accounts.count, 1)
+        XCTAssertEqual(accounts.first?.issuer, "Demo")
+        XCTAssertEqual(accounts.first?.account, "reviewer@example.com")
+
+        let broken = "otpauth://totp/A?\nhello world"
+        let (a2, e2) = InputDetect.parseText(broken)
+        XCTAssertTrue(a2.isEmpty)
+        XCTAssertEqual(e2.count, 2)
+
+        let batch = "otpauth://totp/A?secret=JBSWY3DPEHPK3PXP\notpauth://totp/B?secret=JBSWY3DPEHPK3PXP"
+        let (a3, e3) = InputDetect.parseText(batch)
+        XCTAssertEqual(a3.count, 2)
+        XCTAssertTrue(e3.isEmpty)
+
+        let uriPlusKey = "otpauth://totp/A?secret=JBSWY3DPEHPK3PXP\nZB573K4APD63E6RLD3WAHI3QFZ35RLEP"
+        let (a4, e4) = InputDetect.parseText(uriPlusKey)
+        XCTAssertEqual(a4.count, 2)
+        XCTAssertTrue(e4.isEmpty)
+    }
+
     func testParseTextEmpty() {
         let (accounts, errors) = InputDetect.parseText("")
         XCTAssertTrue(accounts.isEmpty)
