@@ -513,8 +513,13 @@ struct VaultView: View {
         Button(account.pinned ? "Unpin" : "Pin", systemImage: "pin") { model.togglePin(account) }
         if account.type == .hotp { Button("Advance code", systemImage: "forward") { model.advanceHOTP(account) } }
         Button("Copy code", systemImage: "doc.on.doc") { copy(account) }
-        Button("Edit alias…", systemImage: "character.cursor.ibeam") { editAccount = account }
-        Button("Show QR code", systemImage: "qrcode") { qrAccount = account }
+        Button("Edit…", systemImage: "pencil") { editAccount = account }
+        Divider()
+        Menu {
+            Button("Copy setup link", systemImage: "link") { model.copySetupLink(account) }
+            Button("Copy setup key", systemImage: "key") { model.copySecretKey(account) }
+            Button("Show QR code", systemImage: "qrcode") { qrAccount = account }
+        } label: { Label("Setup secret", systemImage: "qrcode.viewfinder") }
         Menu("Add to List") {
             ForEach(folders, id: \.self) { f in
                 Button { model.setFolder(account, to: f) } label: {
@@ -958,47 +963,92 @@ struct QRExportView: View {
     }
 }
 
-// MARK: Edit alias
+// MARK: Edit account
 
-/// Rename an account's handle (alias) — the short identifier shown on the row and
-/// accepted wherever an account is looked up. Charset and vault-uniqueness are
-/// validated on save, with a factual inline reason on rejection.
+/// Edit an account's names: issuer, account label, alias (handle), and list
+/// (folder). Crypto parameters (type, algorithm, digits, period) are shown but
+/// not editable — changing them would silently break the codes. The alias keeps
+/// its charset + vault-uniqueness rules, with a factual inline reason on reject.
 struct EditAccountView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) var dismiss
     let account: Account
+    @State private var issuer: String
+    @State private var accountLabel: String
     @State private var alias: String
+    @State private var folder: String
     @State private var error: String?
 
     init(account: Account) {
         self.account = account
+        _issuer = State(initialValue: account.issuer)
+        _accountLabel = State(initialValue: account.account)
         _alias = State(initialValue: account.handle)
+        _folder = State(initialValue: account.folder)
+    }
+
+    private var canSave: Bool {
+        !alias.isEmpty && !(issuer.trimmingCharacters(in: .whitespaces).isEmpty
+            && accountLabel.trimmingCharacters(in: .whitespaces).isEmpty)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            VStack(spacing: 2) {
-                Text(account.displayName).font(Typo.display(16)).foregroundStyle(Palette.textPrimary)
-                Text("Short alias for search and lookup").font(Typo.label(11)).foregroundStyle(Palette.textSecondary)
-            }.frame(maxWidth: .infinity)
+            Text("Edit account").font(Typo.display(16)).foregroundStyle(Palette.textPrimary)
+                .frame(maxWidth: .infinity)
 
-            FieldBox {
-                TextField("Alias", text: $alias)
+            labeledField("Issuer") {
+                TextField("Service name", text: $issuer)
+                    .textFieldStyle(.plain).autocorrectionDisabled()
+                    .onChange(of: issuer) { error = nil }
+            }
+            labeledField("Account") {
+                TextField("Username or email", text: $accountLabel)
+                    .textFieldStyle(.plain).autocorrectionDisabled()
+                    .onChange(of: accountLabel) { error = nil }
+            }
+            labeledField("Alias") {
+                TextField("Short lookup name", text: $alias)
                     .font(Typo.code(13)).textFieldStyle(.plain).autocorrectionDisabled()
                     .onChange(of: alias) { error = nil }
             }
+            labeledField("List") {
+                TextField("Optional folder", text: $folder)
+                    .textFieldStyle(.plain).autocorrectionDisabled()
+                    .onChange(of: folder) { error = nil }
+            }
+
+            Text(paramSummary(account)).font(Typo.label(11)).foregroundStyle(Palette.textSecondary)
+
             if let e = error { ErrorLine(e) }
 
             HStack {
                 Button("Cancel") { dismiss() }.buttonStyle(.plain).foregroundStyle(Palette.textSecondary)
+                    .keyboardShortcut(.cancelAction)
                 Spacer()
-                ActionButton("Save", enabled: !alias.isEmpty) {
-                    if let reason = model.setHandle(account, to: alias) { error = reason }
-                    else { dismiss() }
+                ActionButton("Save", enabled: canSave) {
+                    let reason = model.applyEdit(account, issuer: issuer, accountLabel: accountLabel,
+                                                 handle: alias, folder: folder)
+                    if let reason { error = reason } else { dismiss() }
                 }
             }.font(Typo.label(12, .medium))
         }
-        .padding(24).frame(width: 300).background(Palette.background)
+        .padding(24).frame(width: 320).background(Palette.background)
+    }
+
+    @ViewBuilder private func labeledField<Content: View>(_ label: String,
+                                                          @ViewBuilder _ field: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label).font(Typo.label(10, .medium)).foregroundStyle(Palette.textSecondary)
+            FieldBox { field() }
+        }
+    }
+
+    /// The read-only crypto parameters, e.g. "TOTP · SHA1 · 6 digits · 30s".
+    private func paramSummary(_ a: Account) -> String {
+        var parts = [a.type.rawValue.uppercased(), a.algorithm, "\(a.digits) digits"]
+        parts.append(a.type == .hotp ? "counter \(a.counter)" : "\(a.period)s")
+        return parts.joined(separator: " · ")
     }
 }
 

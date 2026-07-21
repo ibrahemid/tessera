@@ -809,6 +809,55 @@ final class AppModel: ObservableObject {
         return failure
     }
 
+    /// Apply the edit sheet's fields (issuer, account label, handle, folder) in a
+    /// single persist. Returns nil on success or a factual reason to show inline.
+    /// The handle keeps the same charset + vault-uniqueness rules as auto-assign;
+    /// crypto parameters (type, algorithm, digits, period) are never editable —
+    /// changing them would silently break the codes.
+    func applyEdit(_ account: Account, issuer: String, accountLabel: String,
+                   handle rawHandle: String, folder rawFolder: String) -> String? {
+        let iss = issuer.trimmingCharacters(in: .whitespaces)
+        let acct = accountLabel.trimmingCharacters(in: .whitespaces)
+        if iss.isEmpty && acct.isEmpty {
+            return "Give the account an issuer or a name."
+        }
+        let h = rawHandle.trimmingCharacters(in: .whitespaces).lowercased()
+        guard Handles.isValid(h) else {
+            return "Aliases are 1-12 characters: a lowercase letter first, then letters or digits."
+        }
+        if let other = accounts.first(where: { $0.id != account.id && $0.handle == h }) {
+            return "\(h) is already used by \(other.displayName)."
+        }
+        let fold = rawFolder.trimmingCharacters(in: .whitespaces)
+        var failure: String?
+        run {
+            var next = accounts
+            guard let i = next.firstIndex(where: { $0.id == account.id }) else { return }
+            next[i].issuer = iss
+            next[i].account = acct
+            next[i].handle = h
+            next[i].folder = fold
+            next[i].updatedAt = Int64(Date().timeIntervalSince1970)
+            try persist(next)
+        }
+        if let msg = errorMessage { failure = msg; errorMessage = nil }
+        return failure
+    }
+
+    /// Copy an account's otpauth setup link (cleartext secret) to the clipboard.
+    func copySetupLink(_ account: Account) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(otpauthURI(for: account), forType: .string)
+        status = "Copied setup link for \(account.displayName)"
+    }
+
+    /// Copy an account's base32 setup key (cleartext secret) to the clipboard.
+    func copySecretKey(_ account: Account) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(secretBase32(for: account), forType: .string)
+        status = "Copied setup key for \(account.displayName)"
+    }
+
     func advanceHOTP(_ account: Account) {
         guard account.type == .hotp else { return }
         mutate { accts in
