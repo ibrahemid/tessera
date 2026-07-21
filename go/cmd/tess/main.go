@@ -41,6 +41,8 @@ func newRootCmd() *cobra.Command {
 		newWatchCmd(),
 		newImportCmd(),
 		newExportCmd(),
+		newMergeCmd(),
+		newShowCmd(),
 		newRemoveCmd(),
 		newRenameCmd(),
 		newAliasCmd(),
