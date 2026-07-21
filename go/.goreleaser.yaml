@@ -1,0 +1,40 @@
+# Release config for the `tess` CLI. The Go module lives here (./go); run
+# goreleaser from this directory. Releases are cut from `vX.Y.Z` git tags — the
+# CLI is the only artifact tagged in this repo (the macOS app ships via the App
+# Store), so a bare semver tag unambiguously means a CLI release.
+version: 2
+project_name: tess
+
+builds:
+  - id: tess
+    main: ./cmd/tess
+    binary: tess
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+archives:
+  - id: tess
+    formats: [tar.gz]
+    name_template: "tess_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^chore:"
+      - "^test:"
+
+release:
+  github:
+    owner: ibrahemid
+    name: tessera

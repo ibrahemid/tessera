@@ -17,3 +17,6 @@ site/.astro/
 swift/.swiftpm/
 AGENTS.md
 worktrees/
+
+# goreleaser build output
+go/dist/

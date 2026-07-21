@@ -12,6 +12,9 @@ import (
 // vaultPath holds the value of the global --vault flag.
 var vaultPath string
 
+// version is the CLI version, overridden at release time via -ldflags.
+var version = "dev"
+
 func main() {
 	root := newRootCmd()
 	if err := root.Execute(); err != nil {
@@ -24,6 +27,7 @@ func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "tess",
 		Short:         "Tessera: a CLI-first TOTP/2FA authenticator",
+		Version:       version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		// With no subcommand, print current codes for all accounts.
