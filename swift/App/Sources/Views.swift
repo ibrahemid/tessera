@@ -16,6 +16,8 @@ struct RootView: View {
             Group {
                 if model.needsReset {
                     ResetPromptView()
+                } else if model.needsRecovery {
+                    RecoveryView()
                 } else if model.vaultUnreachable {
                     VaultUnreachableView()
                 } else if model.isOpening {
@@ -74,14 +76,16 @@ struct LaunchView: View {
 }
 
 /// The one confirm dialog in front of the destructive reset, shared by every
-/// surface that offers it.
+/// surface that offers it. Its wording comes from the model, because reset means
+/// two different things: it deletes the built-in vault, but only disconnects an
+/// external file the tess CLI owns.
 extension View {
-    func resetTesseraDialog(isPresented: Binding<Bool>, model: AppModel, message: String) -> some View {
+    func resetTesseraDialog(isPresented: Binding<Bool>, model: AppModel, note: String? = nil) -> some View {
         confirmationDialog("Reset Tessera?", isPresented: isPresented, titleVisibility: .visible) {
-            Button("Delete vault and start over", role: .destructive) { model.resetTessera() }
+            Button(model.resetActionTitle, role: .destructive) { model.resetTessera() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text(message)
+            Text([model.resetWarning, note].compactMap { $0 }.joined(separator: " "))
         }
     }
 }
@@ -107,8 +111,7 @@ struct UnlockView: View {
             Spacer()
         }
         .padding(32)
-        .resetTesseraDialog(isPresented: $confirmReset, model: model,
-                            message: "This deletes all accounts and the vault key on this Mac.")
+        .resetTesseraDialog(isPresented: $confirmReset, model: model)
     }
 }
 
@@ -123,8 +126,11 @@ struct PassphraseUnlockView: View {
         VStack(spacing: 16) {
             Spacer()
             MosaicMark(side: 50)
-            Text("This vault has a passphrase").font(Typo.display(20)).foregroundStyle(Palette.textPrimary)
-            Text("It was created outside this app, for example with the tess CLI. After it opens once, Tessera unlocks it automatically.")
+            Text(model.passphraseIsRecovery ? "Touch ID can't open this vault" : "This vault has a passphrase")
+                .font(Typo.display(20)).foregroundStyle(Palette.textPrimary)
+            Text(model.passphraseIsRecovery
+                 ? "Its Secure Enclave key no longer works, which normally means the Mac's enrolled fingerprints changed. Enter the recovery passphrase to open it and set Touch ID up again."
+                 : "It was created outside this app, for example with the tess CLI. After it opens once, Tessera unlocks it automatically.")
                 .multilineTextAlignment(.center).font(Typo.label(13)).foregroundStyle(Palette.textSecondary)
                 .frame(maxWidth: 360)
             FieldBox { SecureField("Vault passphrase", text: $passphrase).onSubmit(unlock) }
@@ -132,13 +138,16 @@ struct PassphraseUnlockView: View {
             PrimaryButton(unlocking ? "Unlocking…" : "Unlock", enabled: !passphrase.isEmpty && !unlocking) { unlock() }
                 .frame(maxWidth: 260)
             if let e = model.errorMessage { ErrorLine(e) }
+            if model.passphraseIsRecovery {
+                Button("Try Touch ID again") { model.retryUnlock() }
+                    .buttonStyle(.plain).font(Typo.label(12)).foregroundStyle(Palette.accent)
+            }
             Button("Can't unlock? Reset Tessera") { confirmReset = true }
                 .buttonStyle(.plain).font(Typo.label(12)).foregroundStyle(Palette.textSecondary)
             Spacer()
         }
         .padding(32)
-        .resetTesseraDialog(isPresented: $confirmReset, model: model,
-                            message: "This deletes the vault file and all accounts in it.")
+        .resetTesseraDialog(isPresented: $confirmReset, model: model)
     }
 
     private func unlock() {
@@ -166,6 +175,34 @@ struct ResetPromptView: View {
             Spacer()
         }
         .padding(32)
+    }
+}
+
+/// The Secure Enclave key that opened this vault no longer works — almost always
+/// because the Mac's enrolled fingerprints changed, which invalidates a
+/// `.biometryCurrentSet` key. There is no passphrase wrap to fall back to, so
+/// name the cause and the two real options instead of only offering a reset.
+struct RecoveryView: View {
+    @EnvironmentObject var model: AppModel
+    @State private var confirmReset = false
+    var body: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            MosaicMark(side: 50)
+            Text("Touch ID can't open this vault").font(Typo.display(20)).foregroundStyle(Palette.textPrimary)
+            Text("The vault key is tied to the fingerprints that were enrolled when it was set up. Adding or removing a fingerprint invalidates it, and this vault has no recovery passphrase.")
+                .multilineTextAlignment(.center).font(Typo.label(13)).foregroundStyle(Palette.textSecondary)
+                .frame(maxWidth: 380)
+            PrimaryButton("Try Touch ID again") { model.retryUnlock() }.frame(maxWidth: 260)
+            Button("Open another vault file…") { model.openExistingVault() }
+                .buttonStyle(.plain).font(Typo.label(12)).foregroundStyle(Palette.accent)
+            Button("Reset Tessera") { confirmReset = true }
+                .buttonStyle(.plain).font(Typo.label(12)).foregroundStyle(Palette.textSecondary)
+            if let e = model.errorMessage { ErrorLine(e) }
+            Spacer()
+        }
+        .padding(32)
+        .resetTesseraDialog(isPresented: $confirmReset, model: model)
     }
 }
 
@@ -212,6 +249,7 @@ struct VaultView: View {
     @AppStorage(AppModel.compactPrefKey) private var compact = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @FocusState private var searchFocused: Bool
+    @State private var didFocusSearch = false
     @State private var listSheetAccount: Account?   // account being assigned to a new list
     @State private var newListName = ""
     @State private var mainDropTargeted = false
@@ -336,7 +374,10 @@ struct VaultView: View {
                     .overlay(Capsule().stroke(Palette.border, lineWidth: 1))
                     .padding(.bottom, 16)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
-                    .task(id: s) {
+                    // Keyed on the token, not the text: repeating an identical
+                    // status restarts the 2.6s countdown instead of inheriting
+                    // the previous one's remaining time.
+                    .task(id: model.statusToken) {
                         try? await Task.sleep(for: .seconds(2.6))
                         if model.status == s { withAnimation { model.status = nil } }
                     }
@@ -365,7 +406,11 @@ struct VaultView: View {
                 .opacity(0).accessibilityHidden(true)
         )
         .onAppear {
-            // Land focus in search on launch so you can type-to-find immediately.
+            // Land focus in search on first appearance so you can type-to-find
+            // immediately. Later appearances (density toggle, window reopen)
+            // must not steal focus back from wherever the user put it.
+            guard !didFocusSearch else { return }
+            didFocusSearch = true
             DispatchQueue.main.async { searchFocused = true }
         }
     }
@@ -487,9 +532,8 @@ struct VaultView: View {
     }
 
     @ViewBuilder private func row(_ account: Account) -> some View {
-        AccountRowView(account: account,
-                       remaining: model.remaining(for: account),
-                       code: model.code(for: account),
+        LiveAccountRow(ticker: model.ticker,
+                       account: account,
                        copied: copiedID == account.id,
                        compact: compact,
                        reduceMotion: reduceMotion,
@@ -538,8 +582,7 @@ struct VaultView: View {
     }
 
     private func copy(_ account: Account) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(model.code(for: account), forType: .string)
+        model.copyToPasteboard(model.code(for: account, at: Date()), transient: true)
         model.status = "Copied \(account.displayName)"
         markCopied(account)
     }
@@ -557,6 +600,33 @@ struct VaultView: View {
 }
 
 // MARK: Account row
+
+/// The only view that observes the 1 Hz clock. It reads the tick, asks the model
+/// for the current code (memoized per period slot) and seconds remaining, and
+/// hands both to the pure `AccountRowView`. Keeping the observation here is what
+/// stops a tick from re-rendering the window, the sidebar, or any open sheet.
+struct LiveAccountRow: View {
+    @EnvironmentObject var model: AppModel
+    @ObservedObject var ticker: Ticker
+    let account: Account
+    let copied: Bool
+    var compact: Bool
+    var reduceMotion: Bool
+    var onCopy: () -> Void
+    var onAdvance: () -> Void
+
+    var body: some View {
+        let now = ticker.now
+        AccountRowView(account: account,
+                       remaining: model.remaining(for: account, at: now),
+                       code: model.code(for: account, at: now),
+                       copied: copied,
+                       compact: compact,
+                       reduceMotion: reduceMotion,
+                       onCopy: onCopy,
+                       onAdvance: onAdvance)
+    }
+}
 
 struct AccountRowView: View {
     let account: Account
@@ -658,9 +728,13 @@ struct AddAccountView: View {
     @State private var manualSecret = ""
     @State private var scanning = false
     @State private var dropTargeted = false
+    /// Classification and readout are derived once per edit, not per render:
+    /// parsing a pasted migration blob or app export on every body evaluation
+    /// was the most expensive thing this sheet did.
+    @State private var kind: InputDetect.InputKind = .invalid
+    @State private var readout: String?
 
     private var trimmed: String { input.trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var kind: InputDetect.InputKind { InputDetect.classify(input) }
     private var isSetupKey: Bool { kind == .setupKey }
 
     var body: some View {
@@ -681,6 +755,7 @@ struct AddAccountView: View {
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { handleDrop($0) }
         .overlay { if dropTargeted { dropOverlay } }
         .onAppear { model.errorMessage = nil; model.status = nil; model.importReport = nil }
+        .onChange(of: input) { _, text in reclassify(text) }
     }
 
     @ViewBuilder private var primaryField: some View {
@@ -744,31 +819,37 @@ struct AddAccountView: View {
         if added, model.importReport?.hasDetail == false { dismiss() }
     }
 
-    /// A factual one-line readout of what the field currently holds.
-    private var readout: String? {
-        if trimmed.isEmpty { return nil }
+    /// Classify the field once per edit and build the factual one-line readout of
+    /// what it holds.
+    private func reclassify(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { kind = .invalid; readout = nil; return }
+        kind = InputDetect.classify(text)
         switch kind {
-        case .otpauth: return "otpauth link"
+        case .otpauth: readout = "otpauth link"
         case .migration:
-            let n = (try? Migration.parse(input).count) ?? 0
-            return n > 0 ? "Google Authenticator export (\(n) account\(n == 1 ? "" : "s"))"
-                         : "Google Authenticator export"
+            let n = (try? Migration.parse(text).count) ?? 0
+            readout = n > 0 ? "Google Authenticator export (\(n) account\(n == 1 ? "" : "s"))"
+                            : "Google Authenticator export"
         case .exportJSON:
-            if let found = try? Importers.parse(Data(input.utf8)) {
+            if let found = try? Importers.parse(Data(text.utf8)) {
                 let n = found.accounts.count
-                return "\(found.source) export (\(n) account\(n == 1 ? "" : "s"))"
+                readout = "\(found.source) export (\(n) account\(n == 1 ? "" : "s"))"
+            } else {
+                readout = "App export"
             }
-            return "App export"
-        case .setupKey: return "Setup key"
+        case .setupKey: readout = "Setup key"
         case .invalid:
-            return (trimmed.count >= 4 && !input.contains(where: \.isNewline)) ? "Not recognized" : nil
+            readout = (trimmed.count >= 4 && !text.contains(where: \.isNewline)) ? "Not recognized" : nil
         }
     }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
         loadDroppedURLs(providers) { urls in
             guard !urls.isEmpty else { return }
-            _ = model.importDroppedFiles(urls)
+            // Same rule as the paste path: a clean import closes the sheet, a
+            // partial one stays open so the per-item report is readable.
+            finish(model.importDroppedFiles(urls))
         }
         return true
     }
@@ -877,6 +958,19 @@ func loadDroppedURLs(_ providers: [NSItemProvider], completion: @escaping @MainA
     }
 }
 
+/// Excludes the hosting window from screen sharing and capture. Sheets are
+/// separate NSWindows, so the main window's sharingType does not cover them.
+struct CaptureShield: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async { [weak view] in view?.window?.sharingType = .none }
+        return view
+    }
+    func updateNSView(_ nsView: NSView, context: Context) {
+        nsView.window?.sharingType = .none
+    }
+}
+
 struct QRExportView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) var dismiss
@@ -920,6 +1014,7 @@ struct QRExportView: View {
             }
         }
         .padding(24).frame(width: 300).background(Palette.background)
+        .background(CaptureShield())
         .onAppear { qrImage = QRImage.generate(from: model.otpauthURI(for: account)) }
     }
 
@@ -940,8 +1035,7 @@ struct QRExportView: View {
     }
 
     private func copy(_ value: String, _ field: Field) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(value, forType: .string)
+        model.copyToPasteboard(value)
         withAnimation { copied = field }
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(1.3))
@@ -988,7 +1082,8 @@ struct EditAccountView: View {
     }
 
     private var canSave: Bool {
-        !alias.isEmpty && !(issuer.trimmingCharacters(in: .whitespaces).isEmpty
+        !alias.trimmingCharacters(in: .whitespaces).isEmpty
+            && !(issuer.trimmingCharacters(in: .whitespaces).isEmpty
             && accountLabel.trimmingCharacters(in: .whitespaces).isEmpty)
     }
 
@@ -1011,6 +1106,13 @@ struct EditAccountView: View {
                 TextField("Short lookup name", text: $alias)
                     .font(Typo.code(13)).textFieldStyle(.plain).autocorrectionDisabled()
                     .onChange(of: alias) { error = nil }
+            }
+            // Every account carries an alias: the vault format lets the field be
+            // absent, but both cores assign one at unlock, so clearing it here
+            // would only produce a different auto-assigned alias.
+            if alias.trimmingCharacters(in: .whitespaces).isEmpty {
+                Text("An alias is required. Type one to save.")
+                    .font(Typo.label(11)).foregroundStyle(Palette.textSecondary)
             }
             labeledField("List") {
                 TextField("Optional folder", text: $folder)
@@ -1060,6 +1162,7 @@ struct SettingsView: View {
     @AppStorage("tessera.launchAtLogin") private var launchAtLogin = false
     @State private var exporting = false
     @State private var restoring = false
+    @State private var settingPassphrase = false
     @State private var confirmReset = false
     @State private var dedupeResult: Int?
 
@@ -1087,6 +1190,28 @@ struct SettingsView: View {
                         get: { model.requireBiometrics },
                         set: { model.setRequireBiometrics($0) }
                     )).disabled(model.isLocked)
+                    // Non-blocking: a Touch ID-gated key dies with the enrolled
+                    // fingerprint set, and only a passphrase wrap survives that.
+                    if model.requireBiometrics && !model.hasRecoveryPassphrase && !model.isLocked {
+                        Text("Without a recovery passphrase, changing your enrolled fingerprints locks this vault for good.")
+                            .font(Typo.label(11)).foregroundStyle(Palette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            Section("Recovery") {
+                // The wrap list is only known while unlocked, so don't claim a
+                // state we can't read.
+                if model.isLocked {
+                    Text("Unlock the vault to manage its recovery passphrase.")
+                        .font(Typo.label(11)).foregroundStyle(Palette.textSecondary)
+                } else {
+                    LabeledContent("Recovery passphrase",
+                                   value: model.hasRecoveryPassphrase ? "Set" : "Not set")
+                    VaultActionButton(
+                        title: model.hasRecoveryPassphrase ? "Change recovery passphrase…" : "Set recovery passphrase…",
+                        subtitle: "A second way into this vault when Touch ID can't open it. The tess CLI opens the vault with it too."
+                    ) { settingPassphrase = true }
                 }
             }
             Section("Backup") {
@@ -1096,6 +1221,7 @@ struct SettingsView: View {
                     .disabled(model.isLocked || model.accounts.isEmpty)
             }
             Section("Accounts") {
+                // nil means the write failed; the error line below is the report.
                 Button("Remove duplicates") { dedupeResult = model.removeDuplicates() }
                     .disabled(model.isLocked || model.accounts.isEmpty)
                 if let n = dedupeResult {
@@ -1104,7 +1230,12 @@ struct SettingsView: View {
                 }
             }
             Section("Vault") {
-                LabeledContent("Location", value: model.vaultPathDisplay)
+                LabeledContent("Location") {
+                    Text(model.vaultPathDisplay)
+                        .font(Typo.code(11))
+                        .textSelection(.enabled)
+                        .lineLimit(1).truncationMode(.middle)
+                }
                 Text(model.vaultStateLine)
                     .font(Typo.label(11)).foregroundStyle(Palette.textSecondary)
                 VaultActionButton(
@@ -1136,8 +1267,57 @@ struct SettingsView: View {
         .tint(Palette.accent)
         .sheet(isPresented: $exporting) { ExportBackupView() }
         .sheet(isPresented: $restoring) { RestoreBackupView() }
+        .sheet(isPresented: $settingPassphrase) { RecoveryPassphraseView() }
         .resetTesseraDialog(isPresented: $confirmReset, model: model,
-                            message: "This deletes all accounts and the vault key on this Mac. Export a backup first if you want to keep them.")
+                            note: model.isExternalVault ? nil : "Export a backup first if you want to keep them.")
+    }
+}
+
+/// Add or replace the vault's recovery passphrase. Requires an unlocked vault:
+/// the DEK is already in hand, so this only adds a wrap — the payload and the
+/// Touch ID wrap are untouched.
+struct RecoveryPassphraseView: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.dismiss) var dismiss
+    @State private var passphrase = ""
+    @State private var confirm = ""
+    @State private var saving = false
+    @State private var error: String?
+
+    private var canSave: Bool {
+        passphrase.count >= AppModel.minPassphraseLength && passphrase == confirm && !saving
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(model.hasRecoveryPassphrase ? "Change recovery passphrase" : "Set recovery passphrase")
+                .font(Typo.display(18)).foregroundStyle(Palette.textPrimary)
+            Text("Opens this vault when Touch ID can't: after you change your enrolled fingerprints, or from the tess CLI. At least \(AppModel.minPassphraseLength) characters.")
+                .font(Typo.label(12)).foregroundStyle(Palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            FieldBox { SecureField("Recovery passphrase", text: $passphrase) }
+            FieldBox { SecureField("Confirm passphrase", text: $confirm).onSubmit(save) }
+            if !confirm.isEmpty && passphrase != confirm { ErrorLine("Passphrases don't match") }
+            if let e = error { ErrorLine(e) }
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }.buttonStyle(.plain).foregroundStyle(Palette.textSecondary)
+                    .keyboardShortcut(.cancelAction)
+                ActionButton(saving ? "Saving…" : "Save", enabled: canSave) { save() }
+            }
+        }
+        .padding(20).frame(width: 400).background(Palette.background)
+        .background(CaptureShield())
+    }
+
+    private func save() {
+        guard canSave else { return }
+        saving = true
+        Task {
+            let reason = await model.setRecoveryPassphrase(passphrase)
+            saving = false
+            if let reason { error = reason } else { dismiss() }
+        }
     }
 }
 
@@ -1349,10 +1529,9 @@ struct EmptyState: View {
 struct WindowConfigurator: NSViewRepresentable {
     var compact: Bool
 
-    // Tracks the last density we resized for. updateNSView runs ~once/second
-    // (RootView observes the ticking model), so resizing must be gated on an
-    // actual density change — otherwise it would fight the user's manual resize
-    // every tick.
+    // Tracks the last density we resized for, so resizing only happens on an
+    // actual density change and never fights the user's manual resize when
+    // updateNSView runs for some unrelated state change.
     final class Coordinator { var lastCompact: Bool?; var titlebarDone = false }
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -1372,7 +1551,7 @@ struct WindowConfigurator: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {
         let changed = context.coordinator.lastCompact != compact
         context.coordinator.lastCompact = compact
-        // Ticks are a no-op once the titlebar is styled and density is unchanged.
+        // A no-op once the titlebar is styled and the density is unchanged.
         guard changed || !context.coordinator.titlebarDone else { return }
         let coordinator = context.coordinator
         DispatchQueue.main.async { [weak nsView] in
@@ -1388,6 +1567,10 @@ struct WindowConfigurator: NSViewRepresentable {
         guard let window else { return false }
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
+        // Exclude the window from screen sharing and recording: live codes and QR
+        // sheets must not travel through a call or a screen capture. Standard for
+        // an authenticator, and there is no reason to make it optional.
+        window.sharingType = .none
         return true
     }
 

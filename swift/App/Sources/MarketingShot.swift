@@ -2,8 +2,10 @@ import SwiftUI
 import AppKit
 import TesseraCore
 
+#if DEBUG
 /// `Tessera --marketing <dir>` renders App Store screenshots at the required
-/// 2560×1600 (1280×800 logical @2x), light + dark. Design-iteration only.
+/// 2560×1600 (1280×800 logical @2x), light + dark. Design iteration only —
+/// compiled out of release builds.
 @MainActor
 enum MarketingShot {
     static func runIfRequested() -> Bool {
@@ -197,3 +199,4 @@ private struct TrustMock: View {
         .background(Palette.surface)
     }
 }
+#endif

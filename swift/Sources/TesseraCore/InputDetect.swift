@@ -191,10 +191,12 @@ public enum InputDetect {
         return s.replacingCharacters(in: range.upperBound..<end, with: "…")
     }
 
-    /// A bare token that could be a typed secret: long and made only of
-    /// base32/base64 key characters (no URI punctuation).
+    /// A bare token that could be a typed secret: made only of base32/base64 key
+    /// characters (no URI punctuation). The length floor is deliberately low —
+    /// a truncated or mistyped secret is short, and a preview is never worth
+    /// leaking one.
     private static func looksLikeSecret(_ token: Substring) -> Bool {
-        if token.count < 12 { return false }
+        if token.count < 6 { return false }
         for ch in token {
             let ok = ch.isLetter || ch.isNumber || ch == "=" || ch == "+" || ch == "/" || ch == "_"
             if !ok { return false }

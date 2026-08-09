@@ -3,9 +3,10 @@ import AppKit
 import TesseraCore
 import TesseraArgon2
 
+#if DEBUG
 /// Hidden screenshot mode: `Tessera --shoot <outdir>` renders the key screens to
-/// PNGs (light + dark) and exits. Used for design iteration; no effect on the
-/// shipping app.
+/// PNGs (light + dark) and exits. Design iteration only — compiled out of
+/// release builds, so the shipping binary carries no hidden mode.
 @MainActor
 enum Screenshots {
     static func runIfRequested() -> Bool {
@@ -65,33 +66,43 @@ private struct RowsPreview: View {
         return ["318 204", "907 551", "642 119", "", "775 380"][min(Int(a.id) ?? 1, 4)]
     }
 }
+#endif
 
-/// Exercises the real vault read/write path under whatever sandbox the running
+/// Exercises the seal/write/read/open path under whatever sandbox the running
 /// binary is signed with. `Tessera --selftest` prints PASS/FAIL and exits.
+///
+/// It writes to a throwaway file in the sandbox temp directory and never goes
+/// through `VaultStore`, which would resolve the user's real vault (an external
+/// bookmark, `TESSERA_VAULT`, or the container file) and delete it on the way
+/// out. The self-test must never touch a vault that holds accounts.
 @MainActor
 enum SelfTest {
     static func runIfRequested() -> Bool {
         guard CommandLine.arguments.contains("--selftest") else { return false }
-        let store = VaultStore()
         let argon2 = Argon2Reference()
         let pass = "selftest-passphrase"
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tessera-selftest-\(UUID().uuidString).json")
+        // exit() does not unwind, so every path cleans up before it.
         do {
             let acct = Account(id: "t1", type: .totp, issuer: "SelfTest", account: "x",
                                secret: Data("12345678901234567890".utf8), algorithm: "SHA1",
                                digits: 6, period: 30)
             let env = try Envelope.create(accounts: [acct], passphrase: pass, argon2: argon2)
-            try store.save(env)                          // write into the sandbox container
-            let reopened = try store.load()              // read back
+            try env.encoded().write(to: url, options: [.atomic, .completeFileProtection])
+            let reopened = try Envelope.decode(try Data(contentsOf: url))
             let got = try reopened.open(passphrase: pass, argon2: argon2)
-            try? FileManager.default.removeItem(at: store.vaultURL)
             if got.count == 1 && got[0].issuer == "SelfTest" {
-                print("SELFTEST PASS path=\(store.vaultURL.path)")
+                print("SELFTEST PASS path=\(url.path)")
+                try? FileManager.default.removeItem(at: url)
                 exit(0)
             }
             print("SELFTEST FAIL: unexpected accounts \(got)")
+            try? FileManager.default.removeItem(at: url)
             exit(1)
         } catch {
             print("SELFTEST FAIL: \(error)")
+            try? FileManager.default.removeItem(at: url)
             exit(1)
         }
     }
@@ -100,7 +111,9 @@ enum SelfTest {
 /// Verifies the default daily-unlock path: a non-biometric Secure Enclave wrap
 /// must open with NO Touch ID prompt. `Tessera --selftest-se` prints PASS/FAIL
 /// (or SKIP on SE-less Macs). A PASS with no biometric dialog confirms silent
-/// open. Run from the signed app (SE needs entitlements).
+/// open. Kept in release builds because it validates the signed build's Secure
+/// Enclave entitlement; it works entirely in memory and never reads, writes, or
+/// deletes a vault file.
 @MainActor
 enum SelfTestSE {
     static func runIfRequested() -> Bool {
@@ -129,9 +142,13 @@ enum SelfTestSE {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// Scene id of the main window (see TesseraApp), used to reopen the right one.
+    static let mainWindowID = "main"
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         if SelfTest.runIfRequested() { return }
         if SelfTestSE.runIfRequested() { return }
+        #if DEBUG
         if MarketingShot.runIfRequested() {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { NSApp.terminate(nil) }
             return
@@ -140,12 +157,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Give the renderer a beat, then exit before showing UI.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { NSApp.terminate(nil) }
         }
+        #endif
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag {
-            sender.windows.first(where: { $0.canBecomeKey })?.makeKeyAndOrderFront(nil)
-        }
+        guard !flag else { return true }
+        // Target the main scene by id: "first window that can become key" can be
+        // the Settings window, which would reopen to the wrong surface.
+        let window = sender.windows.first { $0.identifier?.rawValue == Self.mainWindowID }
+            ?? sender.windows.first { $0.canBecomeKey }
+        window?.makeKeyAndOrderFront(nil)
         return true
     }
 }

@@ -42,62 +42,91 @@ struct ImportSummary {
 /// optional "Require Touch ID" setting gates that open with biometrics.
 @MainActor
 final class AppModel: ObservableObject {
-    @Published var isLocked = true
+    @Published var isLocked = true { didSet { ticker.setEnabled(!isLocked) } }
     @Published var isOpening = true
     @Published var needsReset = false        // vault on disk but no way to decrypt it here
     @Published var needsPassphrase = false   // vault openable with its passphrase (e.g. CLI-created)
+    @Published var needsRecovery = false     // Secure Enclave key is gone and there is no passphrase wrap
+    /// The passphrase prompt was reached because Touch ID stopped working, not
+    /// because the vault came from the CLI. Only the wording differs.
+    @Published private(set) var passphraseIsRecovery = false
     @Published var vaultUnreachable = false  // external vault is configured but missing/unreadable
     @Published var accounts: [Account] = [] {
         didSet {
             let f = Array(Set(accounts.map(\.folder).filter { !$0.isEmpty })).sorted()
             if f != folders { folders = f }
+            codeCache.removeAll(keepingCapacity: true)
         }
     }
     /// Distinct non-empty folder names; derived on account changes, not per render tick.
     @Published private(set) var folders: [String] = []
-    @Published var now = Date()
     @Published var errorMessage: String?
-    @Published var status: String?          // transient success/info feedback
+    @Published var status: String? { didSet { statusToken = UUID() } }   // transient success/info feedback
+    /// Bumped on every assignment to `status` so a repeated identical message
+    /// restarts its auto-dismiss timer instead of being coalesced away.
+    @Published private(set) var statusToken = UUID()
     @Published var vaultExists: Bool
     @Published var importReport: ImportSummary?   // per-item result of the last bulk import
     @Published var requireBiometrics: Bool
+    /// Whether the vault carries an argon2id passphrase wrap: the recovery path
+    /// when Touch ID can't open it, and what lets the tess CLI open it too.
+    @Published private(set) var hasRecoveryPassphrase = false
 
     static let biometricsPrefKey = "tessera.requireTouchID"
     static let compactPrefKey = "tessera.compact"
+    /// How long a copied code or secret stays on the pasteboard.
+    static let pasteboardExpiry: TimeInterval = 30
+
+    /// The 1 Hz clock. Views that render countdowns observe this, not the model.
+    let ticker = Ticker()
 
     private let store = VaultStore()
     private let argon2 = Argon2Reference()
     private let isDemo: Bool
-    private var envelope: Envelope?
+    private var envelope: Envelope? {
+        didSet { hasRecoveryPassphrase = envelope?.hasPassphraseWrap ?? false }
+    }
     private var dek: Data?            // held after unlock; enables edits with no prompt
     private var appKey: Data?         // held after unlock; needed to retoggle Touch ID
-    private var timer: Timer?
     private var lastVaultModified: Date?   // for detecting an external CLI rewrite
     private var pendingSwitchMessage: String?   // "Now using X", shown once the switched vault unlocks
+    private let observers = NotificationObservers()
+    private var pasteboardClear: Task<Void, Never>?
+    /// Codes memoized per account until its period slot (or the account itself)
+    /// changes, so a tick re-renders rows without recomputing every HMAC.
+    private var codeCache: [String: (slot: Int64, updatedAt: Int64, code: String)] = [:]
 
     init() {
         isDemo = false
         vaultExists = store.exists
         let pref = UserDefaults.standard.bool(forKey: AppModel.biometricsPrefKey)
+        #if DEBUG
         requireBiometrics = pref && !CommandLine.arguments.contains("-uitest")
-        startTicking()
+        #else
+        requireBiometrics = pref
+        #endif
         // Lock on sleep only when Touch ID is required; otherwise the macOS login
         // session is the gate and the vault reopens automatically.
-        NSWorkspace.shared.notificationCenter.addObserver(
+        let workspace = NSWorkspace.shared.notificationCenter
+        observers.add(workspace, workspace.addObserver(
             forName: NSWorkspace.willSleepNotification, object: nil, queue: .main
-        ) { [weak self] _ in Task { @MainActor in if self?.requireBiometrics == true { self?.lock() } } }
+        ) { [weak self] _ in Task { @MainActor in if self?.requireBiometrics == true { self?.lock() } } })
         // Pick up edits the tess CLI made to a shared external vault when the app
         // returns to the foreground.
-        NotificationCenter.default.addObserver(
+        let center = NotificationCenter.default
+        observers.add(center, center.addObserver(
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
-        ) { [weak self] _ in Task { @MainActor in self?.reloadIfExternalChanged() } }
+        ) { [weak self] _ in Task { @MainActor in self?.reloadIfExternalChanged() } })
     }
 
     /// Touch ID can gate the vault only on a Mac with both Secure Enclave and a
     /// usable biometric sensor.
     var biometricsAvailable: Bool { SecureEnclaveWrap.isAvailable && AppKey.biometricsAvailable }
 
+    #if DEBUG
     /// In-memory model for screenshots/previews; never touches disk or Keychain.
+    /// Debug-only: the shipping binary carries no sample data and no way to
+    /// reach a fake vault.
     enum DemoState { case populated, empty, locked, fresh }
     init(demo: DemoState) {
         isDemo = true
@@ -116,6 +145,8 @@ final class AppModel: ObservableObject {
         case .fresh:
             vaultExists = false; isLocked = true
         }
+        // Property observers don't fire during init, so start the clock by hand.
+        ticker.setEnabled(!isLocked)
     }
 
     nonisolated static var sampleAccounts: [Account] {
@@ -129,6 +160,7 @@ final class AppModel: ObservableObject {
             Account(id: "6", type: .hotp, issuer: "Bank", account: "•••• 4291", secret: s("banksecret0000000000"), algorithm: "SHA1", digits: 6, counter: 12),
         ]
     }
+    #endif
 
     // MARK: Open / unlock
 
@@ -144,8 +176,21 @@ final class AppModel: ObservableObject {
         Task { await open(reason: "Unlock your Tessera vault") }
     }
 
+    /// Leave a recovery route and try the Secure Enclave again. The routing is a
+    /// judgement about an opaque error, so it must never be a one-way door.
+    func retryUnlock() {
+        needsRecovery = false
+        needsPassphrase = false
+        passphraseIsRecovery = false
+        errorMessage = nil
+        isOpening = true
+        Task { await open(reason: "Unlock your Tessera vault") }
+    }
+
     private func open(reason: String) async {
-        guard isLocked, !needsReset, !needsPassphrase, !vaultUnreachable else { isOpening = false; return }
+        guard isLocked, !needsReset, !needsPassphrase, !needsRecovery, !vaultUnreachable else {
+            isOpening = false; return
+        }
 
         // Pre-load routing (pure, unit-tested in VaultResolution): an external vault
         // that's missing/unresolvable never silently falls back to or creates the
@@ -176,7 +221,7 @@ final class AppModel: ObservableObject {
         // a passphrase wrap (e.g. a tess CLI vault) is asked for; an external vault
         // with none is relocated (never deleted); a container one offers reset.
         if !SecureEnclaveWrap.hasWrap(env) && !AppKey.exists {
-            switch VaultOpen.noSilentWrap(hasPassphraseWrap: hasPassphraseWrap(env), isExternal: store.isExternal) {
+            switch VaultOpen.noSilentWrap(hasPassphraseWrap: env.hasPassphraseWrap, isExternal: store.isExternal) {
             case .passphrase: needsPassphrase = true
             case .unreachable: vaultUnreachable = true
             case .reset: needsReset = true
@@ -192,15 +237,44 @@ final class AppModel: ObservableObject {
             migrateHandles()
             emitSwitchStatusIfPending()
         } catch {
-            // The Keychain app key didn't open this vault: it belongs to another
-            // passphrase (a CLI vault). Ask for it instead of dead-ending.
-            if case VaultError.wrongPassphrase = error, !SecureEnclaveWrap.hasWrap(env), hasPassphraseWrap(env) {
-                needsPassphrase = true
-            } else {
-                errorMessage = friendly(error)
-            }
+            routeOpenFailure(error, env: env)
         }
         isOpening = false
+    }
+
+    /// Where a failed unlock lands.
+    ///
+    /// A LocalAuthentication error means *this attempt* failed — a finger that
+    /// didn't read, a cancel, a lockout that clears with the device password —
+    /// so it stays on the lock screen with its Touch ID button. Anything else
+    /// out of the Secure Enclave unwrap means the key blob itself is unusable
+    /// (almost always because the enrolled fingerprints changed, which
+    /// invalidates a `.biometryCurrentSet` key): route to the passphrase wrap if
+    /// the vault has one, otherwise to the recovery screen, instead of dead-
+    /// ending on a raw error.
+    private func routeOpenFailure(_ error: Error, env: Envelope) {
+        if case UnlockFailure.secureEnclave(let underlying) = error {
+            if isRetryableAuth(underlying) {
+                errorMessage = friendly(underlying)
+                return
+            }
+            errorMessage = nil
+            if env.hasPassphraseWrap {
+                needsPassphrase = true
+                passphraseIsRecovery = true
+            } else {
+                needsRecovery = true
+            }
+            return
+        }
+        // The Keychain app key didn't open this vault: it belongs to another
+        // passphrase (a CLI vault). Ask for it instead of dead-ending.
+        if case VaultError.wrongPassphrase = error, !SecureEnclaveWrap.hasWrap(env), env.hasPassphraseWrap {
+            needsPassphrase = true
+            errorMessage = nil
+            return
+        }
+        errorMessage = friendly(error)
     }
 
     /// Point Tessera at an existing vault file (typically one created by the tess
@@ -255,7 +329,8 @@ final class AppModel: ObservableObject {
     private func reopenFromStore() {
         accounts = []; dek = nil; appKey = nil; envelope = nil
         isLocked = true; errorMessage = nil; status = nil
-        vaultUnreachable = false; needsReset = false; needsPassphrase = false
+        vaultUnreachable = false; needsReset = false; needsPassphrase = false; needsRecovery = false
+        passphraseIsRecovery = false
         vaultExists = store.exists
         isOpening = true
         Task { await open(reason: "Unlock your Tessera vault") }
@@ -272,10 +347,6 @@ final class AppModel: ObservableObject {
         self.envelope = env
         self.accounts = accts
         self.lastVaultModified = modified
-    }
-
-    private func hasPassphraseWrap(_ env: Envelope) -> Bool {
-        env.wraps.contains { $0.type == "passphrase" }
     }
 
     /// Open a vault this Mac has no key for (e.g. created by the tess CLI) with
@@ -304,6 +375,7 @@ final class AppModel: ObservableObject {
             self.dek = dek; self.appKey = nil; self.accounts = accts
             self.lastVaultModified = store.modifiedAt
             needsPassphrase = false
+            passphraseIsRecovery = false
             isLocked = false
             migrateHandles()
             emitSwitchStatusIfPending()
@@ -354,11 +426,22 @@ final class AppModel: ObservableObject {
         self.accounts = []; self.vaultExists = true
     }
 
+    /// A failed unlock, tagged with the stage it failed at so the caller can route
+    /// an invalidated Secure Enclave key to recovery instead of a raw error.
+    private enum UnlockFailure: Error { case secureEnclave(any Error) }
+
     private func openLoaded(_ env: Envelope, reason: String) async throws {
         if SecureEnclaveWrap.hasWrap(env) {
-            let (dek, accts) = try await Task.detached(priority: .userInitiated) { () -> (Data, [Account]) in
-                let dek = try SecureEnclaveWrap.open(env, reason: reason)  // prompts only if biometric
-                return (dek, try env.open(dek: dek))
+            let dek: Data
+            do {
+                dek = try await Task.detached(priority: .userInitiated) { () -> Data in
+                    try SecureEnclaveWrap.open(env, reason: reason)  // prompts only if biometric
+                }.value
+            } catch {
+                throw UnlockFailure.secureEnclave(error)
+            }
+            let accts = try await Task.detached(priority: .userInitiated) { () -> [Account] in
+                try env.open(dek: dek)
             }.value
             self.envelope = env; self.dek = dek; self.appKey = nil; self.accounts = accts
         } else {
@@ -381,6 +464,41 @@ final class AppModel: ObservableObject {
         isLocked = true
         errorMessage = nil
         status = nil
+        importReport = nil
+        codeCache.removeAll()
+    }
+
+    // MARK: Recovery passphrase
+
+    /// Minimum recovery passphrase length. Matches the tess CLI, which opens the
+    /// same wrap.
+    static let minPassphraseLength = 8
+
+    /// Add (or replace) the vault's argon2id passphrase wrap, so the vault opens
+    /// with either Touch ID or this passphrase — and so the tess CLI can open it.
+    /// Requires an unlocked vault; the DEK is re-wrapped, the payload untouched.
+    /// Returns nil on success, or a factual reason to show inline.
+    func setRecoveryPassphrase(_ passphrase: String) async -> String? {
+        guard let env = envelope, let dek = dek else { return "Unlock the vault first." }
+        guard passphrase.count >= AppModel.minPassphraseLength else {
+            return "Use at least \(AppModel.minPassphraseLength) characters."
+        }
+        do {
+            let a = argon2
+            let updated = try await Task.detached(priority: .userInitiated) { () -> Envelope in
+                var e = env
+                try e.setPassphraseWrap(dek: dek, passphrase: passphrase, argon2: a)
+                return e
+            }.value
+            try store.save(updated)
+            self.envelope = updated
+            self.lastVaultModified = store.modifiedAt
+            errorMessage = nil
+            status = "Recovery passphrase saved"
+            return nil
+        } catch {
+            return friendly(error) ?? "Couldn't save the recovery passphrase."
+        }
     }
 
     // MARK: Touch ID setting
@@ -440,9 +558,23 @@ final class AppModel: ObservableObject {
             try? FileManager.default.removeItem(at: store.vaultURL)
         }
         envelope = nil; dek = nil; appKey = nil; accounts = []
-        needsReset = false; needsPassphrase = false; vaultUnreachable = false; isLocked = true
+        needsReset = false; needsPassphrase = false; needsRecovery = false
+        passphraseIsRecovery = false
+        vaultUnreachable = false; isLocked = true
         vaultExists = store.exists; errorMessage = nil; isOpening = true
         Task { await open(reason: "Unlock your Tessera vault") }
+    }
+
+    /// What reset does here, which differs by vault source: an external file the
+    /// CLI owns is only disconnected, never deleted.
+    var resetActionTitle: String {
+        isExternalVault ? "Disconnect vault" : "Delete vault and start over"
+    }
+
+    var resetWarning: String {
+        isExternalVault
+            ? "Disconnects the vault file; the file itself is not deleted."
+            : "Deletes all accounts and the vault key on this Mac."
     }
 
     /// Write an encrypted, passphrase-wrapped copy of the current accounts to a
@@ -561,7 +693,10 @@ final class AppModel: ObservableObject {
     func addManual(type: OTPType, issuer: String, account: String, secretBase32: String,
                    algorithm: String, digits: Int, period: Int, counter: Int64) {
         run {
-            let secret = try Base32.decode(secretBase32)   // lenient: case, spaces, dashes
+            // Strict decode (spec base32 rules); accepts case, spaces, dashes.
+            let secret: Data
+            do { secret = try Base32.decode(secretBase32) }
+            catch { throw AccountError.invalid("not a valid setup key (base32)") }
             var a = Account(id: "", type: type,
                             issuer: issuer.trimmingCharacters(in: .whitespaces),
                             account: account.trimmingCharacters(in: .whitespaces),
@@ -731,9 +866,10 @@ final class AppModel: ObservableObject {
     }
 
     /// Remove accounts that duplicate another (same type, issuer, account, secret),
-    /// keeping the first. Returns the number removed.
+    /// keeping the first. Returns the number removed, or nil when the write
+    /// failed — the error is on `errorMessage` and there is nothing to report.
     @discardableResult
-    func removeDuplicates() -> Int {
+    func removeDuplicates() -> Int? {
         var removed = 0
         run {
             var seen = Set<String>(), next: [Account] = []
@@ -744,7 +880,7 @@ final class AppModel: ObservableObject {
             }
             if removed > 0 { try persist(next) }
         }
-        return removed
+        return errorMessage == nil ? removed : nil
     }
 
     /// Persisted manual reordering of the account list (the payload array order).
@@ -781,6 +917,7 @@ final class AppModel: ObservableObject {
                 accts[i].updatedAt = Int64(Date().timeIntervalSince1970)
             }
         }
+        guard errorMessage == nil else { return }   // the change didn't persist; no success feedback
         status = name.isEmpty ? "Removed from list" : "Added to \(name)"
     }
 
@@ -844,17 +981,39 @@ final class AppModel: ObservableObject {
         return failure
     }
 
+    /// The one place anything reaches the pasteboard. Every copy declares the
+    /// nspasteboard.com hints so clipboard managers neither store nor sync a
+    /// secret, and expires after `pasteboardExpiry` — guarded by `changeCount`,
+    /// so a copy the user made in the meantime is never wiped. A rotating code
+    /// is additionally marked transient (it is worthless once its period ends).
+    func copyToPasteboard(_ value: String, transient: Bool = false) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(value, forType: .string)
+        pb.setString("", forType: .nsConcealed)
+        pb.setString("", forType: .nsAutoGenerated)
+        if transient { pb.setString("", forType: .nsTransient) }
+
+        let stamp = pb.changeCount
+        pasteboardClear?.cancel()
+        pasteboardClear = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(AppModel.pasteboardExpiry))
+            guard !Task.isCancelled else { return }
+            let pb = NSPasteboard.general
+            guard pb.changeCount == stamp else { return }   // the user copied something else
+            pb.clearContents()
+        }
+    }
+
     /// Copy an account's otpauth setup link (cleartext secret) to the clipboard.
     func copySetupLink(_ account: Account) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(otpauthURI(for: account), forType: .string)
+        copyToPasteboard(otpauthURI(for: account))
         status = "Copied setup link for \(account.displayName)"
     }
 
     /// Copy an account's base32 setup key (cleartext secret) to the clipboard.
     func copySecretKey(_ account: Account) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(secretBase32(for: account), forType: .string)
+        copyToPasteboard(secretBase32(for: account))
         status = "Copied setup key for \(account.displayName)"
     }
 
@@ -869,9 +1028,8 @@ final class AppModel: ObservableObject {
         guard errorMessage == nil else { return }   // the advance didn't persist; no success feedback
         // Copy the freshly advanced code, with the same feedback as a TOTP copy.
         if let updated = accounts.first(where: { $0.id == account.id }),
-           let code = try? OTP.code(for: updated, at: now) {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(code, forType: .string)
+           let code = try? OTP.code(for: updated, at: Date()) {
+            copyToPasteboard(code, transient: true)
             status = "Copied \(account.displayName)"
         }
     }
@@ -891,11 +1049,32 @@ final class AppModel: ObservableObject {
     /// Running against a user-selected external vault (shared with the tess CLI).
     var isExternalVault: Bool { store.isExternal }
 
-    func code(for account: Account) -> String {
-        (try? OTP.code(for: account, at: now)) ?? "------"
+    /// The account's current code. Memoized per period slot: a 1 Hz tick
+    /// re-renders the row but recomputes the HMAC only when the slot (or the
+    /// account) actually changed.
+    func code(for account: Account, at time: Date) -> String {
+        let slot = periodSlot(account, at: time)
+        if let hit = codeCache[account.id], hit.slot == slot, hit.updatedAt == account.updatedAt {
+            return hit.code
+        }
+        let code = (try? OTP.code(for: account, at: time)) ?? "------"
+        codeCache[account.id] = (slot, account.updatedAt, code)
+        return code
     }
 
-    func remaining(for account: Account) -> Int { OTP.remainingSeconds(time: now, period: account.period) }
+    func remaining(for account: Account, at time: Date) -> Int {
+        OTP.remainingSeconds(time: time, period: account.period)
+    }
+
+    /// The value a code is a pure function of: the counter for HOTP, the time
+    /// window otherwise (Steam is always a 30s window).
+    private func periodSlot(_ a: Account, at time: Date) -> Int64 {
+        switch a.type {
+        case .hotp: return a.counter
+        case .steam: return Int64(time.timeIntervalSince1970) / 30
+        case .totp: return Int64(time.timeIntervalSince1970) / Int64(max(a.period, 1))
+        }
+    }
 
     // MARK: Helpers
 
@@ -948,6 +1127,14 @@ final class AppModel: ObservableObject {
         catch { errorMessage = friendly(error) }
     }
 
+    /// A LocalAuthentication failure: the prompt was cancelled, the finger didn't
+    /// read, or biometrics are locked out. Every one of these succeeds on a later
+    /// attempt, so they must never be mistaken for a dead key.
+    private func isRetryableAuth(_ error: Error) -> Bool {
+        if error is LAError { return true }
+        return (error as NSError).domain == LAErrorDomain
+    }
+
     /// User-cancelled biometrics is not an error worth surfacing.
     private func friendly(_ error: Error) -> String? {
         if case AppKey.AppKeyError.keychain(let s) = error, s == errSecUserCanceled { return nil }
@@ -957,10 +1144,13 @@ final class AppModel: ObservableObject {
         if ns.code == Int(errSecUserCanceled) { return nil }
         return "\(error)"
     }
+}
 
-    private func startTicking() {
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.now = Date() }
-        }
-    }
+/// Clipboard-manager hints (nspasteboard.com): "concealed" keeps a secret out of
+/// clipboard history, "auto-generated" marks it as not user-typed, "transient"
+/// marks a value that expires on its own.
+extension NSPasteboard.PasteboardType {
+    static let nsConcealed = NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")
+    static let nsAutoGenerated = NSPasteboard.PasteboardType("org.nspasteboard.AutoGeneratedType")
+    static let nsTransient = NSPasteboard.PasteboardType("org.nspasteboard.TransientType")
 }

@@ -50,7 +50,7 @@ struct CountdownRing: View {
                 .rotationEffect(.degrees(-90))
                 .animation(reduceMotion ? nil : .linear(duration: 1), value: fraction)
             Text("\(remaining)")
-                .font(.system(size: size * 0.34, weight: .medium, design: .monospaced))
+                .font(.system(size: size * 0.34, weight: .medium))
                 .monospacedDigit()
                 .foregroundStyle(low ? Palette.warning : Palette.textSecondary)
         }

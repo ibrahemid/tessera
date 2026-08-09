@@ -13,6 +13,7 @@
 		228F58F9DF36897480109097 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8DDF9A8DC6E209A6456F90D /* DesignSystem.swift */; };
 		23D7CA25090971136FEF974B /* SecureEnclaveWrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71761D1F9E90EC0D08056C27 /* SecureEnclaveWrap.swift */; };
 		372C08BA9A54AC843A5406F7 /* Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23134BAC77C4B97440D991AD /* Views.swift */; };
+		3DDEFD1AC96FCA97FBB820FA /* Ticker.swift in Sources */ = {isa = PBXBuildFile; fileRef = F44EB6379515E6C1C999EC02 /* Ticker.swift */; };
 		47E49DDECDA25D32F571C72B /* FlowUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB81888CFE988A0C5741E66A /* FlowUITests.swift */; };
 		5FFD5D11FC5161192EC65111 /* AppKey.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C7CBA90826111445BF73CF5 /* AppKey.swift */; };
 		69185F9A9441F58A667F6D00 /* TesseraApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0346812191C19A3D3ED2CA9 /* TesseraApp.swift */; };
@@ -56,6 +57,7 @@
 		DB81888CFE988A0C5741E66A /* FlowUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowUITests.swift; sourceTree = "<group>"; };
 		E6145A9F28061D3114DB6CAC /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		F0346812191C19A3D3ED2CA9 /* TesseraApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TesseraApp.swift; sourceTree = "<group>"; };
+		F44EB6379515E6C1C999EC02 /* Ticker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ticker.swift; sourceTree = "<group>"; };
 		F9E3D53B6B58506C64CD4A51 /* Tessera.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Tessera.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -112,6 +114,7 @@
 				742D6CF20A0CA607B92A5058 /* Screenshots.swift */,
 				71761D1F9E90EC0D08056C27 /* SecureEnclaveWrap.swift */,
 				F0346812191C19A3D3ED2CA9 /* TesseraApp.swift */,
+				F44EB6379515E6C1C999EC02 /* Ticker.swift */,
 				6824C6C919ABC8568702C44A /* VaultStore.swift */,
 				23134BAC77C4B97440D991AD /* Views.swift */,
 			);
@@ -255,6 +258,7 @@
 				7CCBF9A23951466E6517E583 /* Screenshots.swift in Sources */,
 				23D7CA25090971136FEF974B /* SecureEnclaveWrap.swift in Sources */,
 				69185F9A9441F58A667F6D00 /* TesseraApp.swift in Sources */,
+				3DDEFD1AC96FCA97FBB820FA /* Ticker.swift in Sources */,
 				83B2775669EA80AE095CDD24 /* VaultStore.swift in Sources */,
 				372C08BA9A54AC843A5406F7 /* Views.swift in Sources */,
 			);
@@ -367,7 +371,7 @@
 				CODE_SIGN_ENTITLEMENTS = App/Resources/Tessera.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 7;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = App/Resources/Info.plist;
@@ -375,7 +379,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ibrahemid.tessera;
 				PRODUCT_NAME = Tessera;
 				SDKROOT = macosx;
@@ -390,7 +394,7 @@
 				CODE_SIGN_ENTITLEMENTS = App/Resources/Tessera.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 7;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = App/Resources/Info.plist;
@@ -398,7 +402,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ibrahemid.tessera;
 				PRODUCT_NAME = Tessera;
 				SDKROOT = macosx;

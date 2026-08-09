@@ -128,6 +128,20 @@ public struct Envelope: Codable, Sendable {
         return (env, dek)
     }
 
+    /// Whether the envelope carries an argon2id passphrase wrap — the wrap the
+    /// tess CLI opens, and the app's fallback when a Secure Enclave key is gone.
+    public var hasPassphraseWrap: Bool { wraps.contains { $0.type == "passphrase" } }
+
+    /// Add (or replace) the argon2id passphrase wrap for a DEK the caller already
+    /// holds, leaving every other wrap and the payload untouched. This is how the
+    /// app attaches a recovery passphrase to a Secure-Enclave-only vault; the wire
+    /// format matches the Go core's `newPassphraseWrap` exactly.
+    public mutating func setPassphraseWrap(dek: Data, passphrase: String, argon2: Argon2idProvider) throws {
+        let wrap = try Self.makePassphraseWrap(dek: dek, passphrase: passphrase, argon2: argon2)
+        wraps.removeAll { $0.type == "passphrase" }
+        wraps.append(wrap)
+    }
+
     /// Recover the raw DEK via a passphrase wrap (for re-sealing the payload).
     public func recoverDEK(passphrase: String, argon2: Argon2idProvider) throws -> Data {
         try unwrap(passphrase: passphrase, argon2: argon2)
