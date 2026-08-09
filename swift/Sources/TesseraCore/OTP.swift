@@ -91,7 +91,14 @@ public enum OTP {
         switch a.type {
         case .totp: return try totp(secret: a.secret, time: time, period: a.period, digits: a.digits, algorithm: alg)
         case .steam: return try steam(secret: a.secret, time: time)
-        case .hotp: return try hotp(secret: a.secret, counter: UInt64(a.counter), digits: a.digits, algorithm: alg)
+        case .hotp:
+            // A stored counter can only be negative if the vault was written by a
+            // buggy or hostile producer; throw so the caller renders a placeholder
+            // instead of trapping on the conversion.
+            guard let counter = UInt64(exactly: a.counter) else {
+                throw AccountError.invalid("account \(a.id): counter must not be negative")
+            }
+            return try hotp(secret: a.secret, counter: counter, digits: a.digits, algorithm: alg)
         }
     }
 }

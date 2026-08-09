@@ -57,7 +57,10 @@ All `b64` fields are **base64 standard alphabet (RFC 4648 §4, `+/`), WITH `=` p
 
 1. Object keys sorted ascending by **UTF-8 byte order** (not locale, not language Dictionary order).
 2. No insignificant whitespace. No newlines. UTF-8, no BOM.
-3. Strings: minimal JSON escaping (`"`, `\`, control chars `< 0x20` as `\uXXXX` lowercase hex; `/` not escaped). No non-ASCII escaping (emit raw UTF-8).
+3. Strings: Go `encoding/json` string escaping with HTML-escaping OFF (`json.Encoder.SetEscapeHTML(false)`), which is exactly:
+   - The two-character escapes `\"`, `\\`, `\n`, `\r`, `\t`. A control char `< 0x20` with no two-character form is `\u00XX` with lowercase hex (e.g. U+0001 -> `\u0001`).
+   - `/`, `<`, `>`, `&` are NOT escaped (that is what HTML-escaping off means).
+   - No non-ASCII escaping: emit raw UTF-8. The ONE exception is the line separators U+2028 and U+2029, which Go always escapes as `\u2028` / `\u2029` regardless of the HTML-escaping setting; both cores MUST escape them too. `canonical_edge.json` pins all of the above.
 4. Numbers: integers only, base-10, no leading zeros, no `+`, no exponent, no decimal point. Counters fit `int64`.
 5. Secrets are RAW key bytes, base64-standard with padding (see above). Google-migration secrets arrive as raw bytes; Steam secrets are base64-decoded to raw bytes; otpauth secrets are base32-decoded to raw bytes. The payload normalizes ALL to raw-bytes-then-base64.
 6. Parsers MUST reject duplicate keys.

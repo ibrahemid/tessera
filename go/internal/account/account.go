@@ -64,6 +64,9 @@ func (a Account) Validate() error {
 	if a.Type != HOTP && a.Period <= 0 {
 		return fmt.Errorf("account %q: period must be positive, got %d", a.ID, a.Period)
 	}
+	if a.Counter < 0 {
+		return fmt.Errorf("account %q: counter must not be negative, got %d", a.ID, a.Counter)
+	}
 	if a.Handle != "" && !ValidHandle(a.Handle) {
 		return fmt.Errorf("account %q: invalid handle %q", a.ID, a.Handle)
 	}

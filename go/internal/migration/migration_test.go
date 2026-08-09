@@ -1,6 +1,9 @@
 package migration
 
 import (
+	"bytes"
+	"encoding/base64"
+	"strings"
 	"testing"
 
 	"github.com/ibrahemid/tessera/go/internal/base32x"
@@ -94,6 +97,70 @@ func TestParseRejectsNonMigration(t *testing.T) {
 		if _, err := Parse(uri); err == nil {
 			t.Errorf("expected error for %q, got nil", uri)
 		}
+	}
+}
+
+// TestParsePreservesPlusInData pins that the base64 data parameter is not
+// form-decoded. url.Query turns a literal '+' into a space, which corrupts the
+// payload; Swift's URLComponents preserves it, so form-decoding here would make
+// the two cores read different bytes from the same QR code.
+func TestParsePreservesPlusInData(t *testing.T) {
+	// A payload whose standard-base64 encoding contains a literal '+'.
+	const b64 = "CicKCvsA+AMEBQYHCAkSDVBsdXM6dXNlckBhLmIaBFBsdXMgASgBMAIQARgBIAA="
+	if !strings.Contains(b64, "+") {
+		t.Fatalf("fixture must contain a literal '+': %s", b64)
+	}
+	got, err := Parse("otpauth-migration://offline?data=" + b64)
+	if err != nil {
+		t.Fatalf("Parse with a literal '+' in data: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d accounts, want 1", len(got))
+	}
+	wantSecret := []byte{0xfb, 0x00, 0xf8, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09}
+	if !bytes.Equal(got[0].Secret, wantSecret) {
+		t.Errorf("secret = % x, want % x", got[0].Secret, wantSecret)
+	}
+	if got[0].Issuer != "Plus" || got[0].Account != "user@a.b" {
+		t.Errorf("issuer/account = %q/%q, want Plus/user@a.b", got[0].Issuer, got[0].Account)
+	}
+	// The percent-encoded form of the same data must decode identically.
+	esc, err := Parse("otpauth-migration://offline?data=" + strings.ReplaceAll(b64, "+", "%2B"))
+	if err != nil {
+		t.Fatalf("Parse with %%2B: %v", err)
+	}
+	if !bytes.Equal(esc[0].Secret, got[0].Secret) {
+		t.Error("'+' and '%2B' must decode to the same secret")
+	}
+}
+
+// TestParseRejectsOutOfRangeCounter pins that an unsigned wire counter above
+// int64 range is rejected instead of wrapping to a negative counter that would
+// then be sealed into the vault.
+func TestParseRejectsOutOfRangeCounter(t *testing.T) {
+	// OtpParameters{ secret: "0123456789", name: "x", counter: 2^64-1 }
+	param := []byte{0x0a, 0x0a}
+	param = append(param, []byte("0123456789")...)
+	param = append(param, 0x12, 0x01, 'x')
+	param = append(param, 0x38) // field 7, varint
+	param = append(param, []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01}...)
+	payload := append([]byte{0x0a, byte(len(param))}, param...)
+	uri := "otpauth-migration://offline?data=" + base64.StdEncoding.EncodeToString(payload)
+	if _, err := Parse(uri); err == nil {
+		t.Fatal("expected an out-of-range counter to be rejected")
+	}
+
+	// The same payload with a counter inside int64 range parses, and the value
+	// survives Validate.
+	ok := append([]byte(nil), param[:len(param)-11]...)
+	ok = append(ok, 0x38, 0x05)
+	okPayload := append([]byte{0x0a, byte(len(ok))}, ok...)
+	got, err := Parse("otpauth-migration://offline?data=" + base64.StdEncoding.EncodeToString(okPayload))
+	if err != nil {
+		t.Fatalf("in-range counter: %v", err)
+	}
+	if got[0].Counter != 5 {
+		t.Errorf("counter = %d, want 5", got[0].Counter)
 	}
 }
 

@@ -76,6 +76,17 @@ do {
         if String(decoding: got, as: UTF8.self) != (c["ascii"] as! String) { allOK = false }
     }
     check(allOK, "base32 encode + lenient decode")
+
+    let rejects = arr("decode_reject", b)
+    var rejectOK = !rejects.isEmpty
+    for c in rejects {
+        let input = c["input"] as! String
+        if let got = try? Base32.decode(input) {
+            print("     accepted \(input.count) chars -> \(got.count) bytes, want error (\(c["why"] as! String))")
+            rejectOK = false
+        }
+    }
+    check(rejectOK, "base32 strict decode rejects (\(rejects.count) vectors)")
 }
 
 // 5. otpauth parse + round-trip
@@ -89,8 +100,14 @@ do {
         let wantSecret = try Base32.decode(c["secret_b32"] as! String)
         if a.secret != wantSecret { allOK = false }
         // round-trip
-        let reparsed = try OTPAuth.parse(OTPAuth.format(a))
+        let emitted = OTPAuth.format(a)
+        if emitted.contains("+") && !a.issuer.contains("+") && !a.account.contains("+") {
+            print("     emitted a bare '+': \(emitted)")
+            allOK = false
+        }
+        let reparsed = try OTPAuth.parse(emitted)
         if reparsed.secret != a.secret || reparsed.issuer != a.issuer { allOK = false }
+        if reparsed.account != a.account { allOK = false }
         if reparsed.type != a.type || reparsed.digits != a.digits { allOK = false }
     }
     check(allOK, "otpauth parse + format round-trip")

@@ -34,17 +34,11 @@ func Parse(uri string) (account.Account, error) {
 		return a, fmt.Errorf("otpauth: unsupported type %q", u.Host)
 	}
 
-	label := strings.TrimPrefix(u.Path, "/")
-	label, err = url.PathUnescape(label)
+	issuer, acct, err := splitLabel(u.EscapedPath())
 	if err != nil {
-		return a, fmt.Errorf("otpauth: bad label: %w", err)
+		return a, err
 	}
-	if i := strings.Index(label, ":"); i >= 0 {
-		a.Issuer = strings.TrimSpace(label[:i])
-		a.Account = strings.TrimSpace(label[i+1:])
-	} else {
-		a.Account = strings.TrimSpace(label)
-	}
+	a.Issuer, a.Account = issuer, acct
 
 	q := u.Query()
 	secretParam := q.Get("secret")
@@ -119,6 +113,35 @@ func Parse(uri string) (account.Account, error) {
 	return a, nil
 }
 
+// splitLabel applies the spec label rules (spec/otpauth.md § label encoding) to
+// the still-encoded path: split on the first literal ':', then percent-decode
+// each side exactly once. url.URL.Path is already decoded, so splitting there
+// would break a label whose issuer or account legitimately contains a colon, and
+// decoding it a second time corrupts any label containing a literal '%'.
+func splitLabel(escapedPath string) (issuer, acct string, err error) {
+	label := strings.TrimPrefix(escapedPath, "/")
+	rawIssuer, rawAcct, hasIssuer := strings.Cut(label, ":")
+	if !hasIssuer {
+		rawIssuer, rawAcct = "", label
+	}
+	issuer, err = url.PathUnescape(rawIssuer)
+	if err != nil {
+		return "", "", fmt.Errorf("otpauth: bad label issuer: %w", err)
+	}
+	acct, err = url.PathUnescape(rawAcct)
+	if err != nil {
+		return "", "", fmt.Errorf("otpauth: bad label account: %w", err)
+	}
+	return strings.TrimSpace(issuer), strings.TrimSpace(acct), nil
+}
+
+// escapeLabelPart percent-encodes one label component. url.PathEscape leaves
+// ':' alone, which would be indistinguishable from the issuer/account separator
+// on the way back in, so it is encoded explicitly.
+func escapeLabelPart(s string) string {
+	return strings.ReplaceAll(url.PathEscape(s), ":", "%3A")
+}
+
 // Format emits an otpauth:// URI for the account (secret base32, no padding).
 func Format(a account.Account) string {
 	typ := "totp"
@@ -128,9 +151,9 @@ func Format(a account.Account) string {
 	case account.Steam:
 		typ = "steam"
 	}
-	label := a.Account
+	label := escapeLabelPart(a.Account)
 	if a.Issuer != "" {
-		label = a.Issuer + ":" + a.Account
+		label = escapeLabelPart(a.Issuer) + ":" + label
 	}
 	v := url.Values{}
 	v.Set("secret", base32x.EncodeNoPad(a.Secret))
@@ -151,5 +174,15 @@ func Format(a account.Account) string {
 	if a.Type == account.HOTP {
 		v.Set("counter", strconv.FormatInt(a.Counter, 10))
 	}
-	return fmt.Sprintf("otpauth://%s/%s?%s", typ, url.PathEscape(label), v.Encode())
+	return fmt.Sprintf("otpauth://%s/%s?%s", typ, label, encodeQuery(v))
+}
+
+// encodeQuery emits the query in the form spec/otpauth.md § query encoding
+// requires: a space is %20, never '+'. url.Values.Encode writes the legacy form
+// form '+' for a space, which a parser built on URLComponents (the Swift core)
+// reads as a literal plus. Every other byte is already percent-escaped by
+// Encode — a literal '+' in a value comes out as %2B — so '+' in its output can
+// only be a space.
+func encodeQuery(v url.Values) string {
+	return strings.ReplaceAll(v.Encode(), "+", "%20")
 }

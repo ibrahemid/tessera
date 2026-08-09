@@ -132,10 +132,14 @@ func hchachaVector() {
 // edgeAccount is the nasty-string account whose canonical encoding pins escaping.
 func edgeAccount() account.Account {
 	return account.Account{
-		ID:        "00000000-0000-4000-8000-0000000000ff",
-		Type:      account.TOTP,
-		Issuer:    "A\"B\\C\n\tD<e>&f  é🔐",
-		Account:   "user/name",
+		ID:      "00000000-0000-4000-8000-0000000000ff",
+		Type:    account.TOTP,
+		Issuer:  "A\"B\\C\n\tD<e>&f  é🔐",
+		Account: "user/name",
+		// spec/vault-format.md § handle test vectors: the edge case must also
+		// carry a handle so its sorted position between "folder" and "id" is
+		// pinned alongside the escaping.
+		Handle:    "ed",
 		Secret:    []byte{0x00, 0x01, 0x02, 0xfe, 0xff},
 		Algorithm: "SHA1", Digits: 6, Period: 30,
 		Tags:      []string{"a\"b", "c\\d"},

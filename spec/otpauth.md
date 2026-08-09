@@ -22,10 +22,12 @@ RFC 6238 base (HMAC-SHA1, period 30, T0 0). Differences:
 - From the 31-bit dynamic-truncation integer `fullcode`: `for i in 0..4: out += ALPHABET[fullcode % 26]; fullcode /= 26`.
 
 ## base32 (RFC 4648 §6)
-Alphabet `A-Z2-7`, case-insensitive (uppercase-normalize), `=` padding (strip then re-pad on decode), strip whitespace. Used ONLY at otpauth import/export boundaries; vault stores raw bytes.
+Alphabet `A-Z2-7`, case-insensitive (uppercase-normalize), `=` padding (strip then re-pad on decode), strip whitespace and `-`. Used ONLY at otpauth import/export boundaries; vault stores raw bytes.
+
+Decoding is lenient about how a key is written and strict about what it means. After stripping, both cores MUST reject: empty input; a length of 1, 3 or 6 (mod 8), which no byte count can produce; and any input whose decoded bytes do not re-encode (unpadded) to the stripped, uppercased input, i.e. non-zero bits past the last whole byte (`MZ` decodes the same byte as `MY` and is rejected; `MZXW7` re-encodes to `MZXW6` and is rejected). Accepting these would store a secret other than the one the user was given, and it would generate wrong codes forever.
 
 ## otpauth:// URI (Key Uri Format)
-`otpauth://TYPE/LABEL?PARAMS`, TYPE = `totp|hotp|steam` (`steam` non-standard, see below). LABEL = `issuer:account` (URL-encoded; `issuer:` prefix optional). Params:
+`otpauth://TYPE/LABEL?PARAMS`, TYPE = `totp|hotp|steam` (`steam` non-standard, see below). LABEL = `issuer:account`, percent-encoded, `issuer:` prefix optional. Params:
 
 | param | required | default |
 |---|---|---|
@@ -40,7 +42,25 @@ Steam in otpauth (both directions MUST match):
 - Parse: type `steam`, or the heuristic `otpauth://totp/...` with issuer `Steam` (case-insensitive), yields a Steam account. Steam digits default to `5`; a `digits` param other than `5` is rejected. Non-integer `digits`/`period` are rejected for all types.
 - Emit: Steam accounts export as `otpauth://steam/...` with `digits=5` (compatible with Aegis and other steam-aware clients).
 
-Emit (export): URL-encode label and issuer; secret base32 no-pad; include issuer param.
+### Label encoding (both cores MUST match, byte for byte)
+
+The label separator is a *structural* colon, so a colon inside an issuer or an account name has to be distinguishable from it. Both directions operate on the percent-encoded label, never on the decoded string:
+
+- **Emit.** Percent-encode `issuer` and `account` *independently*, then join them with a literal `:`. The separator is the ONLY unencoded colon in the label: a `:` inside either component MUST be emitted as `%3A`. `/` MUST be emitted as `%2F`. Omit the `issuer:` prefix entirely when the issuer is empty.
+- **Parse.** Strip the leading `/` from the path, split the still-encoded label on its FIRST literal `:`, then percent-decode each side separately and trim surrounding whitespace. No colon means the whole label is the account. Decoding exactly once is required: decoding the label before splitting turns `Acme%3A%20Prod:me` into two wrong fields, and decoding a second time after the URI parser already decoded once corrupts any label containing a literal `%` (`%25off` fails to parse; `a%2541b` silently becomes `aAb`).
+
+This makes export/re-import lossless for issuers and accounts containing `:`, `%`, `/`, spaces, and non-ASCII text. The `issuer` query param carries the same value as the label prefix and MUST agree with it.
+
+### Query encoding (both cores MUST match)
+
+Query parameter names and values are percent-encoded: every byte outside the RFC 3986 unreserved set (`A-Z a-z 0-9 - . _ ~`) is escaped, so a space is `%20` and a literal plus is `%2B`.
+
+- **Emit.** A space MUST be `%20`. The legacy `application/x-www-form-urlencoded` form (space as `+`) MUST NOT be emitted: a parser built on percent-decoding alone reads that `+` as a literal plus, so `issuer=Acme+Corp` fails the issuer/label agreement check against a label carrying `Acme%20Corp`.
+- **Parse.** A `+` in a query value MUST be read as a space, and the substitution happens BEFORE percent-decoding so a plus written as `%2B` stays a plus. Other emitters still use the legacy form, and both cores must import them identically.
+
+The label is a path component, not a query value: `+` there is a literal plus in both directions, and a space is `%20`.
+
+Emit (export): label per the rules above, `issuer` param percent-encoded; secret base32 no-pad; include issuer param.
 
 ## otpauth-migration:// (Google Authenticator export)
 `otpauth-migration://offline?data=<URL-encoded base64 of protobuf>`. Decode: URL-decode -> base64-decode -> protobuf `MigrationPayload`.
@@ -74,7 +94,7 @@ Multiline input: split on line breaks, classify each non-empty line independentl
 
 Wrapped-URI repair (runs before the per-line split). Textareas and mail clients hard-wrap long URIs, so a single URI arriving with embedded line breaks is one URI, not a batch. Repair applies only when ALL of: the trimmed input classifies as `otpauth` or `migration` by prefix; it contains at least one line break; the substring `otpauth` occurs exactly once case-insensitively; and the first non-empty line ALONE fails to parse as that kind (i.e. it is a true fragment — a complete first line means the input is a batch and per-line semantics stand). Then strip ALL whitespace from the whole input and parse the result as that single URI. On success the repaired URI is the entire result; on failure, fall back to the per-line rule unchanged.
 
-Base32 setup-key guardrail (rule 4). Prevents prose (e.g. `hello world`) from being read as a key. After stripping ASCII spaces and `-`, the input qualifies as a setup key only if it is a single token matching `^[A-Za-z2-7]+$` case-insensitively, length >= 16 chars (>= 10 secret bytes), and it decodes cleanly under the lenient base32 rules above (§ base32). Otherwise it is not a setup key and falls through to `invalid`.
+Base32 setup-key guardrail (rule 4). Prevents prose (e.g. `hello world`) from being read as a key. After stripping ASCII spaces and `-`, the input qualifies as a setup key only if it is a single token matching `^[A-Za-z2-7]+$` case-insensitively, length >= 16 chars (>= 10 secret bytes), and it decodes cleanly under the base32 rules above (§ base32). Otherwise it is not a setup key and falls through to `invalid`.
 
 Partial-failure semantics. Batch inputs (multiline, multi-file, multi-QR) import every item that parses. Each failure is recorded per item (source, line/file index, reason) and never aborts the batch.
 

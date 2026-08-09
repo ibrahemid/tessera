@@ -55,6 +55,9 @@ public extension Account {
         if type != .hotp && period <= 0 {
             throw AccountError.invalid("account \(id): period must be positive")
         }
+        if counter < 0 {
+            throw AccountError.invalid("account \(id): counter must not be negative")
+        }
         if !handle.isEmpty && !Handles.isValid(handle) {
             throw AccountError.invalid("account \(id): invalid handle \(handle)")
         }

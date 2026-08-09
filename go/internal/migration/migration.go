@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"net/url"
 	"strings"
 
@@ -76,11 +77,10 @@ func Parse(uri string) ([]account.Account, error) {
 		return nil, fmt.Errorf("migration: unexpected host %q (want \"offline\")", u.Host)
 	}
 
-	q := u.Query()
-	if !q.Has("data") {
+	data, ok := rawQueryValue(u.RawQuery, "data")
+	if !ok {
 		return nil, fmt.Errorf("migration: missing data query parameter")
 	}
-	data := q.Get("data")
 	if data == "" {
 		return nil, fmt.Errorf("migration: empty data query parameter")
 	}
@@ -107,6 +107,31 @@ func Parse(uri string) ([]account.Account, error) {
 		accounts = append(accounts, a)
 	}
 	return accounts, nil
+}
+
+// rawQueryValue reads one query parameter without form-decoding it. url.Query
+// applies application/x-www-form-urlencoded rules, which turn a literal '+'
+// into a space — and '+' is a base64 alphabet character, so a Google export
+// containing one would decode to different bytes than it does in the Swift core
+// (URLComponents preserves '+'). Percent escapes are still decoded.
+func rawQueryValue(rawQuery, name string) (string, bool) {
+	for rawQuery != "" {
+		var pair string
+		pair, rawQuery, _ = strings.Cut(rawQuery, "&")
+		if pair == "" {
+			continue
+		}
+		key, value, _ := strings.Cut(pair, "=")
+		if key != name {
+			continue
+		}
+		decoded, err := url.PathUnescape(value)
+		if err != nil {
+			return "", false
+		}
+		return decoded, true
+	}
+	return "", false
 }
 
 // otpParams holds the decoded fields of one OtpParameters message.
@@ -244,6 +269,11 @@ func decodeOtpParameters(b []byte) (otpParams, error) {
 				return p, fmt.Errorf("migration: malformed counter: %w", protowire.ParseError(n))
 			}
 			b = b[n:]
+			// The wire type is unsigned; a value above int64 range would wrap to
+			// a negative counter and be sealed into the vault as one.
+			if v > math.MaxInt64 {
+				return p, fmt.Errorf("migration: counter %d exceeds int64 range", v)
+			}
 			p.counter = int64(v)
 		default:
 			n := protowire.ConsumeFieldValue(num, typ, b)

@@ -16,7 +16,7 @@
     ]
   },
   "base32": {
-    "_note": "RFC 4648 base32; decode is case-insensitive, padding optional, whitespace stripped.",
+    "_note": "RFC 4648 base32; decode is case-insensitive, padding optional, whitespace and '-' stripped, and strict about meaning: decode_reject inputs MUST be errors in both cores (empty, length 1/3/6 mod 8, non-canonical trailing bits, bad character).",
     "encode": [
       { "ascii": "",       "b32": "" },
       { "ascii": "f",      "b32": "MY======" },
@@ -30,7 +30,21 @@
       { "input": "my======", "ascii": "f" },
       { "input": "MZXW6YTB", "ascii": "fooba" },
       { "input": "MZ XW 6Y TB", "ascii": "fooba" },
-      { "input": "MZXW6===", "ascii": "foo" }
+      { "input": "MZXW6===", "ascii": "foo" },
+      { "input": "mz-xw-6y-tb", "ascii": "fooba" },
+      { "input": "MZXW6", "ascii": "foo" }
+    ],
+    "decode_reject": [
+      { "input": "", "why": "empty" },
+      { "input": "   ", "why": "empty after stripping whitespace" },
+      { "input": "  == -- ", "why": "empty after stripping padding and dashes" },
+      { "input": "M", "why": "length 1 mod 8" },
+      { "input": "MZX", "why": "length 3 mod 8" },
+      { "input": "MZXW6Y", "why": "length 6 mod 8" },
+      { "input": "MZXW6YTBM", "why": "length 1 mod 8" },
+      { "input": "MZ", "why": "non-canonical trailing bits: re-encodes to MY" },
+      { "input": "MZXW7", "why": "non-canonical trailing bits: re-encodes to MZXW6" },
+      { "input": "MZXW6YT!", "why": "character outside the alphabet" }
     ]
   },
   "otpauth_uri": {
@@ -42,7 +56,16 @@
       { "uri": "otpauth://steam/Steam:gabe?secret=JBSWY3DPEHPK3PXP&issuer=Steam&digits=5",
         "type": "steam", "issuer": "Steam", "account": "gabe", "secret_b32": "JBSWY3DPEHPK3PXP", "period": 30, "digits": 5, "algorithm": "SHA1" },
       { "uri": "otpauth://totp/Steam:gabe?secret=JBSWY3DPEHPK3PXP&issuer=Steam",
-        "type": "steam", "issuer": "Steam", "account": "gabe", "secret_b32": "JBSWY3DPEHPK3PXP", "period": 30, "digits": 5, "algorithm": "SHA1" }
+        "type": "steam", "issuer": "Steam", "account": "gabe", "secret_b32": "JBSWY3DPEHPK3PXP", "period": 30, "digits": 5, "algorithm": "SHA1" },
+      { "_note": "label encoding: %3A inside a component is data, the bare ':' is the separator. Split the ENCODED label on the first ':', then decode each side once.",
+        "uri": "otpauth://totp/Acme%3AProd:ops%3A1@example.com?secret=JBSWY3DPEHPK3PXP&issuer=Acme%3AProd",
+        "type": "totp", "issuer": "Acme:Prod", "account": "ops:1@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "period": 30, "digits": 6, "algorithm": "SHA1" },
+      { "_note": "query encoding: '+' in a query value is a space, so this issuer param agrees with the %20 label. Emitters write %20; parsers accept both.",
+        "uri": "otpauth://totp/Acme%20Corp:john@example.com?secret=JBSWY3DPEHPK3PXP&issuer=Acme+Corp",
+        "type": "totp", "issuer": "Acme Corp", "account": "john@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "period": 30, "digits": 6, "algorithm": "SHA1" },
+      { "_note": "query encoding: a literal plus is %2B and survives the '+'-as-space rule. In the label (a path component) '+' is already a literal plus.",
+        "uri": "otpauth://totp/C++%20Forum:dev%2Bx@example.com?secret=JBSWY3DPEHPK3PXP&issuer=C%2B%2B%20Forum",
+        "type": "totp", "issuer": "C++ Forum", "account": "dev+x@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "period": 30, "digits": 6, "algorithm": "SHA1" }
     ]
   },
   "migration": {

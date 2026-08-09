@@ -52,7 +52,14 @@ public enum Migration {
                 }
             case (5, 0): digits = (try reader.readVarint() == 2) ? 8 : 6
             case (6, 0): type = (try reader.readVarint() == 1) ? .hotp : .totp
-            case (7, 0): counter = Int64(bitPattern: try reader.readVarint())
+            case (7, 0):
+                // A varint above Int64.max would wrap to a negative counter, which
+                // is unrepresentable in the vault and traps on code generation.
+                let raw = try reader.readVarint()
+                guard raw <= UInt64(Int64.max) else {
+                    throw AccountError.invalid("migration counter out of range")
+                }
+                counter = Int64(raw)
             default: try reader.skip(wire)
             }
         }

@@ -118,3 +118,23 @@ func TestValidate(t *testing.T) {
 		t.Error("empty secret should fail validation")
 	}
 }
+
+// TestValidateRejectsNegativeCounter pins that a counter which wrapped past
+// int64 (a hostile Google-migration export encodes it as an unsigned varint)
+// never reaches the vault.
+func TestValidateRejectsNegativeCounter(t *testing.T) {
+	a := sample()
+	a.Type = HOTP
+	a.Counter = -1
+	if err := a.Validate(); err == nil {
+		t.Error("negative counter should fail validation")
+	}
+	a.Counter = 0
+	if err := a.Validate(); err != nil {
+		t.Errorf("counter 0 should validate: %v", err)
+	}
+	a.Counter = 1 << 62
+	if err := a.Validate(); err != nil {
+		t.Errorf("large positive counter should validate: %v", err)
+	}
+}
