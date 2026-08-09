@@ -10,7 +10,7 @@ const features = [
   {
     k: "01",
     t: "Works with any TOTP service",
-    b: "Every TOTP service you already use, plus HOTP and Steam Guard. If it works with an authenticator app, it works with Tessera.",
+    b: "Standard TOTP, plus HOTP and Steam Guard.",
     c: "var(--violet)",
   },
   {
@@ -28,19 +28,19 @@ const features = [
   {
     k: "04",
     t: "A real command line",
-    b: "Lists, watches, and copies codes, with JSON output and shell completions. Rare for a Mac authenticator, and how Tessera was built first.",
+    b: "Lists, watches, and copies codes.",
     c: "var(--gold-bright)",
   },
   {
     k: "05",
     t: "Open with Touch ID",
-    b: "Your vault key can be sealed by the Secure Enclave, so a fingerprint unlocks it. No fingerprint, no codes.",
+    b: "Your vault key can be sealed by the Secure Enclave. Turn on Require Touch ID and the key won't open without your fingerprint.",
     c: "var(--coral)",
   },
   {
     k: "06",
     t: "Encrypted on your device",
-    b: "A random key encrypts every secret with XChaCha20-Poly1305, wrapped by your argon2id passphrase. Plain secrets never touch disk.",
+    b: "A random key encrypts every secret with XChaCha20-Poly1305, wrapped by the Secure Enclave on a Mac or by an argon2id key from your passphrase. Plain secrets never touch disk.",
     c: "var(--green)",
   },
 ];
@@ -66,8 +66,8 @@ const cliCmds = [
           </h1>
           <p class="lede mt-6 max-w-[34rem]">
             Tessera keeps your 2FA codes in an encrypted vault on your Mac,
-            reachable from a native app and a real command line. No account to
-            sign up for. No server to trust. Nothing tracking you.
+            reachable from a native app and a real command line. No account, and
+            no server to trust.
           </p>
           <div class="mt-8 flex flex-wrap gap-3">
             <a href="#get" class="btn btn-gold">Get Tessera</a>
@@ -78,7 +78,6 @@ const cliCmds = [
           <ul class="mt-9 flex flex-wrap gap-x-6 gap-y-2 text-sm" style="color: var(--ink-soft)">
             <li class="flex items-center gap-2"><span class="dotcheck"></span> Apache-2.0 licensed</li>
             <li class="flex items-center gap-2"><span class="dotcheck"></span> argon2id + XChaCha20</li>
-            <li class="flex items-center gap-2"><span class="dotcheck"></span> Zero telemetry</li>
           </ul>
         </div>
 
@@ -106,7 +105,7 @@ const cliCmds = [
           <p>
             Even if someone has your password, they can't get in without that
             code. Tessera is where your codes live: offline, and only
-            yours. <span style="color: var(--ink)">You don't need to understand the cryptography to be protected by it.</span>
+            yours.
           </p>
         </div>
         <a href="/support" class="inline-flex items-center gap-1.5 mt-7 font-medium" style="color: var(--gold)">
@@ -140,11 +139,11 @@ const cliCmds = [
   <section id="features" class="mx-auto w-full max-w-[var(--maxw)] px-5 sm:px-7 py-12">
     <div class="reveal max-w-2xl">
       <span class="eyebrow">What's inside</span>
-      <h2 class="mt-4" style="font-size: clamp(1.8rem, 3.4vw, 2.7rem)">Everything, free. Including the command line.</h2>
+      <h2 class="mt-4" style="font-size: clamp(1.8rem, 3.4vw, 2.7rem)">Everything. Including the command line.</h2>
       <p class="lede mt-5">
-        Unlimited accounts, Touch ID, auto-launch, HOTP, Steam Guard,
-        and bulk import. Plus the one thing dedicated Mac authenticators
-        almost never ship: a real command line.
+        Touch ID, auto-launch, HOTP, Steam Guard, and bulk import. Plus the one
+        thing dedicated Mac authenticators almost never ship: a real command
+        line.
       </p>
     </div>
 
@@ -171,9 +170,8 @@ const cliCmds = [
         <span class="eyebrow">The command line</span>
         <h2 class="mt-4" style="font-size: clamp(1.8rem, 3.4vw, 2.7rem)">For people who live in the terminal.</h2>
         <p class="lede mt-5 max-w-[32rem]">
-          Tessera is CLI-first. <span class="mono text-[0.95em]" style="color: var(--gold)">tess</span> isn't a
-          companion script. It's the same vault, fully scriptable, with JSON
-          output and shell completions.
+          <span class="mono text-[0.95em]" style="color: var(--gold)">tess</span> is the same vault, fully
+          scriptable, with JSON output and shell completions.
         </p>
         <ul class="mt-7 space-y-3">
           {cliCmds.map(([cmd, desc]) => (
@@ -198,8 +196,7 @@ const cliCmds = [
         <h2 class="mt-4" style="font-size: clamp(1.8rem, 3.4vw, 2.7rem)">Security you can read.</h2>
         <p class="lede mt-5">
           A 2FA app holds the keys to your accounts, so it has to earn that
-          trust. Tessera does it in the open: the code is public, and nothing
-          phones home.
+          trust. Tessera does it in the open.
         </p>
       </div>
 
@@ -208,8 +205,8 @@ const cliCmds = [
           <h3 style="font-size: 1.2rem">Open and auditable</h3>
           <p class="mt-3 text-sm leading-relaxed" style="color: var(--ink-soft)">
             Apache-2.0, end to end. The CLI and app share one documented vault
-            format, checked byte-for-byte against a public test suite. Read it,
-            build it, verify it yourself.
+            format, checked byte-for-byte against a public test suite. Build it
+            and verify it yourself.
           </p>
           <a href={repo} rel="noopener" class="inline-block mt-4 text-sm font-medium" style="color: var(--gold)">github.com/ibrahemid/tessera →</a>
         </article>
@@ -218,15 +215,15 @@ const cliCmds = [
           <p class="mt-3 text-sm leading-relaxed" style="color: var(--ink-soft)">
             Codes are generated entirely offline. There's no Tessera account and
             no Tessera server, so there's no central database of your secrets to
-            breach, subpoena, or sell.
+            breach or subpoena.
           </p>
         </article>
         <article class="tile p-7 reveal">
           <h3 style="font-size: 1.2rem">No tracking</h3>
           <p class="mt-3 text-sm leading-relaxed" style="color: var(--ink-soft)">
-            No analytics, no ads, no crash SDKs. Apple's privacy label reads
+            No analytics or crash SDKs. Apple's privacy label reads
             <span class="font-medium" style="color: var(--ink)"> Data Not Collected</span>.
-            This very site ships zero trackers and self-hosts its fonts.
+            This site ships no trackers.
           </p>
         </article>
       </div>
@@ -236,10 +233,11 @@ const cliCmds = [
           <span class="eyebrow" style="color: var(--ink-faint)">The crypto, plainly</span>
           <p class="text-sm leading-relaxed" style="color: var(--ink-soft)">
             A random 256-bit key encrypts your accounts with
-            <span class="font-medium" style="color: var(--ink)"> XChaCha20-Poly1305</span>. That key is
-            wrapped by a key derived from your passphrase with
-            <span class="font-medium" style="color: var(--ink)"> argon2id</span>, and on a Mac it can also
-            be sealed by the <span style="color: var(--ink)">Secure Enclave</span> behind Touch ID.
+            <span class="font-medium" style="color: var(--ink)"> XChaCha20-Poly1305</span>. Each unlock
+            method wraps that key on its own: the <span style="color: var(--ink)">Secure Enclave</span> on
+            a Mac, and a key derived from your passphrase with
+            <span class="font-medium" style="color: var(--ink)"> argon2id</span>. Touch ID can gate the
+            Secure Enclave wrap.
             Two independent builds, Go and Swift, prove they read the same vault
             on every change. Secrets live as raw bytes; they're never logged.
           </p>
@@ -255,8 +253,8 @@ const cliCmds = [
       <h2 class="mt-4" style="font-size: clamp(1.8rem, 3.4vw, 2.7rem)">macOS first, portable by design.</h2>
       <p class="lede mt-5">
         macOS is the first home. The vault format and the CLI are
-        cross-platform already, so the rest is a matter of shipping, not
-        rebuilding.
+        cross-platform already, so a phone app starts from a working core rather
+        than from scratch.
       </p>
     </div>
 
@@ -298,11 +296,11 @@ const cliCmds = [
       <span class="eyebrow">Pricing</span>
       <h2 class="mt-4" style="font-size: clamp(1.8rem, 3.4vw, 2.7rem)">All of it. For nothing.</h2>
       <p class="lede mt-5 mx-auto max-w-xl">
-        Every feature, the app and the CLI, free and open source. There's no
-        upgrade to buy and no account to make. Your codes stay yours.
+        Every feature, the app and the CLI, free. There's no upgrade to buy.
+        Your codes stay yours.
       </p>
       <ul class="mt-8 flex flex-wrap justify-center gap-x-6 gap-y-2.5 text-sm">
-        {["Unlimited accounts", "Menu bar + Touch ID", "The tess CLI, HOTP, Steam Guard", "Bulk import & QR", "Encrypted local vault"].map((x) => (
+        {["Touch ID unlock", "The tess CLI, HOTP, Steam Guard", "Bulk import & QR", "Encrypted local vault"].map((x) => (
           <li class="flex items-center gap-2.5" style="color: var(--ink)"><span class="dotcheck"></span> {x}</li>
         ))}
       </ul>
@@ -316,7 +314,7 @@ const cliCmds = [
       <h2 class="mt-4" style="font-size: clamp(1.8rem, 3.4vw, 2.7rem)">Two ways in.</h2>
       <p class="lede mt-5">
         Download the Mac app from the App Store, or install the CLI with a
-        single command. Same encrypted vault, either way.
+        single command.
       </p>
     </div>
 

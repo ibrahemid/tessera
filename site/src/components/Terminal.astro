@@ -17,7 +17,7 @@ const rows = [
   </div>
   <div class="term-body mono">
     <div class="term-line"><span class="prompt">$</span> tess watch</div>
-    <div class="term-head">ISSUER<span>CODE</span><span>EXPIRES</span></div>
+    <div class="term-head">◧ Tessera<span class="term-count">{rows.length} accounts</span></div>
     {rows.map((r, i) => (
       <div class="term-row" style={`--c:${r.color}; --i:${i}`}>
         <span class="term-name">{r.name}</span>
@@ -25,7 +25,7 @@ const rows = [
         <span class="term-bar-wrap"><span class="term-fill"></span></span>
       </div>
     ))}
-    <div class="term-hint">/ search · ↵ copy · q quit</div>
+    <div class="term-hint">↑/↓ move · enter/c copy · / search · q quit</div>
   </div>
 </div>
 
@@ -66,6 +66,7 @@ const rows = [
     margin-top: 0.5rem;
     padding-bottom: 0.3rem;
   }
+  .term-count { grid-column: span 2; }
   .term-row {
     display: grid;
     grid-template-columns: 1fr 5.5rem 4.5rem;

@@ -208,7 +208,7 @@ labels — see `~/.claude/rules/ui-copy.md` and the copy-gate scanner. Honesty r
   "planned paid sync." Monetization is a later decision, kept off the site.
 - **Don't overclaim against competitors.** Free/OSS authenticators exist (Proton, 2FAS,
   Ente); Touch ID is free elsewhere. The defensible edge is the CLI-first authenticator
-  sharing one locally-encrypted vault with a menu-bar app — lead with that, not a paywall jab.
+  sharing one locally-encrypted vault with a native Mac app. Lead with that, not a paywall jab.
 - Don't imply affiliation with Google / Microsoft / Steam (App Store 5.2): "works with any
   TOTP service."
 
