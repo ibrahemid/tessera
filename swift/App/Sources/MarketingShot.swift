@@ -17,19 +17,19 @@ enum MarketingShot {
         let screens: [(String, AnyView)] = [
             ("01-vault", AnyView(Frame(
                 title: "Every code,\nat a glance.",
-                subtitle: "TOTP, HOTP, and Steam Guard — with a live countdown and one-click copy from your menu bar.",
+                subtitle: "TOTP, HOTP, and Steam Guard, with a live countdown and one-click copy.",
                 content: WindowMock()))),
             ("02-touchid", AnyView(Frame(
                 title: "Locked to you.",
-                subtitle: "Your vault is encrypted on-device with argon2id and XChaCha20-Poly1305, unlocked with Touch ID.",
+                subtitle: "Your vault is encrypted on-device with XChaCha20-Poly1305, sealed by the Secure Enclave, unlocked with Touch ID.",
                 content: UnlockMock()))),
             ("03-cli", AnyView(Frame(
                 title: "A real\ncommand line.",
-                subtitle: "The only Mac authenticator with a first-class CLI. Live terminal view, scripting, JSON — tess watch.",
+                subtitle: "A first-class CLI: live terminal view, scripting, JSON output. tess watch.",
                 content: TerminalMock()))),
             ("04-private", AnyView(Frame(
                 title: "Private by\ndesign.",
-                subtitle: "No account. No servers. No tracking. Open source, so anyone can verify exactly what it does.",
+                subtitle: "No account and no servers. Open source, so anyone can verify exactly what it does.",
                 content: TrustMock()))),
         ]
         for scheme in [ColorScheme.light, .dark] {
@@ -143,7 +143,7 @@ private struct TerminalMock: View {
                 Spacer()
                 Text("tess watch").font(.system(size: 11, design: .monospaced)).foregroundStyle(.white.opacity(0.4))
             }.padding(.bottom, 8)
-            row("◧ Tessera", gold, bold: true); rowPlain("6 accounts")
+            row("◧ Tessera", gold, bold: true); rowPlain("5 accounts")
             Spacer().frame(height: 8)
             term("G", 0xB0506E, "GitHub", "318 204", 0.85)
             term("C", 0x3B6FB0, "Cloudflare", "907 551", 0.62)
