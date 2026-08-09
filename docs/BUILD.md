@@ -25,10 +25,11 @@ Expected: `ALL SWIFT INTEROP CHECKS PASSED`.
 
 ## Swift package tests (argon2id + full vault) — needs SwiftPM
 
-`argon2id` is the one primitive CryptoKit lacks, so the passphrase-wrap and full
-Go→Swift envelope cross-decrypt are verified via SwiftPM/XCTest (which pulls the
-Argon2Swift dependency). This requires full Xcode (the Command Line Tools alone
-ship a broken SwiftPM):
+`argon2id` is the one primitive CryptoKit lacks. Tessera vendors the PHC
+reference argon2 (portable `ref.c`, no SIMD, threads off) as the `CArgon2`
+target, wrapped by `TesseraArgon2`. The passphrase-wrap and the full Go→Swift
+envelope cross-decrypt are verified via SwiftPM/XCTest, which requires full
+Xcode (the Command Line Tools alone ship a broken SwiftPM):
 
 ```sh
 cd swift
@@ -37,8 +38,8 @@ swift test
 
 ## The macOS app — needs full Xcode
 
-The menu-bar app uses SwiftUI, MenuBarExtra, Keychain/Secure Enclave,
-ScreenCaptureKit, and ServiceManagement, and must be built and signed with Xcode.
+The app uses SwiftUI, Keychain/Secure Enclave, ScreenCaptureKit, and
+ServiceManagement, and must be built and signed with Xcode.
 
 ```sh
 brew install xcodegen          # one-time

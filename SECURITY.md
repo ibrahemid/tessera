@@ -21,8 +21,9 @@ to an unlocked machine.
 ## Design notes for researchers
 
 - Vault: random 256-bit DEK, XChaCha20-Poly1305 payload, DEK wrapped per unlock
-  method (argon2id passphrase wrap; Secure Enclave wrap on macOS). See
-  `spec/vault-format.md`.
+  method. CLI-created vaults carry an argon2id passphrase wrap; app-created
+  vaults use the Secure Enclave and gain an argon2id wrap when you set a
+  recovery passphrase in Settings. See `spec/vault-format.md`.
 - Crypto primitives come from `golang.org/x/crypto` and CryptoKit; nothing
   hand-rolled. Both implementations must stay byte-identical against
   `spec/testvectors.json`.

@@ -1,22 +1,48 @@
-# Mac App Store submission — Tessera
+# Shipping Tessera to the Mac App Store
 
-This is the handoff for getting Tessera onto the Mac App Store. The build,
-signing config, entitlements, and metadata text are prepared in-repo. The steps
-that legally require your Apple ID and identity cannot be automated; they are
-marked **YOU**.
+Tessera is live as "Tessera 2FA Authenticator" (app id 6788814172). This is the
+runbook for shipping an update. Everything below the one-time section repeats
+per release.
 
 ## Prerequisites
 
-1. **Install Xcode** (free, Mac App Store). The Command Line Tools alone cannot
-   build the app or submit (their SwiftPM is broken on this machine).
-2. `brew install xcodegen`, then `cd swift && xcodegen generate`.
+1. **Full Xcode.** The Command Line Tools alone cannot build the app or submit
+   (their SwiftPM is broken on this machine).
+2. `brew install xcodegen`.
+
+## One-time setup (done)
+
+Kept as a record. None of it repeats per release.
+
+- Apple Developer Program enrollment, Program License and Free Apps agreements.
+- App ID `com.ibrahemid.tessera` in the Developer portal, with only the
+  capabilities Tessera uses (App Sandbox is implicit).
+- Apple Distribution certificate and Mac App Store provisioning profile, or
+  "Automatically manage signing" with the team selected.
+- The macOS app record in App Store Connect, bundle id `com.ibrahemid.tessera`.
+
+## Shipping an update
+
+1. Bump `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in
+   `swift/project.yml`. A build number App Store Connect has already seen is
+   rejected at upload, so the build number must go up even for a rebuild of the
+   same marketing version.
+2. `cd swift && xcodegen generate` to regenerate `Tessera.xcodeproj` from
+   `project.yml`.
+3. Open `Tessera.xcodeproj`. Confirm the target's Team (`DEVELOPMENT_TEAM`) is
+   set, `ENABLE_HARDENED_RUNTIME = YES`, and the entitlements file is attached.
+4. Product > Archive, then Organizer > Distribute App > App Store Connect >
+   Upload. Mac App Store apps are not notarized; Apple re-signs on approval.
+5. In App Store Connect, create the new version, attach the build once
+   processing finishes, fill "What's New", and submit for review.
 
 ## Build & test status (verified on Xcode 27)
 
-These were the Xcode-gated steps; all now pass locally:
-
-- **`cd swift && swift test`** — 8 interop tests green, including `testArgon2idVector` (matches Go `x/crypto`) and `testFullVaultCrossDecrypt` (full Go→Swift envelope decrypt with real argon2id).
-- **App build** — `xcodegen generate && xcodebuild ... build` succeeds; the app launches without crashing.
+- **`cd swift && swift test`**: 45 tests green, including `testArgon2idVector`
+  (matches Go `x/crypto`) and `testFullVaultCrossDecrypt` (full Go to Swift
+  envelope decrypt with real argon2id).
+- **App build**: `xcodegen generate && xcodebuild ... build` succeeds; the app
+  launches without crashing.
 
 argon2id is the one primitive CryptoKit lacks. Rather than a fragile external
 wrapper (Argon2Swift's SIMD `opt.c` fails to compile on Apple Silicon), Tessera
@@ -24,92 +50,60 @@ wrapper (Argon2Swift's SIMD `opt.c` fails to compile on Apple Silicon), Tessera
 the `CArgon2` target, wrapped by `TesseraArgon2`. It matches Go's `x/crypto`
 argon2id for the pinned params (m=131072 KiB, t=3, p=4), proven by the KAT.
 
-### What remains (genuinely gated on your Apple account)
-
-```sh
-cd swift
-xcodegen generate          # if not already generated
-open Tessera.xcodeproj      # set DEVELOPMENT_TEAM, then Product > Archive
-# Xcode Organizer > Distribute App > App Store Connect > Upload
-```
-
 ## Where the pinned vectors live (CI proves cross-decrypt)
 
 `spec/testvectors.json` (+ `spec/canonical_edge.json`) is the shared source of
 truth. The Go suite, the swiftc verifier (`swift/Tools/verify`), and the XCTest
-suite all run against it. `.github/workflows/ci.yml` runs all three on push once a
-GitHub remote exists, proving Go↔Swift cross-decrypt on every change.
+suite all run against it. `.github/workflows/ci.yml` runs all three on push,
+proving Go and Swift cross-decrypt on every change.
 
-## Apple setup (YOU — cannot be automated)
-
-1. Enroll in / confirm the Apple Developer Program ($99/yr) and accept the
-   current Program License + Paid/Free Apps agreements; complete tax/banking if
-   charging (Tessera is free, so banking is optional).
-2. In the Developer portal create an **App ID** `com.ibrahemid.tessera`. Enable
-   only the capabilities Tessera uses (App Sandbox is implicit; add iCloud/
-   CloudKit later when sync ships).
-3. Generate an **Apple Distribution** certificate and a **Mac App Store**
-   provisioning profile, or let Xcode "Automatically manage signing" with your
-   team selected.
-4. In **App Store Connect**, create a new macOS app record, bundle id
-   `com.ibrahemid.tessera`.
-
-## Build & upload
-
-1. In Xcode, set the target's **Team** (DEVELOPMENT_TEAM) and confirm
-   `ENABLE_HARDENED_RUNTIME = YES` and the entitlements file is attached.
-2. Product → Archive → Distribute App → **App Store Connect** → Upload.
-   - Mac App Store apps are **not** notarized; Apple re-signs on approval.
-3. In App Store Connect, attach the build, fill metadata (below), submit.
-
-## Entitlements (already configured)
+## Entitlements
 
 `swift/App/Resources/Tessera.entitlements`:
-- `com.apple.security.app-sandbox` — required.
-- `com.apple.security.files.user-selected.read-write` — open/save panels for
+- `com.apple.security.app-sandbox`: required.
+- `com.apple.security.files.user-selected.read-write`: open/save panels for
   backups, imports, and QR exports.
-- `com.apple.security.files.bookmarks.app-scope` — persist a security-scoped
+- `com.apple.security.files.bookmarks.app-scope`: persist a security-scoped
   bookmark to a vault file the user opens (a vault shared with the `tess` CLI),
   so the app reopens it on later launches without re-prompting.
 
-Nothing else. Add `com.apple.security.network.client` only when CloudKit sync
-ships (reviewers reject unused permissions).
+Nothing else. Tessera makes no network requests; adding a network entitlement it
+doesn't use invites rejection.
 
 No camera entitlement (on-screen QR uses ScreenCaptureKit, which is TCC-gated at
 runtime, not entitlement-gated). Local Keychain/Secure Enclave needs no
 entitlement for a device-local app id.
 
+## Privacy manifest
+
+`swift/App/Resources/PrivacyInfo.xcprivacy` must declare every required-reason
+API the app uses (UserDefaults, file timestamps). A missing declaration gets the
+upload auto-rejected with ITMS-91053, so re-check it whenever the app touches a
+new system API.
+
 ## App Privacy (nutrition label)
 
-Declare **Data Not Collected**. Tessera keeps secrets on-device and, when sync is
-enabled, in the user's own iCloud private database (end-to-end encrypted) which
-Apple's definition does not count as "collected." This stays honest only as long
-as there is no analytics/crash SDK and no Tessera-operated server.
+Declare **Data Not Collected**. Tessera keeps secrets on-device only. That stays
+honest as long as there is no analytics/crash SDK and no Tessera-operated
+server.
 
 ## Review notes / common rejections to avoid
 
 - **Trademarks (5.2):** do not imply official affiliation with Google, Microsoft,
   or Steam. Describe Tessera as "works with any TOTP/2FA service." Don't
   keyword-stuff brand names in the App Store listing.
-- **Permissions (5.1.1):** request only what you use. If sync isn't in v1, drop
-  the network entitlement.
+- **Permissions (5.1.1):** request only what you use.
 - **Completeness (2.1):** no placeholder UI; provide a demo passphrase/flow if a
   reviewer needs to see a populated vault.
 
-## Suggested listing copy
+## Live listing copy
+
+Transcript of what is on the store. Keep it in sync with App Store Connect
+rather than editing it here for style.
 
 > Tessera is a fast, private two-factor authenticator. Generate TOTP, HOTP, and
 > Steam Guard codes, import from other apps or Google Authenticator, and keep
-> everything in an encrypted vault. Unlock with Touch ID, reach your codes from
-> the menu bar, and — uniquely — manage everything from a real command-line tool.
-> Open source. No accounts, no tracking.
+> everything in an encrypted vault. Unlock with Touch ID, and manage everything
+> from a real command-line tool. Open source. No accounts, no tracking.
 
-Keywords: authenticator, 2FA, TOTP, one-time password, OTP, two-factor, menu bar.
-
-## What is automated vs manual
-
-- Automated (in repo / CI): build config, entitlements, Info.plist, signing
-  settings scaffold, metadata text, and `xcodegen` project generation.
-- Manual (YOU): Apple enrollment, certificates/profiles, App Store Connect
-  record, screenshots/icon, privacy questionnaire answers, pricing, and the
-  final Submit + review responses.
+Keywords: authenticator, 2FA, TOTP, one-time password, OTP, two-factor, CLI.

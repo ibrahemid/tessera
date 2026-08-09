@@ -22,8 +22,8 @@ Tessera keeps your 2FA codes in an encrypted vault on your Mac, reachable from a
 
 - TOTP (RFC 6238), HOTP (RFC 4226), Steam Guard
 - Import: `otpauth://`, Google Authenticator export (`otpauth-migration://`), QR images (CLI) / on-screen QR (app)
-- Encrypted vault: random DEK, XChaCha20-Poly1305 payload, argon2id passphrase wrap, optional Touch ID (Secure Enclave) wrap
-- Search, folders, tags, pinning
+- Encrypted vault: random DEK, XChaCha20-Poly1305 payload, unlocked by an argon2id passphrase wrap, a Touch ID (Secure Enclave) wrap, or both
+- Search, folders, tags, pinning (app)
 - No account, no server, no analytics, no network
 
 ## The app
@@ -33,7 +33,7 @@ Tessera keeps your 2FA codes in an encrypted vault on your Mac, reachable from a
   <img src="docs/appstore-assets/01-vault-dark.png" alt="Tessera app showing accounts with live codes and countdown rings" width="100%">
 </picture>
 
-A native SwiftUI app: live codes with countdown rings, one-click copy, on-screen QR scanning, Touch ID unlock. It opens a CLI-created vault in place (asks for its passphrase once, then unlocks via the Secure Enclave; the CLI keeps working on the same file). App-created vaults are Secure-Enclave-bound; move them to the CLI with the app's encrypted export.
+A native SwiftUI app: live codes with countdown rings, one-click copy, on-screen QR scanning, Touch ID unlock. It opens a CLI-created vault in place (asks for its passphrase once, then unlocks via the Secure Enclave; the CLI keeps working on the same file). App-created vaults are Secure-Enclave-bound: set a recovery passphrase in Settings to add a passphrase wrap (it survives a fingerprint change and lets the CLI open the same vault), or move accounts across with the app's encrypted export.
 
 ## CLI quick start
 
@@ -56,16 +56,18 @@ tess export --uri acme               # otpauth URI (cleartext secret)
 tess completion zsh > ...            # shell completions (bash/zsh/fish)
 ```
 
+Without a Go toolchain, download `tess_<version>_darwin_arm64.tar.gz` (or your os/arch) from [Releases](https://github.com/ibrahemid/tessera/releases) and put the `tess` binary on your `PATH`.
+
 Colored output auto-disables when piped or when `NO_COLOR` is set.
 
-Vault path: `$TESSERA_VAULT` or `~/.local/share/tessera/vault.json`. For scripting, set `TESSERA_PASSPHRASE` to avoid the prompt.
+Vault path: `$TESSERA_VAULT` or `~/.local/share/tessera/vault.json`. For scripting, set `TESSERA_PASSPHRASE` to avoid the prompt (`tess vault passwd` also reads `TESSERA_NEW_PASSPHRASE`).
 
 On macOS, `tess vault remember` opts into storing the passphrase in the login keychain (`tess vault forget` removes it) so `tess` stops prompting; the entry is protected by the login keychain at the same trust level as an ssh key on disk.
 
 ## Security model
 
 - Secrets are stored as raw bytes inside an encrypted vault; base32 only appears at otpauth boundaries.
-- Vault: a random 256-bit DEK encrypts the account payload (XChaCha20-Poly1305, 24-byte nonces). The DEK is wrapped per unlock method (argon2id-derived passphrase key on every platform; a biometric-gated Secure Enclave key on the Mac). Adding/removing an unlock method re-wraps the DEK without re-encrypting the payload.
+- Vault: a random 256-bit DEK encrypts the account payload (XChaCha20-Poly1305, 24-byte nonces). The DEK is wrapped per unlock method: an argon2id-derived passphrase key, a biometric-gated Secure Enclave key, or both. Adding/removing an unlock method re-wraps the DEK without re-encrypting the payload.
 - Two independent implementations (Go, Swift) share one documented format and a byte-exact interop vector suite, with cross-decrypt and negative (tamper / wrong-passphrase / base64url) tests.
 - No analytics, no servers. See [SECURITY.md](SECURITY.md) for reporting.
 
