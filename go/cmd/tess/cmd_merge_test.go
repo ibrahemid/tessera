@@ -51,6 +51,7 @@ func TestMergeUnionsNewAccounts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
+	defer s.close()
 	if len(s.accounts) != 2 {
 		t.Fatalf("want 2 accounts after merge, got %d", len(s.accounts))
 	}
@@ -79,6 +80,7 @@ func TestMergeNewestWinsOnIDCollision(t *testing.T) {
 	runMerge(t, src)
 
 	s, _ := openSession()
+	defer s.close()
 	if len(s.accounts) != 1 || s.accounts[0].Issuer != "NewName" {
 		t.Fatalf("newest should win: got %+v", s.accounts)
 	}
@@ -97,8 +99,42 @@ func TestMergeSkipsContentDuplicateUnderDifferentID(t *testing.T) {
 	runMerge(t, src)
 
 	s, _ := openSession()
+	defer s.close()
 	if len(s.accounts) != 1 {
 		t.Fatalf("content duplicate should be skipped, got %d accounts", len(s.accounts))
+	}
+}
+
+// TestMergeKeepsLocalHandleOnUpdate pins that a newer copy from the source
+// vault updates the account's fields without renaming it: the handle is the
+// string the user types here, and the source is a different vault's namespace.
+func TestMergeKeepsLocalHandleOnUpdate(t *testing.T) {
+	target := withVault(t)
+	local := totp("a", "ACME", "x", 1)
+	local.Handle = "mine"
+	local.UpdatedAt = 100
+	sealAt(t, target, "testpass123", []account.Account{local})
+
+	incoming := totp("a", "ACME", "x", 1)
+	incoming.Issuer = "NewName"
+	incoming.Handle = "theirs"
+	incoming.UpdatedAt = 200
+	src := filepath.Join(t.TempDir(), "src.json")
+	sealAt(t, src, "testpass123", []account.Account{incoming})
+
+	runMerge(t, src)
+
+	s, _ := openSession()
+	defer s.close()
+	if len(s.accounts) != 1 {
+		t.Fatalf("want 1 account, got %d", len(s.accounts))
+	}
+	got := s.accounts[0]
+	if got.Issuer != "NewName" {
+		t.Errorf("newer copy should win on content: issuer=%q", got.Issuer)
+	}
+	if got.Handle != "mine" {
+		t.Errorf("local handle was clobbered: got %q, want %q", got.Handle, "mine")
 	}
 }
 
@@ -116,6 +152,7 @@ func TestMergeClearsCollidingHandles(t *testing.T) {
 	runMerge(t, src)
 
 	s, _ := openSession()
+	defer s.close()
 	if err := account.CheckHandleUniqueness(s.accounts); err != nil {
 		t.Fatalf("handles not unique after merge: %v", err)
 	}

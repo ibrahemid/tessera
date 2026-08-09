@@ -50,7 +50,9 @@ Duplicate accounts (same type, issuer, account and secret) are skipped.`,
 			if err != nil {
 				return err
 			}
-			added, skipped := mergeAccounts(s, batch.accounts)
+			defer s.close()
+			added, skipped, failed := mergeAccounts(s, batch.accounts)
+			batch.problems = append(batch.problems, failed...)
 			if added > 0 {
 				if err := s.save(); err != nil {
 					return err
@@ -196,8 +198,10 @@ func printProblems(cmd *cobra.Command, problems []importProblem) {
 
 // mergeAccounts stamps and appends imported accounts to the session, skipping
 // duplicates (same type/issuer/account/secret) already present or within the
-// batch. Returns counts of added and skipped.
-func mergeAccounts(s *session, imported []account.Account) (added, skipped int) {
+// batch. An account that fails validation is a failure, not a duplicate: it is
+// returned as a problem with the reason so the summary does not claim the user
+// already had it.
+func mergeAccounts(s *session, imported []account.Account) (added, skipped int, failed []importProblem) {
 	seen := map[string]bool{}
 	for _, a := range s.accounts {
 		seen[dedupeKey(a)] = true
@@ -209,18 +213,27 @@ func mergeAccounts(s *session, imported []account.Account) (added, skipped int) 
 			skipped++
 			continue
 		}
-		seen[key] = true
 		a.ID = newID()
 		a.CreatedAt = ts
 		a.UpdatedAt = ts
 		if err := a.Validate(); err != nil {
-			skipped++
+			failed = append(failed, importProblem{importedLabel(a), err.Error()})
 			continue
 		}
+		seen[key] = true
 		s.accounts = append(s.accounts, a)
 		added++
 	}
-	return added, skipped
+	return added, skipped, failed
+}
+
+// importedLabel names an imported account in a problem line without exposing
+// its secret. An account with neither issuer nor account gets a placeholder.
+func importedLabel(a account.Account) string {
+	if l := label(a); strings.TrimSpace(l) != "" {
+		return l
+	}
+	return "unnamed account"
 }
 
 func dedupeKey(a account.Account) string {

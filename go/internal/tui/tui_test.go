@@ -1,9 +1,12 @@
 package tui
 
 import (
+	"errors"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ibrahemid/tessera/go/internal/account"
 )
 
@@ -54,9 +57,14 @@ func TestViewRendersAccounts(t *testing.T) {
 }
 
 func TestAdvancePersistsAndIncrements(t *testing.T) {
-	var saved []account.Account
-	m := New(sample(), func(a []account.Account) error { saved = a; return nil })
-	m.advance("3")
+	var gotID string
+	var gotCounter int64
+	m := New(sample(), func(id string, counter int64) error {
+		gotID, gotCounter = id, counter
+		return nil
+	})
+	m.copy = func(string) error { return nil }
+	m.advanceHOTP("3")
 	var bank account.Account
 	for _, a := range m.accounts {
 		if a.ID == "3" {
@@ -66,7 +74,78 @@ func TestAdvancePersistsAndIncrements(t *testing.T) {
 	if bank.Counter != 1 {
 		t.Errorf("counter = %d, want 1", bank.Counter)
 	}
-	if len(saved) != 3 {
-		t.Error("save callback not invoked")
+	// The persist callback names the account and the new value, so the caller
+	// can re-read the vault and apply it there instead of re-sealing a stale list.
+	if gotID != "3" || gotCounter != 1 {
+		t.Errorf("advance callback got (%q, %d), want (\"3\", 1)", gotID, gotCounter)
+	}
+}
+
+func TestAdvanceFailureIsReportedAndNotApplied(t *testing.T) {
+	m := New(sample(), func(string, int64) error { return errors.New("vault is in use") })
+	m.copy = func(string) error { return nil }
+	m.advanceHOTP("3")
+	for _, a := range m.accounts {
+		if a.ID == "3" && a.Counter != 0 {
+			t.Errorf("counter advanced despite a failed save: %d", a.Counter)
+		}
+	}
+	if !m.statusFail || !strings.Contains(m.status, "vault is in use") {
+		t.Errorf("expected a failure status, got %q (fail=%v)", m.status, m.statusFail)
+	}
+	if strings.Contains(m.View(), "✓") {
+		t.Error("View must not show a success mark after a failed save")
+	}
+}
+
+// TestCopyFailureIsSurfaced pins that a clipboard error is reported instead of
+// the view claiming a copy that never happened.
+func TestCopyFailureIsSurfaced(t *testing.T) {
+	m := New(sample(), nil)
+	m.copy = func(string) error { return errors.New("no clipboard") }
+	m2, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	got := m2.(Model)
+	if !got.statusFail || !strings.Contains(got.status, "no clipboard") {
+		t.Fatalf("status = %q (fail=%v), want a clipboard failure", got.status, got.statusFail)
+	}
+	if strings.Contains(got.View(), "✓") {
+		t.Error("View must not show a success mark after a failed copy")
+	}
+}
+
+func TestCopySuccessReportsCopied(t *testing.T) {
+	var copied string
+	m := New(sample(), nil)
+	m.copy = func(s string) error { copied = s; return nil }
+	m2, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	got := m2.(Model)
+	if got.statusFail || !strings.HasPrefix(got.status, "Copied ") {
+		t.Fatalf("status = %q (fail=%v), want a Copied status", got.status, got.statusFail)
+	}
+	if len(copied) != 6 {
+		t.Errorf("copied %q, want a 6-digit code", copied)
+	}
+}
+
+// TestBackspaceDeletesOneRune pins that the search filter is edited by
+// character, not by byte: slicing bytes cuts a multibyte rune in half.
+func TestBackspaceDeletesOneRune(t *testing.T) {
+	m := New(sample(), nil)
+	m.searching = true
+	for _, s := range []string{"é", "漢", "🔐"} {
+		m.query = "ab" + s
+		next, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyBackspace})
+		got := next.(Model)
+		if got.query != "ab" {
+			t.Errorf("backspace on %q left %q, want \"ab\"", "ab"+s, got.query)
+		}
+		if !utf8.ValidString(got.query) {
+			t.Errorf("backspace produced invalid UTF-8: %q", got.query)
+		}
+	}
+	m.query = ""
+	next, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyBackspace})
+	if q := next.(Model).query; q != "" {
+		t.Errorf("backspace on an empty query gave %q", q)
 	}
 }

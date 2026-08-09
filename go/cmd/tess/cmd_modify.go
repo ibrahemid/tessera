@@ -14,6 +14,7 @@ func newRemoveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer s.close()
 			idx, err := s.single(cmd, args[0])
 			if err != nil {
 				return err
@@ -40,6 +41,7 @@ func newRenameCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer s.close()
 			idx, err := s.single(cmd, args[0])
 			if err != nil {
 				return err
@@ -79,6 +81,7 @@ func newAliasCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer s.close()
 			idx, err := s.single(cmd, args[0])
 			if err != nil {
 				return err
@@ -105,6 +108,7 @@ func newMoveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer s.close()
 			idx, err := s.single(cmd, args[0])
 			if err != nil {
 				return err
@@ -131,6 +135,7 @@ func newTagCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer s.close()
 			idx, err := s.single(cmd, args[0])
 			if err != nil {
 				return err

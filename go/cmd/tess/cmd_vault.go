@@ -195,34 +195,39 @@ func newVaultPasswdCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "passwd",
 		Short: "Change the vault passphrase",
+		Long: `Change the vault passphrase. The current passphrase is read from
+$TESSERA_PASSPHRASE or prompted for; the replacement is read from
+$TESSERA_NEW_PASSPHRASE or entered twice on a terminal.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path, err := store.Resolve(vaultPath)
 			if err != nil {
 				return err
 			}
-			env, err := store.Load(path)
-			if err != nil {
-				return err
-			}
-			old, err := readPassphrase("Current passphrase: ")
-			if err != nil {
-				return err
-			}
-			if _, err := env.Open(old); err != nil {
-				return err
-			}
-			newPass, err := requireNewVaultPassphrase()
-			if err != nil {
-				return err
-			}
-			if err := env.ChangePassphrase(old, newPass); err != nil {
-				return err
-			}
-			if err := store.Save(path, env); err != nil {
-				return err
-			}
-			out(cmd, "Passphrase changed")
-			return nil
+			return store.WithLock(path, func() error {
+				env, err := store.Load(path)
+				if err != nil {
+					return err
+				}
+				old, err := readPassphrase("Current passphrase: ")
+				if err != nil {
+					return err
+				}
+				if _, err := env.Open(old); err != nil {
+					return err
+				}
+				newPass, err := requireChangedVaultPassphrase()
+				if err != nil {
+					return err
+				}
+				if err := env.ChangePassphrase(old, newPass); err != nil {
+					return err
+				}
+				if err := store.Save(path, env); err != nil {
+					return err
+				}
+				out(cmd, "Passphrase changed")
+				return nil
+			})
 		},
 	}
 }

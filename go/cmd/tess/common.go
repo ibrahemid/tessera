@@ -19,12 +19,18 @@ import (
 	"golang.org/x/term"
 )
 
-// session bundles an opened vault for read/modify/save flows.
+// session bundles an opened vault for read/modify/save flows. It holds the
+// vault lock from the moment the envelope is read until close, so the whole
+// load -> mutate -> save cycle is serialized against other tess processes. dek
+// is the unwrapped Data Encryption Key, cached so a mutating command runs
+// argon2id once instead of once per write.
 type session struct {
 	path       string
 	env        *vault.Envelope
 	passphrase string
+	dek        []byte
 	accounts   []account.Account
+	lock       *store.Lock
 }
 
 // readPassphrase returns $TESSERA_PASSPHRASE if set, else prompts without echo.
@@ -110,54 +116,145 @@ func resolvePassphrase(p unlockProvider) (string, []account.Account, error) {
 	return entered, accts, nil
 }
 
-// openSession resolves the vault path, loads the envelope, and decrypts it,
-// resolving the passphrase from env, the login keychain, or an interactive prompt.
+// openSession resolves the vault path, takes the vault lock, loads the envelope
+// and decrypts it, resolving the passphrase from env, the login keychain, or an
+// interactive prompt. Every caller must close the returned session.
 func openSession() (*session, error) {
 	path, err := store.Resolve(vaultPath)
 	if err != nil {
 		return nil, err
 	}
+	lock, err := store.Acquire(path)
+	if err != nil {
+		return nil, err
+	}
+	s, err := loadSession(path)
+	if err != nil {
+		_ = lock.Release()
+		return nil, err
+	}
+	s.lock = lock
+	return s, nil
+}
+
+// loadSession reads and decrypts the vault at path. The caller owns the lock.
+func loadSession(path string) (*session, error) {
 	env, err := store.Load(path)
 	if err != nil {
 		return nil, err
 	}
 	isTTY := term.IsTerminal(int(os.Stdin.Fd()))
+	var dek []byte
 	pass, accts, err := resolvePassphrase(unlockProvider{
-		envPass:     os.Getenv("TESSERA_PASSPHRASE"),
-		lookup:      func() (string, bool, error) { return keychain.Lookup(path) },
-		store:       func(p string) error { return keychain.Store(path, p) },
-		prompt:      promptPassphrase,
-		confirm:     confirmYN,
-		tryOpen:     env.Open,
+		envPass: os.Getenv("TESSERA_PASSPHRASE"),
+		lookup:  func() (string, bool, error) { return keychain.Lookup(path) },
+		store:   func(p string) error { return keychain.Store(path, p) },
+		prompt:  promptPassphrase,
+		confirm: confirmYN,
+		tryOpen: func(p string) ([]account.Account, error) {
+			d, err := env.UnwrapDEK(p)
+			if err != nil {
+				return nil, err
+			}
+			a, err := env.OpenWithDEK(d)
+			if err != nil {
+				return nil, err
+			}
+			dek = d
+			return a, nil
+		},
 		canRemember: keychain.Supported() && isTTY,
 	})
 	if err != nil {
 		return nil, err
 	}
-	s := &session{path: path, env: env, passphrase: pass, accounts: accts}
+	s := &session{path: path, env: env, passphrase: pass, dek: dek, accounts: accts}
 	// Migration: accounts written before handles existed gain one deterministically
-	// at unlock. Persist the assignment once, atomically (wraps untouched). A
-	// read-only vault keeps the handles in memory only; the same algorithm
-	// reproduces them on the next writable unlock.
-	if account.AssignHandles(s.accounts) {
-		if err := env.UpdateAccounts(pass, s.accounts); err == nil {
+	// at unlock. An argon2 params.v upgrade performed during the unwrap rides the
+	// same write. Persist once, atomically (wraps otherwise untouched). A
+	// read-only vault keeps both in memory only; the next writable unlock redoes
+	// them from the same deterministic inputs.
+	if account.AssignHandles(s.accounts) || env.NeedsPersist() {
+		if err := env.UpdateAccountsWithDEK(dek, s.accounts); err == nil {
 			_ = store.Save(path, env)
 		}
 	}
 	return s, nil
 }
 
+// close releases the vault lock. Safe on a nil session and safe to call twice.
+func (s *session) close() {
+	if s == nil {
+		return
+	}
+	if err := s.lock.Release(); err != nil {
+		fmt.Fprintln(os.Stderr, "warning:", err)
+	}
+	s.lock = nil
+}
+
+// mutate performs a locked read-modify-write against the vault as it is on disk
+// right now. Long-running views (`tess watch`) release the lock while idle, so
+// their in-memory account list can be stale by the time the user advances an
+// HOTP counter; re-reading first keeps another process's edits from being
+// re-sealed away.
+func (s *session) mutate(fn func(*session) error) error {
+	lock, err := store.Acquire(s.path)
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
+
+	env, err := store.Load(s.path)
+	if err != nil {
+		return err
+	}
+	dek := s.dek
+	accts, err := env.OpenWithDEK(dek)
+	if err != nil {
+		// The vault was re-keyed while the view was idle: derive again.
+		dek, err = env.UnwrapDEK(s.passphrase)
+		if err != nil {
+			return err
+		}
+		accts, err = env.OpenWithDEK(dek)
+		if err != nil {
+			return err
+		}
+	}
+	account.AssignHandles(accts)
+	fresh := &session{path: s.path, env: env, passphrase: s.passphrase, dek: dek, accounts: accts}
+	if err := fn(fresh); err != nil {
+		return err
+	}
+	if err := fresh.save(); err != nil {
+		return err
+	}
+	s.env, s.dek, s.accounts = fresh.env, fresh.dek, fresh.accounts
+	return nil
+}
+
 // save assigns handles to any new accounts, then re-seals the (possibly mutated)
-// account list and persists the vault.
+// account list and persists the vault. The caller must hold the vault lock.
 func (s *session) save() error {
 	account.AssignHandles(s.accounts)
 	if err := account.CheckHandleUniqueness(s.accounts); err != nil {
 		return err
 	}
-	if err := s.env.UpdateAccounts(s.passphrase, s.accounts); err != nil {
+	if err := s.env.UpdateAccountsWithDEK(s.dek, s.accounts); err != nil {
 		return err
 	}
 	return store.Save(s.path, s.env)
+}
+
+// indexByID returns the position of the account with the given id, or -1.
+func indexByID(accts []account.Account, id string) int {
+	for i := range accts {
+		if accts[i].ID == id {
+			return i
+		}
+	}
+	return -1
 }
 
 // resolveMatches applies the spec account-resolution precedence and returns the
@@ -312,24 +409,52 @@ func newID() string {
 
 func now() time.Time { return time.Now() }
 
-// requireNewVaultPassphrase prompts twice and confirms a match.
+// minPassphraseLen is the floor for a passphrase the user chooses.
+const minPassphraseLen = 8
+
+// requireNewVaultPassphrase prompts twice and confirms a match. `vault init`
+// has no current passphrase, so $TESSERA_PASSPHRASE is the scripted source.
 func requireNewVaultPassphrase() (string, error) {
 	if p := os.Getenv("TESSERA_PASSPHRASE"); p != "" {
 		return p, nil
 	}
-	p1, err := readPassphrase("New vault passphrase: ")
+	return promptNewPassphrase()
+}
+
+// requireChangedVaultPassphrase sources the REPLACEMENT passphrase for `tess
+// vault passwd`. It never reads $TESSERA_PASSPHRASE: that variable holds the
+// current passphrase, and taking it here would turn the change into a silent
+// no-op that also skipped the confirmation and the length floor. Scripts set
+// $TESSERA_NEW_PASSPHRASE; otherwise a terminal is required.
+func requireChangedVaultPassphrase() (string, error) {
+	if p := os.Getenv("TESSERA_NEW_PASSPHRASE"); p != "" {
+		if len(p) < minPassphraseLen {
+			return "", fmt.Errorf("passphrase must be at least %d characters", minPassphraseLen)
+		}
+		return p, nil
+	}
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		return "", fmt.Errorf("set $TESSERA_NEW_PASSPHRASE or run on a terminal to change the passphrase")
+	}
+	return promptNewPassphrase()
+}
+
+// promptNewPassphrase reads a passphrase twice from the terminal and checks the
+// two entries match and clear the length floor.
+func promptNewPassphrase() (string, error) {
+	p1, err := promptPassphrase("New vault passphrase: ")
 	if err != nil {
 		return "", err
 	}
-	p2, err := readPassphrase("Confirm passphrase: ")
+	p2, err := promptPassphrase("Confirm passphrase: ")
 	if err != nil {
 		return "", err
 	}
 	if p1 != p2 {
 		return "", fmt.Errorf("passphrases do not match")
 	}
-	if len(p1) < 8 {
-		return "", fmt.Errorf("passphrase must be at least 8 characters")
+	if len(p1) < minPassphraseLen {
+		return "", fmt.Errorf("passphrase must be at least %d characters", minPassphraseLen)
 	}
 	return p1, nil
 }

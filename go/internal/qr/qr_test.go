@@ -68,6 +68,35 @@ func TestEncodePNGRoundTrip(t *testing.T) {
 	}
 }
 
+// TestEncodePNGTightensExistingFilePerms covers the case O_CREATE's mode does
+// not: writing over a file that already exists keeps that file's permissions,
+// so a pre-created world-readable path would leak the cleartext secret.
+func TestEncodePNGOverwriteTightensPerms(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "pre-existing.png")
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o666)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	if err := os.Chmod(path, 0o666); err != nil { // defeat umask
+		t.Fatal(err)
+	}
+	if err := EncodePNG(testURI, path, 512); err != nil {
+		t.Fatalf("EncodePNG: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Fatalf("QR PNG mode = %o, want 600 (cleartext secret)", perm)
+	}
+	got, err := DecodeFile(path)
+	if err != nil || got != testURI {
+		t.Fatalf("overwritten file did not round-trip: %q, %v", got, err)
+	}
+}
+
 func TestEncodePNGEmpty(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "empty.png")
 	if err := EncodePNG("", path, 512); err == nil {

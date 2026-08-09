@@ -44,6 +44,7 @@ func TestUnlockAssignsHandlesOnceAndPersists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
+	defer s.close()
 	got := map[string]string{}
 	for _, a := range s.accounts {
 		got[a.ID] = a.Handle
@@ -68,10 +69,13 @@ func TestUnlockAssignsHandlesOnceAndPersists(t *testing.T) {
 	}
 
 	// A second unlock must NOT rewrite the vault (handles already present).
+	s.close()
 	raw1, _ := os.ReadFile(path)
-	if _, err := openSession(); err != nil {
+	s2, err := openSession()
+	if err != nil {
 		t.Fatal(err)
 	}
+	s2.close()
 	raw2, _ := os.ReadFile(path)
 	if !bytes.Equal(raw1, raw2) {
 		t.Error("second unlock rewrote the vault; handles must be assigned exactly once")
@@ -87,6 +91,7 @@ func TestDuplicateIssuerGithub(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer s.close()
 	got := map[string]string{}
 	for _, a := range s.accounts {
 		got[a.ID] = a.Handle

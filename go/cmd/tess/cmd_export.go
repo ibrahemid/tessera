@@ -44,6 +44,7 @@ func newExportCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer s.close()
 			accts := s.accounts
 			if len(args) == 1 {
 				idx, err := s.single(cmd, args[0])

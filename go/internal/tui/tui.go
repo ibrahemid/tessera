@@ -16,33 +16,38 @@ import (
 	"github.com/ibrahemid/tessera/go/internal/ui"
 )
 
-// SaveFunc persists mutated accounts (e.g. an advanced HOTP counter).
-type SaveFunc func([]account.Account) error
+// AdvanceFunc persists a new HOTP counter for one account. It names the account
+// and the value rather than handing back the view's account list, because the
+// list can be stale: the vault is re-read under lock before the write.
+type AdvanceFunc func(id string, counter int64) error
 
 type tickMsg time.Time
 
 // Model is the bubbletea model for the watch view.
 type Model struct {
 	accounts    []account.Account
-	save        SaveFunc
+	advance     AdvanceFunc
+	copy        func(string) error
 	cursor      int
 	query       string
 	searching   bool
 	now         time.Time
 	status      string
+	statusFail  bool
 	statusUntil time.Time
 	width       int
 	height      int
 }
 
 // New builds a watch model over the given accounts.
-func New(accounts []account.Account, save SaveFunc) Model {
-	return Model{accounts: accounts, save: save, now: time.Now(), width: 72}
+func New(accounts []account.Account, advance AdvanceFunc) Model {
+	return Model{accounts: accounts, advance: advance, copy: clipboard.WriteAll,
+		now: time.Now(), width: 72}
 }
 
 // Run starts the TUI program.
-func Run(accounts []account.Account, save SaveFunc) error {
-	_, err := tea.NewProgram(New(accounts, save), tea.WithAltScreen()).Run()
+func Run(accounts []account.Account, advance AdvanceFunc) error {
+	_, err := tea.NewProgram(New(accounts, advance), tea.WithAltScreen()).Run()
 	return err
 }
 
@@ -71,7 +76,31 @@ func (m Model) filtered() []account.Account {
 
 func (m *Model) setStatus(s string) {
 	m.status = s
+	m.statusFail = false
 	m.statusUntil = time.Now().Add(2 * time.Second)
+}
+
+// setFailure reports an action that did not happen, so the view never claims a
+// copy or a save that failed.
+func (m *Model) setFailure(s string) {
+	m.status = s
+	m.statusFail = true
+	m.statusUntil = time.Now().Add(2 * time.Second)
+}
+
+// copyCode places a code on the clipboard, reporting the outcome in the status
+// line. It returns false when the clipboard rejected the write.
+func (m *Model) copyCode(c string, what string) bool {
+	write := m.copy
+	if write == nil {
+		write = clipboard.WriteAll
+	}
+	if err := write(c); err != nil {
+		m.setFailure("Copy failed: " + err.Error())
+		return false
+	}
+	m.setStatus(what)
+	return true
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -81,7 +110,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		m.now = time.Time(msg)
 		if m.status != "" && time.Now().After(m.statusUntil) {
-			m.status = ""
+			m.status, m.statusFail = "", false
 		}
 		return m, tick()
 	case tea.KeyMsg:
@@ -100,8 +129,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case tea.KeyEnter:
 			m.searching = false
 		case tea.KeyBackspace:
-			if len(m.query) > 0 {
-				m.query = m.query[:len(m.query)-1]
+			// Delete one character, not one byte: a byte slice corrupts any
+			// multibyte rune the user typed into the filter.
+			if r := []rune(m.query); len(r) > 0 {
+				m.query = string(r[:len(r)-1])
 			}
 		case tea.KeyRunes, tea.KeySpace:
 			m.query += string(msg.Runes)
@@ -130,36 +161,44 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cursor = max(len(rows)-1, 0)
 	case "enter", "c":
 		if a, ok := at(rows, m.cursor); ok {
-			if c, err := code.For(a, m.now); err == nil {
-				_ = clipboard.WriteAll(c)
-				m.setStatus("Copied " + labelOf(a))
+			c, err := code.For(a, m.now)
+			if err != nil {
+				m.setFailure("No code: " + err.Error())
+				break
 			}
+			m.copyCode(c, "Copied "+labelOf(a))
 		}
 	case "r":
 		if a, ok := at(rows, m.cursor); ok && a.Type == account.HOTP {
-			m.advance(a.ID)
+			m.advanceHOTP(a.ID)
 		}
 	}
 	return m, nil
 }
 
-func (m *Model) advance(id string) {
+// advanceHOTP bumps the counter for one account and persists it through the
+// AdvanceFunc, which re-reads the vault under lock before writing.
+func (m *Model) advanceHOTP(id string) {
 	for i := range m.accounts {
-		if m.accounts[i].ID == id {
-			m.accounts[i].Counter++
-			m.accounts[i].UpdatedAt = time.Now().Unix()
-			if m.save != nil {
-				if err := m.save(m.accounts); err != nil {
-					m.setStatus("Save failed: " + err.Error())
-					return
-				}
+		if m.accounts[i].ID != id {
+			continue
+		}
+		next := m.accounts[i].Counter + 1
+		if m.advance != nil {
+			if err := m.advance(id, next); err != nil {
+				m.setFailure("Save failed: " + err.Error())
+				return
 			}
-			if c, err := code.For(m.accounts[i], m.now); err == nil {
-				_ = clipboard.WriteAll(c)
-				m.setStatus("Advanced + copied " + labelOf(m.accounts[i]))
-			}
+		}
+		m.accounts[i].Counter = next
+		m.accounts[i].UpdatedAt = time.Now().Unix()
+		c, err := code.For(m.accounts[i], m.now)
+		if err != nil {
+			m.setFailure("Advanced, no code: " + err.Error())
 			return
 		}
+		m.copyCode(c, "Advanced + copied "+labelOf(m.accounts[i]))
+		return
 	}
 }
 
@@ -195,9 +234,12 @@ func (m Model) View() string {
 	}
 
 	b.WriteString("\n")
-	if m.status != "" {
+	switch {
+	case m.status != "" && m.statusFail:
+		b.WriteString(ui.WarnStyle.Render("✗ "+m.status) + "\n")
+	case m.status != "":
 		b.WriteString(ui.AccentStyle.Render("✓ "+m.status) + "\n")
-	} else {
+	default:
 		b.WriteString("\n")
 	}
 	help := "↑/↓ move · enter/c copy · r advance HOTP · / search · q quit"

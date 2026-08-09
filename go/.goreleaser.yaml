@@ -1,7 +1,11 @@
 # Release config for the `tess` CLI. The Go module lives here (./go); run
-# goreleaser from this directory. Releases are cut from `vX.Y.Z` git tags — the
-# CLI is the only artifact tagged in this repo (the macOS app ships via the App
-# Store), so a bare semver tag unambiguously means a CLI release.
+# goreleaser from this directory. Releases are cut from the bare `vX.Y.Z` tag;
+# the CLI is the only artifact tagged in this repo (the macOS app ships via the
+# App Store). The same commit also needs a `go/vX.Y.Z` tag: the module path is
+# github.com/ibrahemid/tessera/go, so that is the tag `go install ...@latest`
+# resolves. Push `go/vX.Y.Z` after the goreleaser run, or pin the run with
+# GORELEASER_CURRENT_TAG=vX.Y.Z, so the `go/` prefix cannot end up in .Version
+# and in the archive names.
 version: 2
 project_name: tess
 
@@ -26,13 +30,11 @@ archives:
 checksum:
   name_template: checksums.txt
 
+# Release notes are hand-written and passed at release time with
+# `goreleaser release --release-notes <file>`, so commit subjects never end up
+# in the public release body.
 changelog:
-  sort: asc
-  filters:
-    exclude:
-      - "^docs:"
-      - "^chore:"
-      - "^test:"
+  disable: true
 
 release:
   github:

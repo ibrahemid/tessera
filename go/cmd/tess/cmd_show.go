@@ -29,6 +29,7 @@ func newShowCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer s.close()
 			idx, err := s.single(cmd, args[0])
 			if err != nil {
 				return err

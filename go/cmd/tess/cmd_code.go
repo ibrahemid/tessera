@@ -11,6 +11,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// copyToClipboard is the clipboard writer, replaceable in tests.
+var copyToClipboard = clipboard.WriteAll
+
 func newCodeCmd() *cobra.Command {
 	var next, doCopy, asJSON bool
 	cmd := &cobra.Command{
@@ -25,6 +28,7 @@ func newCodeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer s.close()
 			idxs, err := s.resolveMatches(args[0])
 			if err != nil {
 				return err
@@ -55,11 +59,17 @@ func newCodeCmd() *cobra.Command {
 			} else {
 				out(cmd, "%s", c)
 			}
-			if doCopy {
-				_ = clipboard.WriteAll(c)
-			}
+			// Persist the advanced counter before reporting the copy: a failed
+			// clipboard must not roll back a counter the user already saw.
 			if a.Type == account.HOTP && next {
-				return s.save()
+				if err := s.save(); err != nil {
+					return err
+				}
+			}
+			if doCopy {
+				if err := copyToClipboard(c); err != nil {
+					return fmt.Errorf("copy to clipboard: %w", err)
+				}
 			}
 			return nil
 		},
@@ -75,6 +85,7 @@ func runCodeAll(cmd *cobra.Command, asJSON bool) error {
 	if err != nil {
 		return err
 	}
+	defer s.close()
 	accts := filterAccounts(s.accounts, "", "")
 	if asJSON {
 		type row struct {

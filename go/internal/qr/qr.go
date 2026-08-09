@@ -99,6 +99,11 @@ func EncodePNG(text, path string, size int) error {
 		return fmt.Errorf("qr: create %q: %w", path, err)
 	}
 	defer f.Close()
+	// The 0600 above only applies when the file is created; an existing file
+	// keeps its own permissions, which could be world-readable.
+	if err := f.Chmod(0o600); err != nil {
+		return fmt.Errorf("qr: restrict %q: %w", path, err)
+	}
 	if err := png.Encode(f, bits); err != nil {
 		return fmt.Errorf("qr: write %q: %w", path, err)
 	}

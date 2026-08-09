@@ -147,6 +147,75 @@ func TestVaultRememberForget(t *testing.T) {
 	_ = path
 }
 
+// runPasswd executes `vault passwd` and returns its error.
+func runPasswd(t *testing.T) error {
+	t.Helper()
+	c := newVaultPasswdCmd()
+	c.SetOut(io.Discard)
+	return c.Execute()
+}
+
+// TestVaultPasswdRefusesToReuseTheCurrentPassphrase is the regression test for
+// the silent no-op: with only $TESSERA_PASSPHRASE set, the replacement used to
+// be sourced from the same variable, so the command reported success while
+// changing nothing and skipping both the confirmation and the length floor.
+func TestVaultPasswdRefusesToReuseTheCurrentPassphrase(t *testing.T) {
+	path := withVault(t) // TESSERA_PASSPHRASE=testpass123
+	initVault(t)
+
+	err := runPasswd(t)
+	if err == nil {
+		t.Fatal("passwd with no new-passphrase source must fail, not silently no-op")
+	}
+	if !strings.Contains(err.Error(), "TESSERA_NEW_PASSPHRASE") {
+		t.Errorf("error should name the scripted source, got %v", err)
+	}
+	env, lerr := store.Load(path)
+	if lerr != nil {
+		t.Fatal(lerr)
+	}
+	if _, oerr := env.Open("testpass123"); oerr != nil {
+		t.Errorf("the original passphrase must still open the vault: %v", oerr)
+	}
+}
+
+func TestVaultPasswdUsesNewPassphraseEnv(t *testing.T) {
+	path := withVault(t)
+	initVault(t)
+	t.Setenv("TESSERA_NEW_PASSPHRASE", "brand-new-pass")
+
+	if err := runPasswd(t); err != nil {
+		t.Fatalf("passwd: %v", err)
+	}
+	env, err := store.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := env.Open("testpass123"); err == nil {
+		t.Error("the old passphrase must stop working")
+	}
+	if _, err := env.Open("brand-new-pass"); err != nil {
+		t.Errorf("the new passphrase must open the vault: %v", err)
+	}
+}
+
+func TestVaultPasswdEnforcesLengthFloor(t *testing.T) {
+	path := withVault(t)
+	initVault(t)
+	t.Setenv("TESSERA_NEW_PASSPHRASE", "short")
+
+	if err := runPasswd(t); err == nil {
+		t.Fatal("a 5-character replacement must be rejected")
+	}
+	env, err := store.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := env.Open("testpass123"); err != nil {
+		t.Errorf("a rejected change must leave the vault alone: %v", err)
+	}
+}
+
 func TestVaultResetMissingVaultErrors(t *testing.T) {
 	withVault(t)
 	resetCmd := newVaultResetCmd()

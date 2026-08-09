@@ -21,6 +21,7 @@ func newListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer s.close()
 			accts := filterAccounts(s.accounts, folder, tag)
 			if asJSON {
 				type row struct {

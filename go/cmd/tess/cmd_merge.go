@@ -32,6 +32,7 @@ the source's passphrase (or set $TESSERA_MERGE_PASSPHRASE).`,
 			if err != nil {
 				return err
 			}
+			defer s.close()
 			src, err := openMergeSource(args[0], s.passphrase)
 			if err != nil {
 				return err
@@ -83,7 +84,14 @@ func mergeVault(s *session, src []account.Account) (added, updated, skipped int)
 	for _, a := range src {
 		if idx, ok := byID[a.ID]; ok {
 			if a.UpdatedAt > s.accounts[idx].UpdatedAt {
+				// The handle is how the user refers to this account in this
+				// vault; the source's copy is a different vault's namespace, so
+				// the local one is kept rather than silently renamed.
+				local := s.accounts[idx].Handle
 				s.accounts[idx] = a
+				if local != "" {
+					s.accounts[idx].Handle = local
+				}
 				updated++
 			} else {
 				skipped++
