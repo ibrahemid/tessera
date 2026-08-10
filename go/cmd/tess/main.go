@@ -5,6 +5,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"runtime/debug"
 
 	"github.com/spf13/cobra"
 )
@@ -14,6 +15,19 @@ var vaultPath string
 
 // version is the CLI version, overridden at release time via -ldflags.
 var version = "dev"
+
+// resolveVersion returns the release version. goreleaser builds stamp it via
+// -ldflags; `go install module@version` builds don't, so fall back to the
+// module version Go embeds in the binary ("(devel)" for in-tree builds).
+func resolveVersion() string {
+	if version != "dev" {
+		return version
+	}
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	return version
+}
 
 func main() {
 	root := newRootCmd()
@@ -27,7 +41,7 @@ func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "tess",
 		Short:         "Tessera: a CLI-first TOTP/2FA authenticator",
-		Version:       version,
+		Version:       resolveVersion(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		// With no subcommand, print current codes for all accounts.
