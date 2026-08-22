@@ -1,0 +1,12 @@
+[33m~[39m [32m$[39m tess code github -c
+676172
+[33m~[39m [32m$[39m tess code github --json
+{
+  "account": "ibrahem",
+  "code": "676172",
+  "issuer": "GitHub",
+  "type": "totp"
+}
+[33m~[39m [32m$[39m
+
+

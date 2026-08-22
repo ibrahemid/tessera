@@ -1,0 +1,11 @@
+[33m~[39m [32m$[39m tess import --file google-authenticator-export.txt
+Imported 1
+[33m~[39m [32m$[39m tess list
+  [1m[38;2;142;91;166maw[0m  [1m[38;2;242;242;245mAWS (root)                        [0m  [38;2;105;110;121mtotp[39m
+  [1m[38;2;142;91;166mcl[0m  [1m[38;2;242;242;245mCloudflare (ibrahem)              [0m  [38;2;105;110;121mtotp[39m
+  [1m[38;2;42;140;126mex[0m  [1m[38;2;242;242;245mExample (alice@google.com)        [0m  [38;2;105;110;121mtotp[39m
+  [1m[38;2;176;80;110mgi[0m  [1m[38;2;242;242;245mGitHub (ibrahem)                  [0m  [38;2;105;110;121mtotp[39m
+  [1m[38;2;79;91;176mst[0m  [1m[38;2;242;242;245mSteam (ibrahem)                   [0m  [38;2;105;110;121msteam[39m
+[33m~[39m [32m$[39m
+
+
