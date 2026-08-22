@@ -171,10 +171,9 @@ No app changes. This version updates the description and screenshots so they mat
 `git log v1.0.2..HEAD` is a single commit and it touches `go/` only, so nothing
 user-facing changed in the app since the shipped 1.0.2 build. 1.0.3 is a listing
 update, but an App Store Connect version record will not ship without a build
-attached, so it still needs one: bump `swift/project.yml` to
-`MARKETING_VERSION 1.0.3` / `CURRENT_PROJECT_VERSION 8`, re-archive the same
-source, and upload it. That bump is not in this branch; `project.yml` reads
-`1.0.2` / `7` today.
+attached, so it still needs one: `swift/project.yml` reads
+`MARKETING_VERSION 1.0.3` / `CURRENT_PROJECT_VERSION 8`; re-archive the same
+source and upload it.
 
 **Review notes (paste):**
 
