@@ -10,6 +10,26 @@ go test -race ./...
 go build -o tess ./cmd/tess      # or: go install ./cmd/tess
 ```
 
+## Release assets and the installers
+
+`goreleaser` builds `tess_<version>_<os>_<arch>.tar.gz` for darwin and linux, arm64 and amd64, plus `checksums.txt` (sha256), and attaches them to the GitHub release. Each tarball holds a single `tess` binary.
+
+Download path used by the shipped installers:
+
+```sh
+https://github.com/ibrahemid/tessera/releases/download/v<version>/tess_<version>_<os>_<arch>.tar.gz
+https://github.com/ibrahemid/tessera/releases/download/v<version>/checksums.txt
+```
+
+`install.sh` (repo root) resolves the latest tag from the GitHub API, downloads the matching tarball, verifies its sha256 against `checksums.txt`, and installs to `/usr/local/bin` or `~/.local/bin`. Overrides: `TESS_VERSION`, `TESS_INSTALL_DIR`, `TESS_BASE_URL`.
+
+```sh
+shellcheck install.sh test/install_test.sh
+./test/install_test.sh            # runs install.sh against a locally built tarball
+```
+
+The Homebrew formula lives in the `ibrahemid/homebrew-tap` repo (`Formula/tess.rb`): a binary formula pinned to the release tarballs and their sha256, with completions generated from the binary. A new version needs the `version`, both darwin sha256 values, and both linux sha256 values updated from `checksums.txt`.
+
 ## Swift core — local verification without Xcode
 
 Full Xcode is NOT required to verify the Swift core against the shared vectors.

@@ -38,7 +38,24 @@ A native SwiftUI app: live codes with countdown rings, one-click copy, on-screen
 ## CLI quick start
 
 ```sh
+brew install ibrahemid/tap/tess
+```
+
+Or without Homebrew (downloads the release for your os/arch and verifies its sha256):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ibrahemid/tessera/main/install.sh | sh
+```
+
+Or from source, with Go 1.26+:
+
+```sh
 go install github.com/ibrahemid/tessera/go/cmd/tess@latest
+```
+
+Then:
+
+```sh
 tess vault init                      # create an encrypted vault
 tess add "otpauth://totp/ACME:me@x.com?secret=JBSWY3DPEHPK3PXP&issuer=ACME"
 tess add --qr ~/Desktop/code.png     # from a QR image
@@ -56,7 +73,7 @@ tess export --uri acme               # otpauth URI (cleartext secret)
 tess completion zsh > ...            # shell completions (bash/zsh/fish)
 ```
 
-Without a Go toolchain, download `tess_<version>_darwin_arm64.tar.gz` (or your os/arch) from [Releases](https://github.com/ibrahemid/tessera/releases) and put the `tess` binary on your `PATH`.
+Binaries for macOS and Linux (arm64 and x86_64) are attached to every [release](https://github.com/ibrahemid/tessera/releases), with `checksums.txt`. Unpack the tarball and put `tess` on your `PATH`.
 
 Colored output auto-disables when piped or when `NO_COLOR` is set.
 

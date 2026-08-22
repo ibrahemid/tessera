@@ -51,6 +51,41 @@ const cliCmds = [
   ["tess watch", "live view: search, copy, refresh"],
   ["tess code github -c", "copy one code to the clipboard"],
 ];
+
+const appleGlyph =
+  "M16.36 12.78c-.02-2.3 1.88-3.4 1.96-3.46-1.07-1.56-2.73-1.78-3.32-1.8-1.41-.14-2.76.83-3.48.83-.72 0-1.82-.81-3-.79-1.54.02-2.96.9-3.75 2.28-1.6 2.78-.41 6.89 1.15 9.14.76 1.1 1.67 2.34 2.86 2.3 1.15-.05 1.58-.74 2.97-.74 1.38 0 1.77.74 2.98.72 1.23-.02 2.01-1.12 2.76-2.23.87-1.28 1.23-2.52 1.25-2.58-.03-.01-2.4-.92-2.42-3.64zM14.13 6.13c.64-.78 1.07-1.85.95-2.93-.92.04-2.03.61-2.69 1.38-.59.69-1.11 1.79-.97 2.85 1.02.08 2.07-.52 2.71-1.3z";
+
+const cliVersion = "1.0.2";
+const brewCmd = "brew install ibrahemid/tap/tess";
+const curlCmd = `curl -fsSL ${repo.replace("github.com", "raw.githubusercontent.com")}/main/install.sh | sh`;
+const releaseBase = `${repo}/releases/download/v${cliVersion}`;
+const tarballs = [
+  {
+    label: "macOS · Apple silicon",
+    file: `tess_${cliVersion}_darwin_arm64.tar.gz`,
+    sha: "f0b41aa4a75baf57dd6f55e9191e3dcac4761653f4fa2ca0ced85001810be18d",
+  },
+  {
+    label: "macOS · Intel",
+    file: `tess_${cliVersion}_darwin_amd64.tar.gz`,
+    sha: "16c16f0adb8bd967a4597b0d86cc7b6d2cafa2995c1539b64e757a69fc34a491",
+  },
+];
+
+const softwareLd = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "Tessera",
+  applicationCategory: "SecurityApplication",
+  operatingSystem: "macOS",
+  url: "https://tessera.ibrahemid.com",
+  downloadUrl: [appStore, `${repo}/releases`],
+  installUrl: [appStore, `${repo}/releases`],
+  softwareVersion: cliVersion,
+  license: "https://www.apache.org/licenses/LICENSE-2.0",
+  isAccessibleForFree: true,
+  offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+};
 ---
 
 <Base>
@@ -69,15 +104,20 @@ const cliCmds = [
             reachable from a native app and a real command line. No account, and
             no server to trust.
           </p>
-          <div class="mt-8 flex flex-wrap gap-3">
-            <a href="#get" class="btn btn-gold">Get Tessera</a>
-            <a href={repo} rel="noopener" class="btn btn-ghost">
-              <span class="mono text-[var(--gold)] text-sm">&lt;/&gt;</span> Read the source
+          <div class="mt-8 flex flex-wrap items-center gap-3">
+            <a href={appStore} rel="noopener" class="btn btn-gold" aria-label="Download Tessera on the Mac App Store">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={appleGlyph} /></svg>
+              Mac App Store
             </a>
+            <div class="inline-flex items-center gap-2 h-12 pl-4 pr-2 rounded-[0.8rem] border border-line" style="background: var(--surface)">
+              <code class="mono text-sm whitespace-nowrap"><span style="color: var(--green)">$</span> {brewCmd}</code>
+              <button type="button" class="copy-btn text-xs font-semibold px-2 py-1 rounded-md" data-copy={brewCmd} style="color: var(--gold); background: var(--gold-tint)" aria-label="Copy the Homebrew command">Copy</button>
+            </div>
           </div>
           <ul class="mt-9 flex flex-wrap gap-x-6 gap-y-2 text-sm" style="color: var(--ink-soft)">
             <li class="flex items-center gap-2"><span class="dotcheck"></span> Apache-2.0 licensed</li>
             <li class="flex items-center gap-2"><span class="dotcheck"></span> argon2id + XChaCha20</li>
+            <li><a href="#get" style="color: var(--gold)">All install options</a></li>
           </ul>
         </div>
 
@@ -313,25 +353,54 @@ const cliCmds = [
       <span class="eyebrow">Get Tessera</span>
       <h2 class="mt-4" style="font-size: clamp(1.8rem, 3.4vw, 2.7rem)">Two ways in.</h2>
       <p class="lede mt-5">
-        Download the Mac app from the App Store, or install the CLI with a
-        single command.
+        Download the Mac app from the App Store, or install the CLI.
       </p>
     </div>
 
     <div class="mt-10 grid lg:grid-cols-2 gap-4">
       <article class="tile p-7 sm:p-8 reveal">
         <h3 style="font-size: 1.2rem">Command line</h3>
-        <p class="mt-2 text-sm" style="color: var(--ink-soft)">Install with Go, then create a vault and watch your codes.</p>
+        <p class="mt-2 text-sm" style="color: var(--ink-soft)">Homebrew, then create a vault and watch your codes.</p>
         <div class="mt-5 rounded-xl overflow-hidden border border-line">
           <div class="flex items-center justify-between px-4 py-2.5" style="background: var(--surface-sunken)">
             <span class="mono text-xs" style="color: var(--ink-faint)">terminal</span>
-            <button type="button" class="copy-btn text-xs font-semibold px-2 py-1 rounded-md" data-copy={"go install github.com/ibrahemid/tessera/go/cmd/tess@latest\ntess vault init\ntess watch"} style="color: var(--gold); background: var(--gold-tint)">Copy</button>
+            <button type="button" class="copy-btn text-xs font-semibold px-2 py-1 rounded-md" data-copy={`${brewCmd}\ntess vault init\ntess watch`} style="color: var(--gold); background: var(--gold-tint)" aria-label="Copy the Homebrew commands">Copy</button>
           </div>
-          <pre class="mono text-sm overflow-x-auto p-4 leading-relaxed" style="background: var(--surface)"><code><span style="color: var(--green)">$</span> go install github.com/ibrahemid/tessera/go/cmd/tess@latest
+          <pre class="mono text-sm overflow-x-auto p-4 leading-relaxed" style="background: var(--surface)"><code><span style="color: var(--green)">$</span> {brewCmd}
 <span style="color: var(--green)">$</span> tess vault init
 <span style="color: var(--green)">$</span> tess watch</code></pre>
         </div>
-        <p class="mt-3 text-xs" style="color: var(--ink-faint)">Needs Go 1.26+. Vault: <span class="mono">~/.local/share/tessera/vault.json</span></p>
+
+        <p class="mt-6 text-sm font-semibold">No Homebrew</p>
+        <p class="mt-1 text-sm" style="color: var(--ink-soft)">The script downloads the release for your architecture, checks its sha256, and installs to <span class="mono">/usr/local/bin</span> or <span class="mono">~/.local/bin</span>.</p>
+        <div class="mt-3 rounded-xl overflow-hidden border border-line">
+          <div class="flex items-center justify-between px-4 py-2.5" style="background: var(--surface-sunken)">
+            <span class="mono text-xs" style="color: var(--ink-faint)">terminal</span>
+            <button type="button" class="copy-btn text-xs font-semibold px-2 py-1 rounded-md" data-copy={curlCmd} style="color: var(--gold); background: var(--gold-tint)" aria-label="Copy the install script command">Copy</button>
+          </div>
+          <pre class="mono text-xs overflow-x-auto p-4 leading-relaxed" style="background: var(--surface)"><code><span style="color: var(--green)">$</span> {curlCmd}</code></pre>
+        </div>
+        <p class="mt-2 text-xs" style="color: var(--ink-faint)">
+          Read it first: <a href={`${repo}/blob/main/install.sh`} rel="noopener" style="color: var(--gold)">install.sh</a>
+        </p>
+
+        <p class="mt-6 text-sm font-semibold">Binary downloads</p>
+        <ul class="mt-2 space-y-2 text-sm">
+          {tarballs.map((t) => (
+            <li>
+              <a href={`${releaseBase}/${t.file}`} rel="noopener" style="color: var(--gold)">{t.label}</a>
+              <div class="mono text-[0.68rem] break-all" style="color: var(--ink-faint)">sha256 {t.sha}</div>
+            </li>
+          ))}
+        </ul>
+        <p class="mt-2 text-xs" style="color: var(--ink-faint)">
+          v{cliVersion} · <a href={`${releaseBase}/checksums.txt`} rel="noopener" style="color: var(--gold)">checksums.txt</a> ·
+          <a href={`${repo}/releases`} rel="noopener" style="color: var(--gold)">all releases</a>, Linux included
+        </p>
+
+        <p class="mt-6 text-sm font-semibold">From source</p>
+        <p class="mt-1 mono text-xs break-all" style="color: var(--ink-soft)">go install github.com/ibrahemid/tessera/go/cmd/tess@latest</p>
+        <p class="mt-2 text-xs" style="color: var(--ink-faint)">Needs Go 1.26+. Vault: <span class="mono">~/.local/share/tessera/vault.json</span></p>
       </article>
 
       <article class="tile p-7 sm:p-8 reveal flex flex-col">
@@ -350,6 +419,8 @@ const cliCmds = [
       </article>
     </div>
   </section>
+
+  <script type="application/ld+json" is:inline set:html={JSON.stringify(softwareLd)} />
 </Base>
 
 <style>
