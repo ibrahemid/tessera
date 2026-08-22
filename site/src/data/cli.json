@@ -1,0 +1,124 @@
+{
+  "version": "tess version dev",
+  "generated": "2026-08-22",
+  "root": "Tessera: a CLI-first TOTP/2FA authenticator\n\nUsage:\n  tess [flags]\n  tess [command]\n\nAvailable Commands:\n  add         Add accounts from an otpauth/migration URI, a setup key, a QR image, an export file, or manual flags\n  alias       Set an account's handle (the short name you type to reference it)\n  code        Print the current code for a matching account (or all if omitted)\n  completion  Generate the autocompletion script for the specified shell\n  export      Export accounts as otpauth URIs, base32 secrets, QR images, or an encrypted vault copy\n  help        Help about any command\n  import      Bulk-import accounts from files, other apps, Google exports, otpauth URIs, or QR images\n  list        List accounts (without codes)\n  merge       Merge accounts from another Tessera vault or encrypted backup into this vault\n  move        Move an account into a folder (empty folder to clear)\n  rename      Rename an account's issuer, account label, and/or handle\n  rm          Remove an account\n  show        Show an account's details (type, algorithm, digits, period, folder, tags)\n  tag         Add or remove a tag on an account\n  vault       Manage the vault\n  watch       Live, auto-refreshing view with countdown bars and copy\n\nFlags:\n  -h, --help           help for tess\n      --vault string   vault file path (default $TESSERA_VAULT or ~/.local/share/tessera/vault.json)\n  -v, --version        version for tess\n\nUse \"tess [command] --help\" for more information about a command.\n",
+  "commands": [
+    {
+      "name": "add",
+      "help": "Add one or more accounts. The positional argument auto-detects:\n\n  tess add \"otpauth://totp/GitHub:me?secret=...\"   # otpauth URI\n  tess add ZB573K4APD63E6RLD3WAHI3QFZ35RLEP        # bare base32 setup key -> TOTP\n  tess add code.png                                # QR image (all codes decoded)\n  tess add export.json                             # Aegis/2FAS/Raivo export, or migration/otpauth lines\n\nFor a setup key, --issuer/--account/--digits/--period/--algorithm override the\nTOTP defaults. --qr and --secret keep working as before.\n\nUsage:\n  tess add [input] [flags]\n\nFlags:\n      --account string     account name (manual/setup key)\n      --algorithm string   SHA1|SHA256|SHA512 (manual/setup key) (default \"SHA1\")\n      --digits int         code digits (manual/setup key) (default 6)\n      --folder string      folder to place the account(s) in\n  -h, --help               help for add\n      --issuer string      issuer (manual/setup key)\n      --period int         period seconds (manual/setup key) (default 30)\n      --qr string          decode the account(s) from a QR image file (png/jpeg/webp/tiff/bmp)\n      --secret string      base32 secret (manual)\n      --type string        totp|hotp|steam (manual) (default \"totp\")\n\nGlobal Flags:\n      --vault string   vault file path (default $TESSERA_VAULT or ~/.local/share/tessera/vault.json)\n",
+      "subcommands": []
+    },
+    {
+      "name": "alias",
+      "help": "Set an account's handle (the short name you type to reference it)\n\nUsage:\n  tess alias <account> <handle> [flags]\n\nFlags:\n  -h, --help   help for alias\n\nGlobal Flags:\n      --vault string   vault file path (default $TESSERA_VAULT or ~/.local/share/tessera/vault.json)\n",
+      "subcommands": []
+    },
+    {
+      "name": "code",
+      "help": "Print the current code for a matching account (or all if omitted)\n\nUsage:\n  tess code [query] [flags]\n\nFlags:\n  -c, --copy   copy the code to the clipboard\n  -h, --help   help for code\n      --json   output JSON\n      --next   for HOTP, advance and persist the counter\n\nGlobal Flags:\n      --vault string   vault file path (default $TESSERA_VAULT or ~/.local/share/tessera/vault.json)\n",
+      "subcommands": []
+    },
+    {
+      "name": "completion",
+      "help": "Generate the autocompletion script for tess for the specified shell.\nSee each sub-command's help for details on how to use the generated script.\n\nUsage:\n  tess completion [command]\n\nAvailable Commands:\n  bash        Generate the autocompletion script for bash\n  fish        Generate the autocompletion script for fish\n  powershell  Generate the autocompletion script for powershell\n  zsh         Generate the autocompletion script for zsh\n\nFlags:\n  -h, --help   help for completion\n\nGlobal Flags:\n      --vault string   vault file path (default $TESSERA_VAULT or ~/.local/share/tessera/vault.json)\n\nUse \"tess completion [command] --help\" for more information about a command.\n",
+      "subcommands": [
+        {
+          "name": "bash",
+          "help": "Generate the autocompletion script for the bash shell.\n\nThis script depends on the 'bash-completion' package.\nIf it is not installed already, you can install it via your OS's package manager.\n\nTo load completions in your current shell session:\n\n\tsource <(tess completion bash)\n\nTo load completions for every new session, execute once:\n\n#### Linux:\n\n\ttess completion bash > /etc/bash_completion.d/tess\n\n#### macOS:\n\n\ttess completion bash > $(brew --prefix)/etc/bash_completion.d/tess\n\nYou will need to start a new shell for this setup to take effect.\n\nUsage:\n  tess completion bash\n\nFlags:\n  -h, --help              help for bash\n      --no-descriptions   disable completion descriptions\n\nGlobal Flags:\n      --vault string   vault file path (default $TESSERA_VAULT or ~/.local/share/tessera/vault.json)\n"
+        },
+        {
+          "name": "fish",
+          "help": "Generate the autocompletion script for the fish shell.\n\nTo load completions in your current shell session:\n\n\ttess completion fish | source\n\nTo load completions for every new session, execute once:\n\n\ttess completion fish > ~/.config/fish/completions/tess.fish\n\nYou will need to start a new shell for this setup to take effect.\n\nUsage:\n  tess completion fish [flags]\n\nFlags:\n  -h, --help              help for fish\n      --no-descriptions   disable completion descriptions\n\nGlobal Flags:\n      --vault string   vault file path (default $TESSERA_VAULT or ~/.local/share/tessera/vault.json)\n"
+        },
+        {
+          "name": "powershell",
+          "help": "Generate the autocompletion script for powershell.\n\nTo load completions in your current shell session:\n\n\ttess completion powershell | Out-String | Invoke-Expression\n\nTo load completions for every new session, add the output of the above command\nto your powershell profile.\n\nUsage:\n  tess completion powershell [flags]\n\nFlags:\n  -h, --help              help for powershell\n      --no-descriptions   disable completion descriptions\n\nGlobal Flags:\n      --vault string   vault file path (default $TESSERA_VAULT or ~/.local/share/tessera/vault.json)\n"
+        },
+        {
+          "name": "zsh",
+          "help": "Generate the autocompletion script for the zsh shell.\n\nIf shell completion is not already enabled in your environment you will need\nto enable it.  You can execute the following once:\n\n\techo \"autoload -U compinit; compinit\" >> ~/.zshrc\n\nTo load completions in your current shell session:\n\n\tsource <(tess completion zsh)\n\nTo load completions for every new session, execute once:\n\n#### Linux:\n\n\ttess completion zsh > \"${fpath[1]}/_tess\"\n\n#### macOS:\n\n\ttess completion zsh > $(brew --prefix)/share/zsh/site-functions/_tess\n\nYou will need to start a new shell for this setup to take effect.\n\nUsage:\n  tess completion zsh [flags]\n\nFlags:\n  -h, --help              help for zsh\n      --no-descriptions   disable completion descriptions\n\nGlobal Flags:\n      --vault string   vault file path (default $TESSERA_VAULT or ~/.local/share/tessera/vault.json)\n"
+        }
+      ]
+    },
+    {
+      "name": "export",
+      "help": "Export account data (CLEARTEXT secrets — handle with care):\n\n  tess export --uri                 # all accounts as otpauth:// URIs (bulk backup / migrate)\n  tess export --uri github          # one account's otpauth URI\n  tess export --secret github       # just the base32 secret (the raw key)\n  tess export --qr ./qrcodes        # a QR PNG per account (scan into a phone)\n  tess export --qr ./qrcodes github # one account's QR PNG\n  tess export --file backup.json    # an encrypted copy of the whole vault (safe to store)\n\nUsage:\n  tess export [query] [flags]\n\nFlags:\n      --file string   write an encrypted copy of the vault to this path\n  -h, --help          help for export\n      --qr string     write a QR PNG per account to this directory (cleartext secrets)\n      --secret        print only the base32 secret(s) (cleartext)\n      --uri           print otpauth:// URIs (secrets in cleartext)\n\nGlobal Flags:\n      --vault string   vault file path (default $TESSERA_VAULT or ~/.local/share/tessera/vault.json)\n",
+      "subcommands": []
+    },
+    {
+      "name": "import",
+      "help": "Import accounts in bulk. Sources combine and can be repeated; everything that\nparses is imported, and items that fail are listed without aborting the batch:\n\n  tess import accounts.txt export.json code.png   # paths auto-detect by content\n  tess import --file accounts.txt                 # otpauth:// / otpauth-migration:// lines, or a setup key per line\n  tess import --file export.json                  # an Aegis, 2FAS, or Raivo export (unencrypted)\n  tess import --qr a.png --qr b.png               # QR images (multiple codes per image are all read)\n  tess import --migration \"otpauth-migration://offline?data=...\"\n  tess import --otpauth \"otpauth://totp/....\"\n\nApp exports must be unencrypted (Aegis/2FAS: export with the backup password off).\nDuplicate accounts (same type, issuer, account and secret) are skipped.\n\nUsage:\n  tess import [path...] [flags]\n\nFlags:\n      --file stringArray        text or JSON export file (repeatable)\n  -h, --help                    help for import\n      --migration stringArray   Google Authenticator otpauth-migration:// URI (repeatable)\n      --otpauth stringArray     single otpauth:// URI (repeatable)\n      --qr stringArray          QR image file (repeatable; png/jpeg/webp/tiff/bmp)\n\nGlobal Flags:\n      --vault string   vault file path (default $TESSERA_VAULT or ~/.local/share/tessera/vault.json)\n",
+      "subcommands": []
+    },
+    {
+      "name": "list",
+      "help": "List accounts (without codes)\n\nUsage:\n  tess list [flags]\n\nAliases:\n  list, ls\n\nFlags:\n      --folder string   filter by folder\n  -h, --help            help for list\n      --json            output JSON\n      --tag string      filter by tag\n\nGlobal Flags:\n      --vault string   vault file path (default $TESSERA_VAULT or ~/.local/share/tessera/vault.json)\n",
+      "subcommands": []
+    },
+    {
+      "name": "merge",
+      "help": "Merge another Tessera vault (or an encrypted backup exported from the macOS\napp) into the current vault. Accounts are unioned, never dropped:\n\n  - an account present in both (same id) keeps whichever copy was edited last\n  - an account already present by content (same type/issuer/account/secret) is skipped\n  - every other account is added\n\nThe source file is opened read-only; only the current vault is written. If the\nsource shares this vault's passphrase you are not prompted again; otherwise enter\nthe source's passphrase (or set $TESSERA_MERGE_PASSPHRASE).\n\nUsage:\n  tess merge <vault-file> [flags]\n\nFlags:\n  -h, --help   help for merge\n\nGlobal Flags:\n      --vault string   vault file path (default $TESSERA_VAULT or ~/.local/share/tessera/vault.json)\n",
+      "subcommands": []
+    },
+    {
+      "name": "move",
+      "help": "Move an account into a folder (empty folder to clear)\n\nUsage:\n  tess move <query> <folder> [flags]\n\nFlags:\n  -h, --help   help for move\n\nGlobal Flags:\n      --vault string   vault file path (default $TESSERA_VAULT or ~/.local/share/tessera/vault.json)\n",
+      "subcommands": []
+    },
+    {
+      "name": "rename",
+      "help": "Rename an account's issuer, account label, and/or handle\n\nUsage:\n  tess rename <query> [flags]\n\nFlags:\n      --account string   new account label\n      --handle string    new handle (short identifier)\n  -h, --help             help for rename\n      --issuer string    new issuer\n\nGlobal Flags:\n      --vault string   vault file path (default $TESSERA_VAULT or ~/.local/share/tessera/vault.json)\n",
+      "subcommands": []
+    },
+    {
+      "name": "rm",
+      "help": "Remove an account\n\nUsage:\n  tess rm <query> [flags]\n\nFlags:\n  -h, --help   help for rm\n\nGlobal Flags:\n      --vault string   vault file path (default $TESSERA_VAULT or ~/.local/share/tessera/vault.json)\n",
+      "subcommands": []
+    },
+    {
+      "name": "show",
+      "help": "Print one account's record. The secret is never shown unless you ask for it:\n\n  tess show github            # details, no secret\n  tess show github --secret   # also print the base32 setup key (cleartext)\n  tess show github --uri      # also print the otpauth:// setup link (cleartext)\n\nUsage:\n  tess show <query> [flags]\n\nFlags:\n  -h, --help     help for show\n      --secret   also print the base32 setup key (cleartext)\n      --uri      also print the otpauth:// setup link (cleartext)\n\nGlobal Flags:\n      --vault string   vault file path (default $TESSERA_VAULT or ~/.local/share/tessera/vault.json)\n",
+      "subcommands": []
+    },
+    {
+      "name": "tag",
+      "help": "Add or remove a tag on an account\n\nUsage:\n  tess tag <query> <tag> [flags]\n\nFlags:\n  -h, --help     help for tag\n      --remove   remove the tag instead of adding it\n\nGlobal Flags:\n      --vault string   vault file path (default $TESSERA_VAULT or ~/.local/share/tessera/vault.json)\n",
+      "subcommands": []
+    },
+    {
+      "name": "vault",
+      "help": "Manage the vault\n\nUsage:\n  tess vault [command]\n\nAvailable Commands:\n  forget      Remove the vault passphrase from the login keychain\n  init        Create a new empty encrypted vault\n  passwd      Change the vault passphrase\n  remember    Store the vault passphrase in the login keychain\n  reset       Delete the vault file so a fresh vault can be created\n  status      Show the vault path, file details, and wrap methods\n\nFlags:\n  -h, --help   help for vault\n\nGlobal Flags:\n      --vault string   vault file path (default $TESSERA_VAULT or ~/.local/share/tessera/vault.json)\n\nUse \"tess vault [command] --help\" for more information about a command.\n",
+      "subcommands": [
+        {
+          "name": "forget",
+          "help": "Remove the vault passphrase from the login keychain\n\nUsage:\n  tess vault forget [flags]\n\nFlags:\n  -h, --help   help for forget\n\nGlobal Flags:\n      --vault string   vault file path (default $TESSERA_VAULT or ~/.local/share/tessera/vault.json)\n"
+        },
+        {
+          "name": "init",
+          "help": "Create a new empty encrypted vault\n\nUsage:\n  tess vault init [flags]\n\nFlags:\n  -h, --help   help for init\n\nGlobal Flags:\n      --vault string   vault file path (default $TESSERA_VAULT or ~/.local/share/tessera/vault.json)\n"
+        },
+        {
+          "name": "passwd",
+          "help": "Change the vault passphrase. The current passphrase is read from\n$TESSERA_PASSPHRASE or prompted for; the replacement is read from\n$TESSERA_NEW_PASSPHRASE or entered twice on a terminal.\n\nUsage:\n  tess vault passwd [flags]\n\nFlags:\n  -h, --help   help for passwd\n\nGlobal Flags:\n      --vault string   vault file path (default $TESSERA_VAULT or ~/.local/share/tessera/vault.json)\n"
+        },
+        {
+          "name": "remember",
+          "help": "Store the vault passphrase in the macOS login keychain so tess stops\nprompting. The passphrase is verified against the vault before it is stored.\n\nUsage:\n  tess vault remember [flags]\n\nFlags:\n  -h, --help   help for remember\n\nGlobal Flags:\n      --vault string   vault file path (default $TESSERA_VAULT or ~/.local/share/tessera/vault.json)\n"
+        },
+        {
+          "name": "reset",
+          "help": "Delete the vault at its resolved path (respects --vault and $TESSERA_VAULT).\nThis is irreversible and removes every account. Run \"tess vault init\" afterward\nto create a new empty vault. Use --force to skip the confirmation in scripts.\n\nUsage:\n  tess vault reset [flags]\n\nFlags:\n      --force   skip the confirmation prompt\n  -h, --help    help for reset\n\nGlobal Flags:\n      --vault string   vault file path (default $TESSERA_VAULT or ~/.local/share/tessera/vault.json)\n"
+        },
+        {
+          "name": "status",
+          "help": "Report the resolved vault path, whether the file exists, its size and\nmodification time, the wrap methods in the envelope header, and whether a login\nkeychain entry exists. Nothing is decrypted and the passphrase is never shown.\n\nUsage:\n  tess vault status [flags]\n\nFlags:\n  -h, --help   help for status\n\nGlobal Flags:\n      --vault string   vault file path (default $TESSERA_VAULT or ~/.local/share/tessera/vault.json)\n"
+        }
+      ]
+    },
+    {
+      "name": "watch",
+      "help": "Live, auto-refreshing view with countdown bars and copy\n\nUsage:\n  tess watch [flags]\n\nFlags:\n  -h, --help   help for watch\n\nGlobal Flags:\n      --vault string   vault file path (default $TESSERA_VAULT or ~/.local/share/tessera/vault.json)\n",
+      "subcommands": []
+    }
+  ]
+}

@@ -1,0 +1,199 @@
+---
+import Base from "../layouts/Base.astro";
+import PageHead from "../components/PageHead.astro";
+import cli from "../data/cli.json";
+
+const repo = "https://github.com/ibrahemid/tessera";
+const blob = `${repo}/blob/main`;
+const brewCmd = "brew install ibrahemid/tap/tess";
+
+const quickStart = [
+  ["tess vault init", "create an encrypted vault"],
+  ['tess add "otpauth://totp/ACME:me@x.com?secret=JBSWY3DPEHPK3PXP&issuer=ACME"', ""],
+  ["tess add code.png", "from a QR image"],
+  ['tess import --migration "otpauth-migration://offline?data=..."', "Google Authenticator export"],
+  ["tess", "current codes with countdown bars"],
+  ["tess watch", "live view: / search, enter or c copy, q quit"],
+  ["tess code acme -c", "one account's code, copied to the clipboard"],
+  ["tess code ac -c", "by handle, as shown by tess list"],
+  ["tess alias ac work", "set a handle"],
+  ["tess code --json", "machine-readable"],
+  ["tess vault remember", "store the passphrase in the login keychain"],
+  ["tess vault status", "path, file details, wrap methods, keychain state"],
+  ["tess export --file backup.json", "encrypted copy of the vault"],
+];
+
+const env = [
+  ["TESSERA_VAULT", "Vault path. Default ~/.local/share/tessera/vault.json; --vault overrides both."],
+  ["TESSERA_PASSPHRASE", "Skips the passphrase prompt. For scripts."],
+  ["TESSERA_NEW_PASSPHRASE", "The replacement passphrase for tess vault passwd."],
+  ["TESSERA_MERGE_PASSPHRASE", "The source vault's passphrase for tess merge, when it differs."],
+  ["NO_COLOR", "Turns colored output off. Output is also plain when piped."],
+];
+
+const commands = cli.commands.filter((c) => c.name !== "completion");
+const completion = cli.commands.find((c) => c.name === "completion");
+const shells = completion ? completion.subcommands.filter((s) => s.name !== "powershell") : [];
+
+const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const quickStartHtml = quickStart
+  .map(([cmd, note]) => `<span class="p">$ </span>${esc(cmd)}${note ? `<span class="c">  # ${esc(note)}</span>` : ""}`)
+  .join("\n");
+const jsonHtml = `<span class="p">$ </span>tess code github --json\n${esc(`{
+  "account": "ibra",
+  "code": "713781",
+  "issuer": "GitHub",
+  "type": "totp"
+}`)}`;
+const completionLines = [
+  ["# zsh, macOS with Homebrew", "tess completion zsh > $(brew --prefix)/share/zsh/site-functions/_tess"],
+  ["# zsh, Linux", 'tess completion zsh > "${fpath[1]}/_tess"'],
+  ["# bash, macOS with Homebrew (needs bash-completion)", "tess completion bash > $(brew --prefix)/etc/bash_completion.d/tess"],
+  ["# bash, Linux", "tess completion bash > /etc/bash_completion.d/tess"],
+  ["# fish", "tess completion fish > ~/.config/fish/completions/tess.fish"],
+];
+const completionsHtml = completionLines
+  .map(([c, cmd]) => `<span class="c">${esc(c)}</span>\n<span class="p">$ </span>${esc(cmd)}`)
+  .join("\n");
+---
+<Base
+  title="tess command line — Tessera"
+  description="The tess reference: every subcommand's help text, JSON output for scripts, shell completions, environment variables and file locations."
+  current="/cli"
+>
+  <PageHead kicker="Command line" title="tess, the whole reference.">
+    The help text on this page is generated from the tess binary at build time, so it matches what
+    <span class="mono">tess help</span> prints. Install with <span class="mono">{brewCmd}</span>; other ways on <a href="/#install">the install section</a>.
+    <div slot="media" class="hero-media" data-hero>
+      <video data-hero-video autoplay muted playsinline loop preload="metadata" poster="/media/hero-poster.webp" width="1440" height="780" aria-label="tess in a terminal: adding an account from a QR image, copying a code, printing JSON, then the live watch view">
+        <source src="/media/hero.webm" type="video/webm" />
+        <source src="/media/hero.mp4" type="video/mp4" />
+      </video>
+      <img class="fallback" src="/media/hero-poster.webp" alt="tess printing the current codes for four accounts with countdown bars" width="1440" height="780" />
+    </div>
+  </PageHead>
+
+  <div class="u-wide docs">
+    <nav class="toc" aria-label="On this page">
+      <p class="kicker">Contents</p>
+      <ul class="mt-3">
+        <li><a href="#quick-start">Quick start</a></li>
+        <li><a href="#reference">Reference</a>
+          <ul>
+            {commands.map((c) => <li><a href={`#${c.name}`}>{c.name}</a></li>)}
+          </ul>
+        </li>
+        <li><a href="#json">JSON output</a></li>
+        <li><a href="#completions">Completions</a></li>
+        <li><a href="#environment">Environment</a></li>
+        <li><a href="#files">Files</a></li>
+      </ul>
+    </nav>
+
+    <div class="doc">
+      <section id="quick-start" class="scroll-mt-20">
+        <h2 class="h-sub">Quick start</h2>
+        <pre class="term mt-5"><code set:html={quickStartHtml} /></pre>
+        <p class="mt-4 soft">
+          Accounts resolve by exact handle, then exact issuer or account name, then a unique substring. When more than one account matches, tess lists them with their handles instead of guessing.
+        </p>
+      </section>
+
+      <section id="reference" class="mt-16 scroll-mt-20">
+        <h2 class="h-sub">Reference</h2>
+        <p class="mt-3 soft">Global flag: <span class="mono">--vault</span> sets the vault file for any command. With no subcommand, <span class="mono">tess</span> prints current codes for every account.</p>
+        <pre class="term mt-5"><code>{cli.root}</code></pre>
+        {commands.map((c) => (
+          <article id={c.name} class="mt-12 scroll-mt-20">
+            <h3 class="h-small mono">tess {c.name}</h3>
+            <pre class="term mt-3"><code>{c.help}</code></pre>
+            {c.subcommands.map((s) => (
+              <div id={`${c.name}-${s.name}`} class="mt-5 ml-0 sm:ml-6 scroll-mt-20">
+                <h4 class="mono text-[0.95rem]">tess {c.name} {s.name}</h4>
+                <pre class="term mt-2"><code>{s.help}</code></pre>
+              </div>
+            ))}
+          </article>
+        ))}
+      </section>
+
+      <section id="json" class="mt-16 scroll-mt-20">
+        <h2 class="h-sub">JSON output</h2>
+        <p class="mt-3 soft">
+          <span class="mono">tess code --json</span> and <span class="mono">tess list --json</span> print JSON for scripts. One account:
+        </p>
+        <pre class="term mt-5"><code set:html={jsonHtml} /></pre>
+        <p class="mt-4 soft">
+          Without a query, <span class="mono">tess code --json</span> prints an array. Set <span class="mono">TESSERA_PASSPHRASE</span> to avoid the prompt, or run <span class="mono">tess vault remember</span> once. Errors go to stderr as <span class="mono">error: …</span> with exit status 1.
+        </p>
+      </section>
+
+      <section id="completions" class="mt-16 scroll-mt-20">
+        <h2 class="h-sub">Shell completions</h2>
+        <p class="mt-3 soft">The Homebrew formula installs them. Otherwise, once per shell:</p>
+        <pre class="term mt-5"><code set:html={completionsHtml} /></pre>
+        {shells.map((s) => (
+          <details class="mt-4">
+            <summary class="mono text-[0.9rem] cursor-pointer">tess completion {s.name} --help</summary>
+            <pre class="term mt-3"><code>{s.help}</code></pre>
+          </details>
+        ))}
+      </section>
+
+      <section id="environment" class="mt-16 scroll-mt-20">
+        <h2 class="h-sub">Environment</h2>
+        <dl class="rows mt-5">
+          {env.map(([k, v]) => (
+            <div class="row">
+              <dt class="mono" style="font-family: var(--font-mono); font-weight: 400; font-size: 0.9rem">{k}</dt>
+              <dd>{v}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+
+      <section id="files" class="mt-16 mb-24 scroll-mt-20">
+        <h2 class="h-sub">Files</h2>
+        <dl class="rows mt-5">
+          <div class="row">
+            <dt class="mono" style="font-family: var(--font-mono); font-weight: 400; font-size: 0.9rem">~/.local/share/tessera/vault.json</dt>
+            <dd>The vault. The Mac app can open this same file; pick it with Open existing vault and the app remembers it. Format on <a href="/vault-format">/vault-format</a>.</dd>
+          </div>
+          <div class="row">
+            <dt class="mono" style="font-family: var(--font-mono); font-weight: 400; font-size: 0.9rem">vault.json.lock</dt>
+            <dd>Held next to the vault for the length of a command so two tess processes cannot interleave writes.</dd>
+          </div>
+          <div class="row">
+            <dt>Source</dt>
+            <dd><a href={`${blob}/go/cmd/tess`} rel="noopener">go/cmd/tess</a> is the command layer; <a href={`${blob}/go/internal`} rel="noopener">go/internal</a> holds the vault, OTP, otpauth and import code.</dd>
+          </div>
+        </dl>
+      </section>
+    </div>
+  </div>
+</Base>
+
+<style>
+  .docs { display: grid; gap: 3rem; padding-bottom: 2rem; }
+  .doc { max-width: 72ch; min-width: 0; }
+  .toc { font-size: 0.9rem; }
+  .toc ul ul { margin: 0.3rem 0 0.5rem 0.9rem; columns: 2; }
+  .toc li { line-height: 1.9; }
+  .toc a { color: var(--ink-soft); }
+  .toc a:hover { color: var(--ink); }
+  @media (min-width: 1024px) {
+    .docs { grid-template-columns: 13rem minmax(0, 1fr); gap: 4rem; }
+    .toc { position: sticky; top: 5.5rem; align-self: start; }
+    .toc ul ul { columns: 1; }
+  }
+  pre.term { white-space: pre; }
+</style>
+
+<script is:inline>
+  (() => {
+    const v = document.querySelector("[data-hero-video]");
+    if (!v) return;
+    const p = v.play();
+    if (p && p.catch) p.catch(() => v.closest("[data-hero]")?.setAttribute("data-video-blocked", ""));
+  })();
+</script>

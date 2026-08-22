@@ -1,0 +1,68 @@
+---
+import Base from "../../layouts/Base.astro";
+import PageHead from "../../components/PageHead.astro";
+import AppShot from "../../components/AppShot.astro";
+
+const rows = [
+  ["Where the secrets live", "Encrypted backups on Twilio's servers, tied to your phone number", "An encrypted file on your Mac"],
+  ["Account", "Required", "None"],
+  ["Source", "Closed", "Open source, Apache-2.0"],
+  ["Desktop", "The desktop apps were discontinued in August 2024", "A native macOS app and the tess CLI"],
+  ["Phone", "iOS and Android", "None yet"],
+  ["Export", "No export", "tess export, the app's vault export, and otpauth links or QR codes per account"],
+  ["Price", "Free", "Free"],
+];
+---
+<Base
+  title="Tessera vs Authy"
+  description="Authy keeps your codes on Twilio's servers behind your phone number; Tessera keeps them in a file on your Mac. What differs and how to move."
+  current="/vs/authy"
+>
+  <PageHead kicker="Compared" title="Tessera vs Authy.">
+    Authy is a hosted authenticator from Twilio. Tessera is a local one. The difference is where the secrets live and who can get at them.
+    <AppShot slot="media" sizes="(min-width: 900px) 34vw, 80vw" />
+  </PageHead>
+
+  <div class="measure cmp">
+    <table>
+      <thead>
+        <tr><th></th><th>Authy</th><th>Tessera</th></tr>
+      </thead>
+      <tbody>
+        {rows.map(([k, a, b]) => (
+          <tr><th scope="row">{k}</th><td>{a}</td><td>{b}</td></tr>
+        ))}
+      </tbody>
+    </table>
+
+    <h2 class="h-sub mt-14">Pick Authy if</h2>
+    <ul class="mt-4 soft list">
+      <li>You want codes on a phone with a backup you never think about, and do not need a desktop app.</li>
+    </ul>
+
+    <h2 class="h-sub mt-12">Pick Tessera if</h2>
+    <ul class="mt-4 soft list">
+      <li>You work on a Mac and want the code where the login happens, in a window or in a shell.</li>
+      <li>You want to read the vault format and the code that implements it.</li>
+      <li>You do not want a phone number or an account between you and your codes.</li>
+    </ul>
+
+    <h2 class="h-sub mt-12">Moving from Authy</h2>
+    <p class="mt-4 soft">
+      Authy has no export, so each account is re-enrolled: on the service's security page, turn two-factor off and on again, then scan the new QR with Tessera (on screen, from the app) or save it and run <span class="mono">tess add code.png</span>. Keep Authy installed until the last account has moved.
+    </p>
+    <p class="mt-4 soft">Facts about Authy were checked on 2026-08-22 and may have changed.</p>
+  </div>
+</Base>
+
+<style>
+  .cmp { padding-block: 1rem 6rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+  th, td { text-align: left; vertical-align: top; padding: 0.8rem 1rem 0.8rem 0; border-bottom: 1px solid var(--line); }
+  thead th { font-family: var(--font-display); font-size: 1.05rem; }
+  tbody th { color: var(--ink); white-space: nowrap; }
+  td { color: var(--ink-soft); }
+  .list li { padding-left: 1.1rem; position: relative; }
+  .list li + li { margin-top: 0.5rem; }
+  .list li::before { content: ""; position: absolute; left: 0; top: 0.72em; width: 0.4rem; height: 0.4rem; border-radius: 2px; background: var(--gold); }
+</style>

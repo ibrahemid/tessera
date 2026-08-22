@@ -1,0 +1,63 @@
+---
+import Base from "../layouts/Base.astro";
+import PageHead from "../components/PageHead.astro";
+import Still from "../components/Still.astro";
+import codesStill from "../assets/still-codes.png";
+
+const steps = [
+  ["Pick where your codes live", "Open the app and it creates a vault sealed by your Mac's Secure Enclave. In the terminal, run tess vault init and choose a passphrase you will remember: it is the one thing that cannot be reset. The app can take a passphrase too, under Settings, Recovery passphrase."],
+  ["Bring your accounts in", "On a site's security page, choose “authenticator app.” Scan the QR with the app, or paste the otpauth link. Moving from Google Authenticator? Export and import the whole set at once."],
+  ["Use a code when asked", "When a site asks for a 2FA code, open Tessera, copy the six digits for that account, and paste. They refresh every 30 seconds, so grab the current one."],
+];
+---
+<Base title="New to 2FA — Tessera" description="What a two-factor code is, why it protects an account a password alone cannot, and how to set one up in Tessera." current="/learn">
+  <PageHead kicker="New to 2FA?" title="A second key, just for you.">
+    A password can be guessed, leaked, or phished. Two-factor authentication adds a second step a thief cannot fake: a six-digit code that changes every 30 seconds and only your device can produce.
+    <Still slot="media" src={codesStill} alt="tess printing four accounts: a handle, the issuer, the current six-digit code, a countdown bar and the seconds left" eager />
+  </PageHead>
+
+  <article class="measure body">
+    <p class="soft">
+      Even with your password, nobody gets in without that code. Tessera is where your codes live: in an encrypted file on your Mac, offline, with no account.
+    </p>
+
+    <h2 class="h-sub mt-12">What you are looking at</h2>
+    <p class="mt-4 soft">
+      Each line in the terminal above is one account. From the left: a short handle you can type (<span class="mono">gi</span>), the service, the code, and how long it stays valid. An <span class="mono">hotp</span> account counts instead of ticking, so it shows a counter and waits for you to ask for the next code. A Steam Guard code is five letters and digits. The app shows the same accounts as tiles with a ring that drains over the 30 seconds.
+    </p>
+
+    <h2 class="h-sub mt-12">Setting it up</h2>
+    <ol class="mt-6 steps">
+      {steps.map(([t, b]) => (
+        <li>
+          <h3 class="h-small">{t}</h3>
+          <p class="mt-2 soft">{b}</p>
+        </li>
+      ))}
+    </ol>
+
+    <h2 class="h-sub mt-12">Keep a way back in</h2>
+    <p class="mt-4 soft">
+      Most sites give you recovery codes when you turn 2FA on. Store them somewhere that is not Tessera. Back the vault up with <span class="mono">tess export --file backup.json</span>, or the app's encrypted export, and keep your passphrase in a password manager.
+    </p>
+
+    <p class="mt-10 soft">Questions with answers on <a href="/support">/support</a>.</p>
+  </article>
+</Base>
+
+<style>
+  .body { padding-block: 1rem 6rem; }
+  .steps { counter-reset: step; }
+  .steps li { position: relative; padding-left: 2.6rem; }
+  .steps li + li { margin-top: 1.8rem; }
+  .steps li::before {
+    counter-increment: step;
+    content: counter(step, decimal-leading-zero);
+    position: absolute;
+    left: 0;
+    top: 0.15rem;
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    color: var(--gold);
+  }
+</style>

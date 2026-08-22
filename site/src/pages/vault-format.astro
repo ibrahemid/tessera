@@ -1,0 +1,32 @@
+---
+import Base from "../layouts/Base.astro";
+import PageHead from "../components/PageHead.astro";
+import Still from "../components/Still.astro";
+import { Content } from "../../../spec/vault-format.md";
+import showStill from "../assets/still-show.png";
+
+const repo = "https://github.com/ibrahemid/tessera";
+const blob = `${repo}/blob/main`;
+---
+<Base
+  title="Vault format — Tessera"
+  description="The Tessera vault format, version 1: envelope encryption, XChaCha20-Poly1305, argon2id and Secure Enclave wraps, canonical JSON, base64 rules, handles and the negative tests."
+  current="/vault-format"
+>
+  <PageHead kicker="Specification" title="Vault format, version 1.">
+    Rendered from <a href={`${blob}/spec/vault-format.md`} rel="noopener">spec/vault-format.md</a> at build time.
+    The file in the repository is the contract; both implementations are tested against
+    <a href={`${blob}/spec/testvectors.json`} rel="noopener">spec/testvectors.json</a>.
+    <Still slot="media" src={showStill} alt="tess show github printing one account's record: handle, issuer, account, type, algorithm, digits and period" eager />
+  </PageHead>
+
+  <article class="prose spec">
+    <Content />
+  </article>
+</Base>
+
+<style>
+  .spec { padding-block: 1rem 6rem; }
+  .spec :global(h1) { display: none; }
+  .spec :global(hr) { border: 0; border-top: 1px solid var(--line); margin-block: 2.5rem; }
+</style>
