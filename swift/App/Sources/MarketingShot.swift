@@ -1,6 +1,5 @@
 import SwiftUI
 import AppKit
-import TesseraCore
 
 #if DEBUG
 /// `Tessera --marketing <dir>` renders App Store screenshots at the required
@@ -8,9 +7,11 @@ import TesseraCore
 /// compiled out of release builds.
 ///
 /// The terminal frames are not drawings: they render recorded output of the real
-/// `tess` binary, captured with `tmux capture-pane -e` against a throwaway vault
-/// and committed under `docs/appstore-assets/captures/`. Point the renderer at
-/// that directory with `TESSERA_SHOT_CAPTURES`, or pass `--captures <dir>`.
+/// `tess` binary, captured with `tmux capture-pane -e` against a throwaway vault.
+/// The vault frame is not a drawing either: it renders a `screencapture` of the
+/// running app's unlocked window. Both live in `docs/appstore-assets/captures/`.
+/// Point the renderer at that directory with `TESSERA_SHOT_CAPTURES`, or pass
+/// `--captures <dir>`.
 @MainActor
 enum MarketingShot {
     static func runIfRequested() -> Bool {
@@ -20,8 +21,11 @@ enum MarketingShot {
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
 
         let captures: [String: [[AnsiRun]]]
+        let vaultWindow: WindowCapture.Pair
         do {
-            captures = try TerminalCapture.loadAll(in: resolveCaptureDir(args))
+            let captureDir = resolveCaptureDir(args)
+            captures = try TerminalCapture.loadAll(in: captureDir)
+            vaultWindow = try WindowCapture.loadVault(in: captureDir)
         } catch {
             FileHandle.standardError.write(Data("tessera --marketing: \(error)\n".utf8))
             exit(2)
@@ -39,7 +43,7 @@ enum MarketingShot {
             ("03-vault", AnyView(Frame(
                 title: "Every account,\none window.",
                 subtitle: "TOTP and Steam Guard codes with a countdown ring. Click a row to copy its code.",
-                content: WindowMock()))),
+                content: WindowShot(capture: vaultWindow)))),
             ("04-touchid", AnyView(Frame(
                 title: "Unlock with\nTouch ID.",
                 subtitle: "The vault is encrypted on your Mac with XChaCha20-Poly1305, and its key is wrapped by the Secure Enclave.",
@@ -336,46 +340,74 @@ private struct TerminalBox: View {
     }
 }
 
+// MARK: Recorded window captures
+
+enum WindowCaptureError: Error, CustomStringConvertible {
+    case captureMissing(name: String, dir: String)
+    case undecodable(path: String)
+
+    var description: String {
+        switch self {
+        case .captureMissing(let name, let dir):
+            return "missing capture \(name).png in \(dir). Record it with the command listed in docs/APP_STORE.md, Screenshots."
+        case .undecodable(let path):
+            return "cannot decode \(path) as an image."
+        }
+    }
+}
+
+/// Loads `screencapture` recordings of the running app's window. `ImageRenderer`
+/// never lays out the populated vault list headless, so `03-vault` renders a real
+/// window capture instead of drawn chrome. Re-record rather than edit them; an
+/// edited capture is a fake screenshot.
+enum WindowCapture {
+    struct Pair {
+        let light: NSImage
+        let dark: NSImage
+    }
+
+    static func loadVault(in dir: String) throws -> Pair {
+        Pair(light: try load("app-vault-light", in: dir), dark: try load("app-vault-dark", in: dir))
+    }
+
+    private static func load(_ name: String, in dir: String) throws -> NSImage {
+        let path = "\(dir)/\(name).png"
+        guard FileManager.default.fileExists(atPath: path) else {
+            throw WindowCaptureError.captureMissing(name: name, dir: dir)
+        }
+        guard let image = NSImage(contentsOfFile: path) else {
+            throw WindowCaptureError.undecodable(path: path)
+        }
+        return image
+    }
+}
+
+/// A window capture scaled to the frame's content column: 1280 minus the 80pt
+/// horizontal padding on each side, the 470pt text column, and the 56pt gap. The
+/// captures are 2x, so this downsamples at render scale 2 rather than upsampling.
+private struct WindowShot: View {
+    let capture: WindowCapture.Pair
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let image = scheme == .dark ? capture.dark : capture.light
+        let width: CGFloat = 594
+        Image(nsImage: image)
+            .resizable()
+            .interpolation(.high)
+            .frame(width: width, height: (width * image.size.height / image.size.width).rounded())
+    }
+}
+
 // MARK: App screens
 
-private func sample() -> [Account] { AppModel.sampleAccounts }
-
-/// The app's real locked screen, rendered from RootView. ImageRenderer cannot
-/// draw the populated vault (its list never lays out headless), so the vault
-/// frame below composes the app's real row view instead.
+/// The app's real locked screen, rendered from RootView.
 private struct LockedScreen: View {
     var body: some View {
         RootView()
             .environmentObject(AppModel(demo: .locked))
             .frame(width: 380, height: 500)
             .background(Palette.background)
-    }
-}
-
-private struct WindowMock: View {
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                HStack(spacing: 7) { MosaicMark(side: 18); Text("Tessera").font(Typo.display(16)).foregroundStyle(Palette.textPrimary) }
-                Spacer()
-                Image(systemName: "plus").font(.system(size: 12, weight: .bold)).foregroundStyle(Palette.accent)
-                    .frame(width: 26, height: 26).background(Palette.accentSoft, in: RoundedRectangle(cornerRadius: 8))
-            }.padding(14)
-            Divider().overlay(Palette.border)
-            VStack(spacing: 8) {
-                ForEach(Array(sample().prefix(5).enumerated()), id: \.element.id) { i, a in
-                    // Every sample account is period 30, so the real app shows one
-                    // shared epoch-aligned countdown, not a per-row value.
-                    AccountRowView(account: a, remaining: 23,
-                                   code: ["318 204", "907 551", "642 119", "VHHQY", "775 380"][i],
-                                   copied: i == 0, reduceMotion: true,
-                                   onCopy: {}, onAdvance: {})
-                }
-            }.padding(14)
-            Spacer(minLength: 0)
-        }
-        .frame(width: 380, height: 500)
-        .background(Palette.background)
     }
 }
 

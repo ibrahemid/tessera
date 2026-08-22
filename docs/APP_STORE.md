@@ -192,8 +192,10 @@ mode.
 
 The terminal frames are not drawings. `docs/appstore-assets/captures/*.ansi` are
 `tmux capture-pane -e` recordings of the real `tess` binary run against a
-throwaway vault, and the renderer parses their SGR colors. Re-record rather than
-edit them; a hand-edited capture is a fake screenshot.
+throwaway vault, and the renderer parses their SGR colors. The vault frame is not
+a drawing either: `captures/app-vault-{light,dark}.png` are `screencapture`
+recordings of the running app's unlocked window. Re-record rather than edit them;
+a hand-edited capture is a fake screenshot.
 
 Regenerate every frame:
 
@@ -220,6 +222,44 @@ tmux kill-session -t shot
 84 columns is the width the renderer's terminal box holds without wrapping.
 Capture `tess watch` mid-period so the countdown bars are visibly draining.
 
+Re-record the vault window (`03-vault`). `ImageRenderer` never lays out the
+populated list headless, so that frame renders a real window capture. Build
+Debug, then launch the app with the same exported `TESSERA_VAULT` still set (the
+app reads it too), unlock it, and size the window to 720×522:
+
+```sh
+TESSERA_ALLOW_CAPTURE=1 \
+  /tmp/tessera-dd/Build/Products/Debug/Tessera.app/Contents/MacOS/Tessera &
+# unlock, then once per appearance (System Settings > Appearance):
+screencapture -o -w docs/appstore-assets/captures/app-vault-light.png   # click the window
+```
+
+The app sets `window.sharingType = .none`, so the capture comes back empty
+without `TESSERA_ALLOW_CAPTURE=1`, which lifts the shield in DEBUG builds only.
+Move the pointer off the window first (a hovered row draws its highlight) and
+capture mid-period so the countdown rings are visibly partial. 720pt wide
+downsamples into the frame's 594pt content column instead of upsampling. `-o`
+drops the window shadow, which the renderer draws itself; flatten the
+transparent rounded corners it leaves behind, because the renderer re-rounds
+them at 22pt:
+
+```sh
+python3 -c 'import sys
+from PIL import Image
+for p in sys.argv[1:]:
+    im = Image.open(p).convert("RGBA"); w, h = im.size; px = im.load()
+    for y in range(h):
+        op = [x for x in range(w) if px[x, y][3] >= 250]
+        first, last = op[0], op[-1]
+        lc, rc = px[first, y][:3], px[last, y][:3]
+        for x in range(w):
+            if px[x, y][3] < 250:
+                px[x, y] = (lc if x - first < last - x else rc) + (255,)
+    im.convert("RGB").save(p, "PNG", optimize=True, compress_level=9)' \
+  docs/appstore-assets/captures/app-vault-light.png \
+  docs/appstore-assets/captures/app-vault-dark.png
+```
+
 Each frame lands at roughly 3.6 MB. Recompress losslessly before committing:
 
 ```sh
@@ -239,7 +279,7 @@ and the recorded CLI frames follow.
 
 | # | File | Caption | Source |
 |---|---|---|---|
-| 1 | `docs/appstore-assets/1.0.3/03-vault-light.png` | Every account, one window. | **needs the live capture first**, see below |
+| 1 | `docs/appstore-assets/1.0.3/03-vault-light.png` | Every account, one window. | a real capture of the unlocked window |
 | 2 | `docs/appstore-assets/1.0.3/04-touchid-light.png` | Unlock with Touch ID. | the app's real locked screen |
 | 3 | `docs/appstore-assets/1.0.3/01-watch-light.png` | Codes in your terminal. | recorded `tess watch` |
 | 4 | `docs/appstore-assets/1.0.3/02-code-light.png` | One command, one code. | recorded `tess code github -c` |
@@ -250,27 +290,17 @@ and the recorded CLI frames follow.
 
 Six of the eight are not app UI: four are recorded `tess` terminal output, one
 is the vault-format card, one is entitlements + LICENSE. That is the sharpest
-2.3.3 exposure in this submission. Frame 1 is the fix and the blocker at once:
-leading with the app satisfies 2.3.3, but the file sitting there today is a
-composite, so replace it with a real window capture before uploading anything
-(see "Still needs a live capture"). If that capture cannot happen, drop it and
-lead with `04-touchid-light.png`.
+2.3.3 exposure in this submission, and the first two frames answer it: 1 is a
+capture of the running app's unlocked window, 2 is its real locked screen.
+
+The vault frame and the recorded terminal frames show the same five accounts in
+the same folders. Keep them that way when re-recording either side.
 
 ### Still needs a live capture
 
-Two frames cannot be produced by the headless renderer, because `ImageRenderer`
-does not lay out the populated vault list and draws `TextEditor` as an
-unsupported placeholder:
-
-- **QR import from screen.** The "Scan screen" flow in `AddAccountView` needs a
-  running app with screen-recording permission granted. Capture it on the Xcode
-  machine: put a QR on screen, open Add accounts, click Scan screen, and record
-  the window.
-- **The populated window (blocks upload).** `03-vault-*.png` composes the app's
-  real `AccountRowView` inside drawn window chrome: no traffic lights, no
-  sidebar, no search field, and the narrow frame truncates the longer account
-  labels. It reads as a window screenshot and is not one. Replace it with a real
-  window capture of the unlocked vault, light and dark, on the Xcode machine.
-  Documenting the composite does not make it 2.3.3-compliant; if the live
-  capture cannot happen before submission, drop the frame rather than upload it
-  as a window screenshot.
+**QR import from screen.** `ImageRenderer` draws `TextEditor` as an unsupported
+placeholder, so `AddAccountView` cannot be rendered headless, and the "Scan
+screen" flow needs a running app with screen-recording permission granted: put a
+QR on screen, open Add accounts, click Scan screen, and capture the window.
+`MarketingShot` renders eight frames and none of them is QR, so this needs a
+frame and a caption decided before the capture has anywhere to land.
