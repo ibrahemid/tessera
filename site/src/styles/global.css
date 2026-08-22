@@ -374,6 +374,10 @@ pre.term .g { color: var(--band-gold); }
 .hero-media .fallback { display: none; }
 [data-video-blocked] .hero-media .fallback { display: block; }
 
+@media (max-width: 480px) {
+  .cmd > code { white-space: normal; overflow-wrap: anywhere; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   .hero-media video { display: none; }

@@ -6,23 +6,28 @@ import dark from "../assets/app-vault-dark.png";
 interface Props {
   class?: string;
   sizes?: string;
+  bleed?: boolean;
 }
-const { class: cls = "", sizes = "(min-width: 900px) 44vw, 92vw" } = Astro.props;
-const alt = "Tessera's main window: five accounts with live codes and countdown rings, GitHub pinned at the top";
+const { class: cls = "", sizes = "(min-width: 900px) 48vw, 92vw", bleed = false } = Astro.props;
+const alt = "Tessera's main window: a sidebar with All, Pinned and a Work folder, and five accounts with live codes and countdown rings";
 ---
-<figure class:list={["app-shot", cls]}>
-  <Image src={light} alt={alt} widths={[381, 762]} sizes={sizes} format="webp" quality={90} class="shot shot-light" loading="lazy" />
-  <Image src={dark} alt={alt} widths={[381, 762]} sizes={sizes} format="webp" quality={90} class="shot shot-dark" loading="lazy" />
+<figure class:list={["app-shot", cls, { bleed }]}>
+  <Image src={light} alt={alt} widths={[720, 1440]} sizes={sizes} format="webp" quality={90} class="shot shot-light" loading="lazy" />
+  <Image src={dark} alt={alt} widths={[720, 1440]} sizes={sizes} format="webp" quality={90} class="shot shot-dark" loading="lazy" />
 </figure>
 
 <style>
-  .app-shot { margin: 0; line-height: 0; }
+  .app-shot { margin: 0; line-height: 0; overflow: hidden; }
   .shot {
     display: block;
     width: 100%;
+    max-width: 720px;
     height: auto;
-    border-radius: 14px;
-    box-shadow: 0 1px 0 var(--line-strong), 0 40px 90px -40px rgba(23, 24, 29, 0.45);
+    border-radius: 10px;
+    box-shadow: 0 0 0 1px var(--line-strong);
+  }
+  @media (min-width: 900px) {
+    .bleed .shot { width: min(calc(100% + 1.25rem), 720px); max-width: none; border-radius: 10px 0 0 10px; }
   }
   .shot-dark { display: none; }
   :global(html.dark) .shot-light { display: none; }

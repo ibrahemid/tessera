@@ -41,7 +41,7 @@ const sections = [
     id: "cli",
     h: "What the CLI touches",
     body: [
-      "tess reads and writes the vault at $TESSERA_VAULT or ~/.local/share/tessera/vault.json and holds a lock file next to it for the length of a command, so two tess processes cannot interleave writes. The Go module imports golang.org/x/crypto, cobra, the terminal and QR packages; it imports no network package.",
+      "tess reads and writes the vault at $TESSERA_VAULT or ~/.local/share/tessera/vault.json and holds a lock file next to it for the length of a command, so two tess processes cannot interleave writes. The Go module imports golang.org/x/crypto, cobra, the terminal and QR packages; it imports neither net nor net/http.",
       "Commands that print secrets are explicit and say so in their help: tess export --uri, --secret, --qr and tess show --secret, --uri. Colored output turns off when piped or when NO_COLOR is set.",
     ],
     links: [[`${blob}/go/go.mod`, "go/go.mod"], [`${blob}/go/internal/store`, "go/internal/store"], ["/cli", "CLI reference"]],
@@ -69,7 +69,7 @@ const sections = [
   description="How Tessera encrypts, unlocks and isolates your 2FA vault, with a link to the file behind each claim. Reporting instructions included."
   current="/security"
 >
-  <PageHead kicker="Security" title="Security you can read.">
+  <PageHead kicker="Security" title="Security you can read." bleed>
     What Tessera does with your secrets, and the file that does it. Where this page and the code disagree, the code is right; tell us.
     <Still slot="media" src={statusStill} alt="tess vault status printing the vault path, file size, the wrap methods in the header, and the keychain state" eager />
   </PageHead>

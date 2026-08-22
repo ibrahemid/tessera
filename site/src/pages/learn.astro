@@ -11,14 +11,14 @@ const steps = [
 ];
 ---
 <Base title="New to 2FA — Tessera" description="What a two-factor code is, why it protects an account a password alone cannot, and how to set one up in Tessera." current="/learn">
-  <PageHead kicker="New to 2FA?" title="A second key, just for you.">
-    A password can be guessed, leaked, or phished. Two-factor authentication adds a second step a thief cannot fake: a six-digit code that changes every 30 seconds and only your device can produce.
+  <PageHead kicker="New to 2FA?" title="A second key, just for you." bleed>
+    A password can be guessed, leaked, or phished. Two-factor authentication adds a second step: a six-digit code that changes every 30 seconds, generated from a secret set up between you and the service.
     <Still slot="media" src={codesStill} alt="tess printing four accounts: a handle, the issuer, the current six-digit code, a countdown bar and the seconds left" eager />
   </PageHead>
 
   <article class="measure body">
     <p class="soft">
-      Even with your password, nobody gets in without that code. Tessera is where your codes live: in an encrypted file on your Mac, offline, with no account.
+      A leaked password on its own is no longer enough. Tessera is where your codes live: in an encrypted file on your Mac, offline, with no account.
     </p>
 
     <h2 class="h-sub mt-12">What you are looking at</h2>

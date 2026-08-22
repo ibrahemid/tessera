@@ -14,7 +14,7 @@ interface Props {
 
 const {
   title = "Tessera — 2FA in your terminal and your Mac",
-  description = "A two-factor authenticator for macOS: a native app and the tess command line on one encrypted vault. Offline, no account, open source.",
+  description = "A two-factor authenticator for macOS: a native app and the tess command line on one documented vault format. Offline, no account, open source.",
   current = "",
   preloadImage,
 } = Astro.props;
@@ -43,7 +43,6 @@ const footer = [
     ["/cli#json", "JSON output"],
     ["/cli#completions", "Shell completions"],
     [`${repo}/releases`, "Releases"],
-    [`${repo}/blob/main/install.sh`, "install.sh"],
   ]],
   ["Source", [
     [repo, "Repository"],
@@ -70,7 +69,6 @@ const footer = [
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     <meta name="description" content={description} />
-    <meta name="apple-itunes-app" content="app-id=6788814172" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <meta name="theme-color" content="#fbfaf7" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#0e0f13" media="(prefers-color-scheme: dark)" />
@@ -90,9 +88,9 @@ const footer = [
     <script is:inline>
       (() => {
         try {
-          if (localStorage.getItem("tessera-theme") === "dark") {
-            document.documentElement.classList.add("dark");
-          }
+          const stored = localStorage.getItem("tessera-theme");
+          const dark = stored ? stored === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+          if (dark) document.documentElement.classList.add("dark");
         } catch (_) {}
       })();
     </script>
@@ -146,7 +144,6 @@ const footer = [
         <div class="grid gap-10 md:grid-cols-[1.2fr_repeat(4,1fr)]">
           <div>
             <Wordmark />
-            <p class="mt-3 text-sm soft max-w-[26ch]">Two-factor codes you actually own.</p>
             <a href={appStore} rel="noopener" class="inline-block mt-5" aria-label="Download on the Mac App Store">
               <img src="/mac-app-store-badge.svg" alt="" width="156" height="40" class="badge-store" style="height: 2.5rem" />
             </a>
