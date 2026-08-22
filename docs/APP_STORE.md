@@ -101,16 +101,24 @@ server.
 Paste-ready, and the place to edit the wording. App Store Connect is a copy of
 this, not the other way round.
 
-Every claim here is checkable against the repo. Two that were wrong in the 1.0.0
-listing and are removed for good:
+Every claim here is checkable against the repo. Two were wrong in the v1.0.0
+submission sheet (`docs/app-store-submission.html`) and are removed for good.
+Neither ever reached the live listing; the shipped 1.0.2 description carries
+neither string.
 
 - **No menu bar.** The app has no `NSStatusItem` and no `MenuBarExtra`. Menu-bar
   quick access is a post-v1 idea (see the comment in `TesseraApp.swift`). Nothing
   in the listing, the review notes, or the screenshots may mention it until it
   ships.
 - **The CLI is not inside the app bundle.** `Tessera.app` contains one binary,
-  the app. `tess` is a separate free download (Homebrew, curl, `go install`), so
-  the listing says so instead of "the included tess command-line tool".
+  the app. `tess` is a separate free download, so the copy says so instead of
+  "the included tess command-line tool".
+
+A third claim is cut for the same reason: **`go install` is the only live `tess`
+install path.** `ibrahemid/homebrew-tap` does not exist on GitHub yet and
+`install.sh` sits on the unmerged `cli-install-path` branch, so the description
+names neither Homebrew nor curl. Promotional text is editable without a review,
+so the fuller list can go back the day both ship and the site is deployed.
 
 **App name (≤30):** `Tessera 2FA Authenticator`
 
@@ -131,65 +139,49 @@ review ever raises 5.2.
 **Promotional text (≤170, editable without a review):**
 
 ```
-TOTP, HOTP, and Steam Guard codes in the app and in your terminal, from one
-encrypted vault.
+TOTP, HOTP, and Steam Guard codes in the app, and in your terminal with the tess CLI, a separate download. One encrypted vault.
 ```
 
 **Description:**
 
 ```
-Tessera is the only open-source authenticator on the Mac App Store with a
-command line. The app and the tess CLI read the same encrypted vault file.
+Tessera is an open-source authenticator for macOS with a command line. Set a recovery passphrase, or point the app at the vault tess already uses, and both read the same encrypted file.
 
-Generate the codes you already use: TOTP, HOTP, and Steam Guard. Add an account
-by scanning a QR code on screen, pasting a setup link or a setup key, or
-importing a Google Authenticator transfer or an Aegis, 2FAS, or Raivo export.
+Generate the codes you already use: TOTP, HOTP, and Steam Guard. Add an account by scanning a QR code on screen, pasting a setup link or a setup key, or importing a Google Authenticator transfer or an Aegis, 2FAS, or Raivo export.
 
-Unlock with Touch ID. Search, pin the ones you use most, and group them into
-folders. Click a row to copy its code.
+Unlock with Touch ID. Search, pin the ones you use most, and group them into folders. Click a row to copy its code (an HOTP row advances the counter).
 
-• Secrets are encrypted on your Mac with argon2id and XChaCha20-Poly1305. Where
-  there is a Secure Enclave, the key is wrapped inside it.
-• No account and no servers. The app ships without a network entitlement, so it
-  cannot reach the network.
-• Apache-2.0. The source, the vault spec, and the test vectors are public at
-  github.com/ibrahemid/tessera
+• Secrets are encrypted on your Mac with argon2id and XChaCha20-Poly1305. Where there is a Secure Enclave, the key is wrapped inside it.
+• No account and no servers. The app ships without a network entitlement, so it cannot reach the network.
+• Apache-2.0. The source, the vault spec, and the test vectors are public at github.com/ibrahemid/tessera
 
-The vault format is a published spec with two implementations, one in Go and one
-in Swift, cross-decrypted against shared test vectors on every commit.
+The vault format is a published spec with two implementations, one in Go and one in Swift, cross-decrypted against shared test vectors on every commit.
 
-tess, the command-line tool, is a separate free download (Homebrew, curl, or go
-install; see tessera.ibrahemid.com). It adds a live watch view with countdown
-bars, JSON output, and shell completions.
+tess, the command-line tool, is a free separate download; see tessera.ibrahemid.com. It adds a live watch view with countdown bars, JSON output, and shell completions.
 
-Works with any service that supports standard two-factor authentication. Tessera
-is not affiliated with Google, Microsoft, Steam, or any other provider.
+Works with any service that supports standard two-factor authentication. Tessera is not affiliated with Google, Microsoft, Steam, or any other provider.
 ```
 
 **What's New (1.0.3):**
 
 ```
-No app changes. This version updates the description and screenshots so they
-match what the app does.
+No app changes. This version updates the description and screenshots so they match what the app does.
 ```
 
 `git log v1.0.2..HEAD` is a single commit and it touches `go/` only, so nothing
 user-facing changed in the app since the shipped 1.0.2 build. 1.0.3 is a listing
-update, and `swift/project.yml` still reads `MARKETING_VERSION 1.0.2` /
-`CURRENT_PROJECT_VERSION 7`. If App Store Connect refuses a new version without a
-build, rebuild the same source with `CURRENT_PROJECT_VERSION` raised and
-`MARKETING_VERSION` set to 1.0.3, and leave the release note as it stands.
+update, but an App Store Connect version record will not ship without a build
+attached, so it still needs one: bump `swift/project.yml` to
+`MARKETING_VERSION 1.0.3` / `CURRENT_PROJECT_VERSION 8`, re-archive the same
+source, and upload it. That bump is not in this branch; `project.yml` reads
+`1.0.2` / `7` today.
 
 **Review notes (paste):**
 
 ```
-Tessera is an offline TOTP authenticator; no login is required. To test: open
-the app, click the + button in the toolbar (or press Command-N), and paste
-this link:
+Tessera is an offline TOTP authenticator; no login is required. To test: open the app, click the + button in the toolbar (or press Command-N), and paste this link:
 otpauth://totp/Demo:tester?secret=JBSWY3DPEHPK3PXP&issuer=Demo
-A 6-digit code appears with a 30-second countdown ring. Click the row to copy
-it. "Scan screen" and "Import from images or files" are the other ways to add
-accounts.
+A 6-digit code appears with a 30-second countdown ring. Click the row to copy it. "Scan screen" and "Import from images or files" are the other ways to add accounts.
 ```
 
 ## Screenshots
@@ -239,19 +231,30 @@ for p in glob.glob("docs/appstore-assets/1.0.3/*.png"):
 
 ### Upload order
 
-Eight frames, light set as primary; the dark set is the alternate. App Store
-Connect takes up to 10 per localization.
+App Store Connect takes one ordered set of up to 10 screenshots per
+localization, with no light/dark alternate mechanism. Upload these eight files,
+in this order. The dark set is for the site and press use; it does not go to
+Connect. Guideline 2.3.3 wants the app itself first, so the two app frames lead
+and the recorded CLI frames follow.
 
 | # | File | Caption | Source |
 |---|---|---|---|
-| 1 | `01-watch-*.png` | Codes in your terminal. | recorded `tess watch` |
-| 2 | `02-code-*.png` | One command, one code. | recorded `tess code github -c` |
-| 3 | `03-vault-*.png` | Every account, one window. | the app's real row view, in window chrome |
-| 4 | `04-touchid-*.png` | Unlock with Touch ID. | the app's real locked screen |
-| 5 | `05-import-*.png` | Bring your accounts over. | recorded `tess import --file` |
-| 6 | `06-folders-*.png` | Folders and tags. | recorded `tess move` / `tess tag` / `tess list` |
-| 7 | `07-format-*.png` | One vault file, two cores. | `spec/vault-format.md` |
-| 8 | `08-private-*.png` | Nothing leaves your Mac. | entitlements + LICENSE |
+| 1 | `docs/appstore-assets/1.0.3/03-vault-light.png` | Every account, one window. | **needs the live capture first**, see below |
+| 2 | `docs/appstore-assets/1.0.3/04-touchid-light.png` | Unlock with Touch ID. | the app's real locked screen |
+| 3 | `docs/appstore-assets/1.0.3/01-watch-light.png` | Codes in your terminal. | recorded `tess watch` |
+| 4 | `docs/appstore-assets/1.0.3/02-code-light.png` | One command, one code. | recorded `tess code github -c` |
+| 5 | `docs/appstore-assets/1.0.3/05-import-light.png` | Bring your accounts over. | recorded `tess import --file` |
+| 6 | `docs/appstore-assets/1.0.3/06-folders-light.png` | Folders and tags. | recorded `tess move` / `tess tag` / `tess list` |
+| 7 | `docs/appstore-assets/1.0.3/07-format-light.png` | One vault file, two cores. | `spec/vault-format.md` |
+| 8 | `docs/appstore-assets/1.0.3/08-private-light.png` | Nothing leaves your Mac. | entitlements + LICENSE |
+
+Six of the eight are not app UI: four are recorded `tess` terminal output, one
+is the vault-format card, one is entitlements + LICENSE. That is the sharpest
+2.3.3 exposure in this submission. Frame 1 is the fix and the blocker at once:
+leading with the app satisfies 2.3.3, but the file sitting there today is a
+composite, so replace it with a real window capture before uploading anything
+(see "Still needs a live capture"). If that capture cannot happen, drop it and
+lead with `04-touchid-light.png`.
 
 ### Still needs a live capture
 
@@ -263,6 +266,11 @@ unsupported placeholder:
   running app with screen-recording permission granted. Capture it on the Xcode
   machine: put a QR on screen, open Add accounts, click Scan screen, and record
   the window.
-- **The populated window.** Frame 3 composes the app's real `AccountRowView`
-  inside window chrome rather than screenshotting a running window. A real
-  window capture of the unlocked vault, light and dark, would replace it.
+- **The populated window (blocks upload).** `03-vault-*.png` composes the app's
+  real `AccountRowView` inside drawn window chrome: no traffic lights, no
+  sidebar, no search field, and the narrow frame truncates the longer account
+  labels. It reads as a window screenshot and is not one. Replace it with a real
+  window capture of the unlocked vault, light and dark, on the Xcode machine.
+  Documenting the composite does not make it 2.3.3-compliant; if the live
+  capture cannot happen before submission, drop the frame rather than upload it
+  as a window screenshot.

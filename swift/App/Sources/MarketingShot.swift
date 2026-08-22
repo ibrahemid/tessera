@@ -38,7 +38,7 @@ enum MarketingShot {
                 content: TerminalBox(command: "tess code", lines: captures["tess-code"] ?? [])))),
             ("03-vault", AnyView(Frame(
                 title: "Every account,\none window.",
-                subtitle: "TOTP, HOTP, and Steam Guard, each with a countdown ring. Click a row to copy its code.",
+                subtitle: "TOTP and Steam Guard codes with a countdown ring. Click a row to copy its code.",
                 content: WindowMock()))),
             ("04-touchid", AnyView(Frame(
                 title: "Unlock with\nTouch ID.",
@@ -364,7 +364,9 @@ private struct WindowMock: View {
             Divider().overlay(Palette.border)
             VStack(spacing: 8) {
                 ForEach(Array(sample().prefix(5).enumerated()), id: \.element.id) { i, a in
-                    AccountRowView(account: a, remaining: [27, 19, 11, 4, 23][i],
+                    // Every sample account is period 30, so the real app shows one
+                    // shared epoch-aligned countdown, not a per-row value.
+                    AccountRowView(account: a, remaining: 23,
                                    code: ["318 204", "907 551", "642 119", "VHHQY", "775 380"][i],
                                    copied: i == 0, reduceMotion: true,
                                    onCopy: {}, onAdvance: {})
@@ -387,14 +389,14 @@ private struct VaultFormatCard: View {
                 line("{", Palette.textSecondary)
                 line("  \"version\": 1,", Palette.textPrimary)
                 line("  \"aead\": \"xchacha20poly1305\",", Palette.textPrimary)
-                line("  \"wraps\": [ argon2id, secure-enclave ],", Palette.accent)
+                line("  \"wraps\": [ … one per unlock method … ],", Palette.accent)
                 line("  \"payload\": { \"nonce\": …, \"ct\": … }", Palette.textPrimary)
                 line("}", Palette.textSecondary)
             }
             Divider().overlay(Palette.border)
             VStack(alignment: .leading, spacing: 10) {
-                fact("Written and read by the Go core and the Swift core")
-                fact("Both cross-decrypt shared vectors in CI, every commit")
+                fact("Secure Enclave on the Mac; a recovery passphrase adds an argon2id wrap")
+                fact("Written and read by the Go core and the Swift core, cross-decrypted in CI")
                 fact("The spec ships in the repo: spec/vault-format.md")
             }
         }
