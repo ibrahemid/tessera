@@ -38,7 +38,7 @@ Kept as a record. None of it repeats per release.
 
 ## Build & test status (verified on Xcode 27)
 
-- **`cd swift && swift test`**: 45 tests green, including `testArgon2idVector`
+- **`cd swift && swift test`**: 57 tests green, including `testArgon2idVector`
   (matches Go `x/crypto`) and `testFullVaultCrossDecrypt` (full Go to Swift
   envelope decrypt with real argon2id).
 - **App build**: `xcodegen generate && xcodebuild ... build` succeeds; the app
@@ -184,7 +184,8 @@ build, rebuild the same source with `CURRENT_PROJECT_VERSION` raised and
 
 ```
 Tessera is an offline TOTP authenticator; no login is required. To test: open
-the app, click the + button in the window's top right, and paste this link:
+the app, click the + button in the toolbar (or press Command-N), and paste
+this link:
 otpauth://totp/Demo:tester?secret=JBSWY3DPEHPK3PXP&issuer=Demo
 A 6-digit code appears with a 30-second countdown ring. Click the row to copy
 it. "Scan screen" and "Import from images or files" are the other ways to add
