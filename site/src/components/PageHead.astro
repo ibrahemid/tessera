@@ -1,0 +1,30 @@
+---
+interface Props {
+  kicker?: string;
+  title: string;
+  class?: string;
+}
+const { kicker, title, class: cls = "" } = Astro.props;
+---
+<header class:list={["page-head", cls]}>
+  <div class="page-head-copy">
+    {kicker && <p class="kicker">{kicker}</p>}
+    <h1 class="h-section mt-3">{title}</h1>
+    <div class="mt-5 lede measure"><slot /></div>
+  </div>
+  <div class="page-head-media"><slot name="media" /></div>
+</header>
+
+<style>
+  .page-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2.5rem;
+    padding-block: 3.5rem 2.5rem;
+    align-items: center;
+  }
+  .page-head-media:empty { display: none; }
+  @media (min-width: 900px) {
+    .page-head { grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); gap: 4rem; padding-block: 5rem 3rem; }
+  }
+</style>
