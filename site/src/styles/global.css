@@ -40,8 +40,9 @@
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
   --gap: clamp(1.25rem, 4vw, 2.5rem);
-  --content: min(1100px, 100% - var(--gap) * 2);
-  --wide: min(1600px, 100% - var(--gap) * 2);
+  --wide-max: 1440px;
+  --content-max: 1100px;
+  --wide: min(var(--wide-max), 100% - var(--gap) * 2);
   --measure: 60ch;
 }
 
@@ -125,23 +126,22 @@ p a, li a, dd a, td a { color: var(--gold); text-decoration: underline; text-dec
   border-radius: 4px;
 }
 
-/* ---------- the page grid: text gets a measure, media does not ---------- */
+/* ---------- the page grid: one left edge for chrome, text and media ----------
+   Everything sits in the wide column (1440 cap, centered above that). Text blocks
+   cap themselves at --content-max or --measure; media may run to the viewport edge. */
 
 .page {
   display: grid;
   grid-template-columns:
     [full-start] minmax(var(--gap), 1fr)
-      [wide-start] minmax(0, calc((var(--wide) - var(--content)) / 2))
-        [content-start] min(var(--content), 100% - var(--gap) * 2) [content-end]
-      minmax(0, calc((var(--wide) - var(--content)) / 2)) [wide-end]
+      [wide-start] min(var(--wide), 100% - var(--gap) * 2) [wide-end]
     minmax(var(--gap), 1fr) [full-end];
   row-gap: 0;
 }
-.page > * { grid-column: content; min-width: 0; }
-.page > .u-wide { grid-column: wide; }
+.page > * { grid-column: wide; min-width: 0; }
 .page > .u-full { grid-column: full; }
-.page > .u-bleed-right { grid-column: content-start / full-end; }
-.page > .u-bleed-left { grid-column: full-start / content-end; }
+.page > .u-bleed-right { grid-column: wide-start / full-end; }
+.page > .u-bleed-left { grid-column: full-start / wide-end; }
 
 /* a band keeps its own ground and re-exposes the same columns to its children */
 .band {
@@ -149,11 +149,20 @@ p a, li a, dd a, td a { color: var(--gold); text-decoration: underline; text-dec
   display: grid;
   grid-template-columns: inherit;
 }
-.band > * { grid-column: content; min-width: 0; }
-.band > .u-wide { grid-column: wide; }
+.band > * { grid-column: wide; min-width: 0; }
 .band > .u-full { grid-column: full; }
-.band > .u-bleed-right { grid-column: content-start / full-end; }
-.band > .u-bleed-left { grid-column: full-start / content-end; }
+.band > .u-bleed-right { grid-column: wide-start / full-end; }
+.band > .u-bleed-left { grid-column: full-start / wide-end; }
+
+.u-content { max-width: var(--content-max); }
+
+/* header and footer share the wide column's edges */
+.shell {
+  width: 100%;
+  max-width: calc(var(--wide-max) + var(--gap) * 2);
+  margin-inline: auto;
+  padding-inline: var(--gap);
+}
 
 .band-ink {
   background: var(--band);
@@ -201,9 +210,8 @@ p a, li a, dd a, td a { color: var(--gold); text-decoration: underline; text-dec
 }
 
 .kicker {
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
-  letter-spacing: 0.08em;
+  font-size: 0.8rem;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--gold);
 }
@@ -341,7 +349,8 @@ pre.term .g { color: var(--band-gold); }
 .row > dt { font-family: var(--font-display); font-weight: 700; letter-spacing: -0.01em; font-size: 1.1rem; color: var(--ink); }
 .row > dd { color: var(--ink-soft); max-width: 60ch; min-width: 0; }
 .row > dd a { color: var(--gold); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.15em; }
-.row .src { display: block; margin-top: 0.4rem; font-family: var(--font-mono); font-size: 0.78rem; }
+.row .src { display: block; margin-top: 0.5rem; font-size: 0.85rem; color: var(--ink-faint); }
+.row .src .mono { font-size: 0.9em; }
 
 /* ---------- nav, footer ---------- */
 
@@ -356,6 +365,7 @@ pre.term .g { color: var(--band-gold); }
 .site-nav a { padding: 0.5rem 0.7rem; border-radius: 0.4rem; color: var(--ink-soft); font-size: 0.92rem; }
 .site-nav a:hover, .site-nav a[aria-current="page"] { color: var(--ink); }
 
+.site-footer { border-top: 1px solid var(--band-line); }
 .site-footer a { color: var(--ink-soft); }
 .site-footer a:hover { color: var(--ink); }
 
@@ -368,8 +378,16 @@ pre.term .g { color: var(--band-gold); }
 }
 .glyph span { border-radius: 30%; }
 
-.hero-media { border-radius: 0.9rem; overflow: hidden; background: var(--band); border: 1px solid var(--band-line); }
-.hero-media video, .hero-media img { display: block; width: 100%; height: auto; }
+.hero-media {
+  position: relative;
+  width: 100%;
+  aspect-ratio: var(--ar, 16 / 9);
+  border-radius: 0.75rem;
+  overflow: hidden;
+  background: #0e0f13;
+  border: 1px solid var(--band-line);
+}
+.hero-media video, .hero-media img { display: block; width: 100%; height: 100%; object-fit: cover; }
 [data-video-blocked] .hero-media video { display: none; }
 .hero-media .fallback { display: none; }
 [data-video-blocked] .hero-media .fallback { display: block; }

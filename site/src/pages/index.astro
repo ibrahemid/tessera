@@ -2,6 +2,8 @@
 import Base from "../layouts/Base.astro";
 import AppShot from "../components/AppShot.astro";
 import HeroVideo from "../components/HeroVideo.astro";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 const repo = "https://github.com/ibrahemid/tessera";
 const blob = `${repo}/blob/main`;
@@ -75,6 +77,24 @@ const others = [
   ["oathtool, pass-otp", "Command-line tools with secrets in plain files or gpg, and no app.", "The same scriptability, an encrypted vault, Touch ID in the app, a window when you want one.", null],
 ];
 
+// Owed loops (Screen Studio, specs in design/ASSETS.md). A slot renders only once its
+// mp4, webm and poster all exist under public/media; nothing stands in for a missing one.
+const mediaDir = fileURLToPath(new URL("../../public/media/", import.meta.url));
+const loops = [
+  {
+    base: "touchid",
+    h: "Unlock with Touch ID",
+    p: "The vault key is wrapped by the Secure Enclave; the window opens on a fingerprint.",
+    alt: "The locked Tessera window, a Touch ID prompt, then the vault with live codes",
+  },
+  {
+    base: "qr-scan",
+    h: "Scan a QR code on screen",
+    p: "Point the app at any QR code on your display and the account is added.",
+    alt: "A QR code in a browser window, the Scan command, then the new account in the list",
+  },
+].filter((l) => ["mp4", "webm", "poster.webp"].every((ext) => existsSync(`${mediaDir}${l.base}${ext === "poster.webp" ? "-poster.webp" : "." + ext}`)));
+
 const softwareLd = {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
@@ -94,9 +114,9 @@ const softwareLd = {
 <Base current="/" preloadImage="/media/hero-poster.webp">
   <script slot="head" type="application/ld+json" is:inline set:html={JSON.stringify(softwareLd)} />
 
-  <!-- ===== HERO: dark band, the real CLI on the right ===== -->
-  <section class="band band-ink hero-band">
-    <div class="u-bleed-right hero">
+  <!-- ===== HERO: ink band, copy 5/12, the real CLI 7/12, both inside the wide column ===== -->
+  <section class="band band-ink">
+    <div class="hero">
       <div class="hero-copy">
         <h1 class="h-display">Two-factor codes you own.</h1>
         <p class="lede mt-6 measure">
@@ -116,94 +136,105 @@ const softwareLd = {
         <HeroVideo
           src="/media/hero"
           poster="/media/hero-poster.webp"
-          width={1000}
-          height={560}
-          bleed
-          alt="tess in a terminal: the live watch view with countdown bars, then adding an account from a QR image, copying a code and printing JSON"
+          width={1280}
+          height={720}
+          alt="tess in a terminal: the live watch view with five accounts, codes and full countdown bars, then adding GitHub from a QR image, copying its code and printing it as JSON"
         />
-        <p class="mono text-xs faint mt-3">Recorded from the real CLI against a throwaway vault. Those secrets are not in use.</p>
+        <p class="text-xs faint mt-3">Recorded from the real CLI against a throwaway vault.</p>
       </div>
     </div>
   </section>
 
-  <!-- ===== INSTALL: sunken band right under the hero ===== -->
-  <section id="install" class="band band-sunken install scroll-mt-20">
-    <div class="install-grid">
-      <div class="install-app">
-        <h2 class="h-sub">The Mac app</h2>
-        <a href={appStore} rel="noopener" class="inline-block mt-4" aria-label="Download on the Mac App Store">
-          <img src="/mac-app-store-badge.svg" alt="" width="156" height="40" class="badge-store" style="height: 3.4rem" />
-        </a>
-        <p class="mt-3 text-sm soft">macOS 14 or later. Version 1.0.2.</p>
-        <p class="mt-6 text-sm soft measure">The app and the CLI are separate downloads. They share one vault once you open the CLI's file in the app, or set a recovery passphrase in the app's settings.</p>
-      </div>
-      <div class="install-cli">
-        <h2 class="h-sub">The <span class="mono">tess</span> CLI</h2>
-        <dl class="rows mt-4">
-          <div class="row">
-            <dt>Homebrew</dt>
-            <dd>
-              <div class="cmd"><code><span class="p">$</span>{brewCmd}</code><button type="button" data-copy={brewCmd} aria-label="Copy the Homebrew command">Copy</button></div>
-              <span class="src">Homebrew 6 loads a third-party tap only after <span class="mono">{trustCmd}</span>; run that first. Formula: <a href={tapFormula} rel="noopener">ibrahemid/homebrew-tap</a>.</span>
-            </dd>
-          </div>
-          <div class="row">
-            <dt>Script</dt>
-            <dd>
-              <div class="cmd"><code><span class="p">$</span>{curlCmd}</code><button type="button" data-copy={curlCmd} aria-label="Copy the install script command">Copy</button></div>
-              <span class="src">Downloads the release tarball for the current OS and CPU, verifies its sha256 against checksums.txt, and puts <span class="mono">tess</span> in /usr/local/bin or ~/.local/bin. Read <a href={`${blob}/install.sh`} rel="noopener">install.sh</a> first.</span>
-            </dd>
-          </div>
-          <div class="row">
-            <dt>Tarballs</dt>
-            <dd>
-              <ul class="space-y-2">
-                {tarballs.map(([label, file, sha]) => (
-                  <li>
-                    <a href={`${releaseBase}/${file}`} rel="noopener">{label}</a>
-                    <span class="block mono text-[0.72rem] faint break-all">sha256 {sha}</span>
-                  </li>
-                ))}
-              </ul>
-              <span class="src">v{cliVersion} · <a href={`${releaseBase}/checksums.txt`} rel="noopener">checksums.txt</a> · <a href={`${repo}/releases`} rel="noopener">all releases</a></span>
-            </dd>
-          </div>
-          <div class="row">
-            <dt>From source</dt>
-            <dd>
-              <div class="cmd"><code><span class="p">$</span>{goCmd}</code><button type="button" data-copy={goCmd} aria-label="Copy the go install command">Copy</button></div>
-              <span class="src">Go 1.26.2 or later.</span>
-            </dd>
-          </div>
-        </dl>
-        <p class="mt-5 text-sm soft">
-          Then <span class="mono">tess vault init</span>, <span class="mono">tess add</span>, <span class="mono">tess watch</span>.
-          Vault path: <span class="mono">~/.local/share/tessera/vault.json</span>. The full reference is on <a href="/cli">/cli</a>.
-        </p>
-      </div>
+  <!-- ===== INSTALL: paper, the app left, the CLI rows right ===== -->
+  <section id="install" class="install scroll-mt-20">
+    <div class="install-app">
+      <h2 class="h-sub">Install</h2>
+      <a href={appStore} rel="noopener" class="inline-block mt-5" aria-label="Download on the Mac App Store">
+        <img src="/mac-app-store-badge.svg" alt="" width="156" height="40" class="badge-store" style="height: 3.4rem" />
+      </a>
+      <p class="mt-3 text-sm soft">App version 1.0.2.</p>
+      <p class="mt-6 text-sm soft measure">The app and the CLI are separate downloads. They share one vault once you open the CLI's file in the app, or set a recovery passphrase in the app's settings.</p>
     </div>
-  </section>
-
-  <!-- ===== THE APP: cream, the live window runs off the right edge ===== -->
-  <section id="app" class="u-bleed-right app scroll-mt-20">
-    <div class="app-copy">
-      <h2 class="h-section">A native Mac app on the same vault.</h2>
-      <p class="lede mt-5 measure">
-        Live codes with countdown rings, one-click copy, on-screen QR scanning and Touch ID unlock.
-        It opens a vault the CLI created, and the CLI keeps working on the same file.
+    <div class="install-cli">
+      <dl class="rows">
+        <div class="row">
+          <dt>Homebrew</dt>
+          <dd>
+            <div class="cmd"><code><span class="p">$</span>{trustCmd}</code><button type="button" data-copy={trustCmd} aria-label="Copy the brew trust command">Copy</button></div>
+            <div class="cmd mt-2"><code><span class="p">$</span>{brewCmd}</code><button type="button" data-copy={brewCmd} aria-label="Copy the Homebrew command">Copy</button></div>
+            <span class="src">Homebrew 6 loads a third-party tap only after it is trusted. Formula: <a href={tapFormula} rel="noopener">ibrahemid/homebrew-tap</a>.</span>
+          </dd>
+        </div>
+        <div class="row">
+          <dt>Script</dt>
+          <dd>
+            <div class="cmd"><code><span class="p">$</span>{curlCmd}</code><button type="button" data-copy={curlCmd} aria-label="Copy the install script command">Copy</button></div>
+            <span class="src">Downloads the release tarball for the current OS and CPU, verifies its sha256 against checksums.txt, and puts <span class="mono">tess</span> in /usr/local/bin or ~/.local/bin. Read <a href={`${blob}/install.sh`} rel="noopener">install.sh</a> first.</span>
+          </dd>
+        </div>
+        <div class="row">
+          <dt>Tarballs</dt>
+          <dd>
+            <ul class="tarballs">
+              {tarballs.map(([label, file, sha]) => (
+                <li>
+                  <a href={`${releaseBase}/${file}`} rel="noopener">{label}</a>
+                  <span class="mono sha">{sha}</span>
+                </li>
+              ))}
+            </ul>
+            <span class="src">v{cliVersion} · <a href={`${releaseBase}/checksums.txt`} rel="noopener">checksums.txt</a> · <a href={`${repo}/releases`} rel="noopener">all releases</a></span>
+          </dd>
+        </div>
+        <div class="row">
+          <dt>From source</dt>
+          <dd>
+            <div class="cmd"><code><span class="p">$</span>{goCmd}</code><button type="button" data-copy={goCmd} aria-label="Copy the go install command">Copy</button></div>
+            <span class="src">Go 1.26.2 or later.</span>
+          </dd>
+        </div>
+      </dl>
+      <p class="mt-5 text-sm soft">
+        Then <span class="mono">tess vault init</span>, <span class="mono">tess add</span>, <span class="mono">tess watch</span>.
+        Vault path: <span class="mono">~/.local/share/tessera/vault.json</span>. The full reference is on <a href="/cli">/cli</a>.
       </p>
-      <ul class="mt-7 space-y-2 soft">
-        <li>TOTP, HOTP and Steam Guard.</li>
-        <li>Imports otpauth links, Google Authenticator exports, and Aegis, 2FAS or Raivo files.</li>
-        <li>Folders, pinning, and a short handle per account that both surfaces share.</li>
-        <li>Copied codes are marked concealed for clipboard managers, and the window is excluded from screen capture.</li>
-      </ul>
     </div>
-    <AppShot class="app-shot" bleed sizes="(min-width: 900px) 52vw, 92vw" />
   </section>
 
-  <!-- ===== ONE VAULT, TWO IMPLEMENTATIONS: sunken wide band ===== -->
-  <section id="one-vault" class="band band-sunken one-vault">
+  <!-- ===== THE APP: sunken band, the live window runs off the right edge and over the next band ===== -->
+  <section id="app" class="band band-sunken app-band scroll-mt-20">
+    <div class="u-bleed-right app">
+      <div class="app-copy">
+        <h2 class="h-section">A native Mac app on the same vault.</h2>
+        <p class="lede mt-5 measure">
+          Live codes with countdown rings, one-click copy, on-screen QR scanning and Touch ID unlock.
+          It opens a vault the CLI created, and the CLI keeps working on the same file.
+        </p>
+        <ul class="mt-7 space-y-2 soft measure">
+          <li>TOTP, HOTP and Steam Guard.</li>
+          <li>Imports otpauth links, Google Authenticator exports, and Aegis, 2FAS or Raivo files.</li>
+          <li>Folders, pinning, and a short handle per account that both surfaces share.</li>
+          <li>Copied codes are marked concealed for clipboard managers, and the window is excluded from screen capture.</li>
+        </ul>
+      </div>
+      <AppShot class="app-shot" bleed sizes="(min-width: 900px) 56vw, 92vw" />
+    </div>
+  </section>
+
+  {loops.length > 0 && (
+    <section class="loops" aria-label="The app in motion">
+      {loops.map((l) => (
+        <div class="loop">
+          <HeroVideo src={`/media/${l.base}`} poster={`/media/${l.base}-poster.webp`} width={1440} height={1044} alt={l.alt} />
+          <h3 class="h-small mt-5">{l.h}</h3>
+          <p class="mt-2 soft text-[0.95rem]">{l.p}</p>
+        </div>
+      ))}
+    </section>
+  )}
+
+  <!-- ===== ONE VAULT, TWO IMPLEMENTATIONS: paper, hairline columns across the wide column ===== -->
+  <section id="one-vault" class="one-vault">
     <div class="measure">
       <h2 class="h-section">One vault, two implementations.</h2>
       <p class="lede mt-6">
@@ -211,7 +242,7 @@ const softwareLd = {
         The contract is written down, pinned to test vectors, and checked in CI on every push.
       </p>
     </div>
-    <div class="u-wide pillars">
+    <div class="pillars">
       {pillars.map((x) => (
         <div class="pillar">
           <h3 class="h-sub">{x.h}</h3>
@@ -229,12 +260,11 @@ const softwareLd = {
     </p>
   </section>
 
-  <!-- ===== SECURITY YOU CAN READ: two-column reading rows ===== -->
+  <!-- ===== SECURITY YOU CAN READ: paper, reading rows capped at the content width ===== -->
   <section id="security" class="security">
-    <div class="security-head">
-      <h2 class="h-section">Security you can read.</h2>
-      <p class="lede mt-4 measure">Each line links to the file that does it.</p>
-    </div>
+    <div class="u-content">
+    <h2 class="h-section">Security you can read.</h2>
+    <p class="lede mt-4 measure">Each line links to the file that does it.</p>
     <dl class="rows mt-10">
       {security.map((s) => (
         <div class="row">
@@ -253,112 +283,126 @@ const softwareLd = {
     <p class="mt-6 soft">
       More on <a href="/security">/security</a>, including what to do if you find something.
     </p>
+    </div>
   </section>
 
-  <!-- ===== THE OTHERS: sunken band, two columns ===== -->
+  <!-- ===== THE OTHERS: sunken band, three columns that stack on a phone ===== -->
   <section id="compare" class="band band-sunken compare">
-    <div class="measure">
+    <div>
       <h2 class="h-sub">Compared with the others</h2>
-    </div>
-    <div class="u-wide cmp-wrap mt-8">
-      <table class="cmp">
-        <thead>
-          <tr><th></th><th>Them</th><th>Tessera</th></tr>
-        </thead>
-        <tbody>
-          {others.map(([name, them, us, href]) => (
-            <tr>
-              <th scope="row">
-                {name}
-                {href && <a href={href} class="block mono text-[0.78rem] mt-1" style="font-weight: 400">{`Tessera vs ${name}`}</a>}
-              </th>
-              <td>{them}</td>
-              <td>{us}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div class="cmp mt-8" role="table" aria-label="Tessera compared with other authenticators">
+        <div class="cmp-head" role="row"><span role="columnheader"></span><span role="columnheader">Them</span><span role="columnheader">Tessera</span></div>
+        {others.map(([name, them, us, href]) => (
+          <div class="cmp-row" role="row">
+            <div role="rowheader" class="cmp-name">
+              {name}
+              {href && <a href={href} class="block text-[0.85rem] mt-1">{`Tessera vs ${name}`}</a>}
+            </div>
+            <div role="cell"><span class="cmp-label">Them</span>{them}</div>
+            <div role="cell"><span class="cmp-label">Tessera</span>{us}</div>
+          </div>
+        ))}
+      </div>
     </div>
   </section>
 
-  <!-- ===== CLOSE ===== -->
-  <section class="close">
-    <h2 class="h-display">All of it, free.</h2>
-    <div class="mt-8 flex flex-wrap items-center gap-3">
-      <a href={appStore} rel="noopener" aria-label="Download on the Mac App Store">
-        <img src="/mac-app-store-badge.svg" alt="" width="156" height="40" class="badge-store" />
-      </a>
-      <a href="#install" class="btn btn-ghost" style="height: 3.1rem">Get the <span class="mono" style="margin: 0 0.1em">tess</span> CLI</a>
+  <!-- ===== CLOSE: ink, runs into the footer ===== -->
+  <section class="band band-ink close">
+    <div>
+      <h2 class="h-display">All of it, free.</h2>
+      <div class="mt-8 flex flex-wrap items-center gap-3">
+        <a href={appStore} rel="noopener" aria-label="Download on the Mac App Store">
+          <img src="/mac-app-store-badge.svg" alt="" width="156" height="40" class="badge-store" />
+        </a>
+        <a href="#install" class="btn btn-ghost" style="height: 3.1rem">Get the <span class="mono" style="margin: 0 0.1em">tess</span> CLI</a>
+      </div>
     </div>
   </section>
 </Base>
 
 <style>
-  .hero-band { overflow: hidden; }
+  /* hero */
   .hero {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: 2.5rem;
-    padding-block: 3.5rem 3rem;
+    padding-block: 3rem 3rem;
     align-items: center;
   }
-  .hero-copy { padding-right: var(--gap); }
   .hero-cmd { max-width: 100%; }
-  .hero-demo { padding-right: var(--gap); }
-  @media (min-width: 1024px) {
+  @media (min-width: 1120px) {
     .hero {
-      grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+      grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
       gap: 3.5rem;
-      padding-block: 5.5rem 5rem;
+      padding-block: 4.5rem;
     }
-    .hero-demo { padding-right: 0; }
   }
 
-  .install { padding-block: 3.5rem 4rem; }
-  .install-grid { display: grid; gap: 3rem; }
-  @media (min-width: 900px) { .install-grid { grid-template-columns: minmax(0, 0.6fr) minmax(0, 1.4fr); gap: 4rem; } }
+  /* install */
+  .install { display: grid; gap: 2.5rem; padding-block: 3.5rem 4rem; }
+  @media (min-width: 900px) { .install { grid-template-columns: minmax(0, 0.55fr) minmax(0, 1.45fr); gap: 4rem; } }
   .install .row { grid-template-columns: 1fr; }
-  @media (min-width: 720px) { .install .row { grid-template-columns: minmax(8rem, 0.25fr) 1fr; } }
+  @media (min-width: 720px) { .install .row { grid-template-columns: minmax(8rem, 0.22fr) 1fr; } }
   .install .row > dd { max-width: none; }
+  .tarballs { display: grid; gap: 0.6rem; }
+  .tarballs a { color: var(--gold); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.15em; }
+  .sha { display: block; font-size: 0.72rem; color: var(--ink-faint); overflow-wrap: anywhere; }
 
+  /* app */
+  .app-band { padding-block: 4.5rem 0; }
   .app {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: 2.5rem;
-    padding-block: 5rem 0;
     align-items: end;
     position: relative;
     z-index: 1;
   }
-  .app-copy { padding-right: var(--gap); padding-bottom: 2rem; }
+  .app-copy { padding-right: var(--gap); padding-bottom: 2.5rem; }
   .app-copy li { padding-left: 1.1rem; position: relative; }
   .app-copy li::before { content: ""; position: absolute; left: 0; top: 0.72em; width: 0.45rem; height: 0.45rem; border-radius: 2px; background: var(--gold); }
   @media (min-width: 900px) {
-    .app { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 4rem; padding-block: 6.5rem 0; }
-    .app-copy { padding-bottom: 7rem; }
-    .app-shot { margin-bottom: -3.5rem; }
+    .app-band { padding-top: 5.5rem; }
+    .app { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 3rem; }
+    .app-copy { padding-bottom: 6rem; }
+    .app > :global(.app-shot) { margin-bottom: -3.5rem; }
   }
 
-  .one-vault { padding-block: 6rem 5rem; }
-  @media (min-width: 900px) { .one-vault { padding-top: 9.5rem; } }
+  /* loops */
+  .loops { display: grid; gap: 3rem; padding-block: 6rem 0; }
+  @media (min-width: 900px) { .loops { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3rem; } }
+  .loop :global(.hero-media) { background: var(--surface); border-color: var(--line-strong); }
+
+  /* one vault */
+  .one-vault { padding-block: 5rem 5rem; }
+  @media (min-width: 900px) { .one-vault { padding-top: 9rem; } }
   .pillars { display: grid; gap: 2rem; margin-top: 3.5rem; }
   .pillar { padding-top: 1.5rem; border-top: 1px solid var(--line-strong); }
   @media (min-width: 900px) {
     .pillars { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; }
-    .pillar { border-top: 0; border-left: 1px solid var(--line-strong); padding: 0.25rem 2rem 0 2rem; }
+    .pillar { border-top: 0; border-left: 1px solid var(--line-strong); padding: 0.25rem 2.5rem 0 2.5rem; }
     .pillar:first-child { padding-left: 0; border-left: 0; }
+    .pillar:last-child { padding-right: 0; }
   }
 
-  .security { padding-block: 6rem 5rem; }
+  /* security */
+  .security { padding-block: 5rem 5.5rem; border-top: 1px solid var(--line); }
 
-  .compare { padding-block: 5rem; }
-  .cmp-wrap { overflow-x: auto; }
-  .cmp { width: 100%; border-collapse: collapse; font-size: 0.97rem; min-width: 40rem; }
-  .cmp th, .cmp td { text-align: left; vertical-align: top; padding: 1rem 1.5rem 1rem 0; border-bottom: 1px solid var(--line); }
-  .cmp thead th { font-family: var(--font-display); font-size: 1.05rem; }
-  .cmp tbody th { font-family: var(--font-display); font-size: 1.05rem; color: var(--ink); width: 14rem; }
-  .cmp td { color: var(--ink-soft); width: 40%; }
-  .cmp tbody th a { color: var(--gold); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.15em; }
+  /* compare */
+  .compare { padding-block: 4.5rem 5rem; }
+  .cmp { border-top: 1px solid var(--line); font-size: 0.97rem; }
+  .cmp-head, .cmp-row { display: grid; grid-template-columns: 1fr; gap: 0.5rem 2rem; padding: 1.1rem 0; border-bottom: 1px solid var(--line); }
+  .cmp-head { display: none; }
+  .cmp-name { font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; color: var(--ink); }
+  .cmp-name a { color: var(--gold); font-weight: 400; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.15em; }
+  .cmp-row [role="cell"] { color: var(--ink-soft); max-width: 60ch; }
+  .cmp-label { display: block; font-family: var(--font-display); font-weight: 700; font-size: 0.85rem; color: var(--ink); margin-bottom: 0.15rem; }
+  @media (min-width: 720px) {
+    .cmp-head, .cmp-row { grid-template-columns: minmax(10rem, 0.28fr) 1fr 1fr; }
+    .cmp-head { display: grid; font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; padding-block: 0.9rem; }
+    .cmp-label { display: none; }
+  }
 
-  .close { padding-block: 7rem 6rem; }
+  /* close */
+  .close { padding-block: 6rem 5rem; }
 </style>

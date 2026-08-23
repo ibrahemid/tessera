@@ -21,13 +21,14 @@ const alt = "Tessera's main window: a sidebar with All, Pinned and a Work folder
   .shot {
     display: block;
     width: 100%;
-    max-width: 720px;
+    max-width: 800px;
+    margin-inline-start: auto;
     height: auto;
     border-radius: 10px;
     box-shadow: 0 0 0 1px var(--line-strong);
   }
   @media (min-width: 900px) {
-    .bleed .shot { width: min(calc(100% + 1.25rem), 720px); max-width: none; border-radius: 10px 0 0 10px; }
+    .bleed .shot { max-width: none; border-radius: 10px 0 0 10px; }
   }
   .shot-dark { display: none; }
   :global(html.dark) .shot-light { display: none; }

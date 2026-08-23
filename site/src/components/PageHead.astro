@@ -3,11 +3,10 @@ interface Props {
   kicker?: string;
   title: string;
   class?: string;
-  bleed?: boolean;
 }
-const { kicker, title, class: cls = "", bleed = false } = Astro.props;
+const { kicker, title, class: cls = "" } = Astro.props;
 ---
-<header class:list={["page-head", cls, bleed && "u-bleed-right"]}>
+<header class:list={["page-head", cls]}>
   <div class="page-head-copy">
     {kicker && <p class="kicker">{kicker}</p>}
     <h1 class="h-section mt-3">{title}</h1>
@@ -24,11 +23,11 @@ const { kicker, title, class: cls = "", bleed = false } = Astro.props;
     padding-block: 3.5rem 2.5rem;
     align-items: center;
   }
-  .page-head.u-bleed-right { overflow: hidden; }
   .page-head-media:empty { display: none; }
+  .page-head-media { display: grid; justify-items: end; }
+  .page-head-media > :global(*) { width: 100%; }
+  .page-head:has(.page-head-media:empty) { grid-template-columns: minmax(0, 1fr); }
   @media (min-width: 900px) {
-    .page-head { grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); gap: 4rem; padding-block: 5rem 3rem; }
-    .page-head.u-bleed-right { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); }
-    .page-head.u-bleed-right .page-head-copy { padding-right: var(--gap); }
+    .page-head { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 3.5rem; padding-block: 4.5rem 3rem; }
   }
 </style>

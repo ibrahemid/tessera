@@ -15,7 +15,7 @@ cd "$work"
 export PATH="$work/bin:$PATH"
 export TESSERA_PASSPHRASE='correct horse battery staple'
 
-# the QR that gets added on camera comes from a second vault, so the demo vault starts without GitHub
+# the QR added on camera comes from a second vault, so the demo vault starts with five accounts and no GitHub
 export TESSERA_VAULT=seed.json
 tess vault init >/dev/null
 tess add "otpauth://totp/GitHub:ibra?secret=JBSWY3DPEHPK3PXP&issuer=GitHub" >/dev/null
@@ -30,12 +30,16 @@ tess add "otpauth://hotp/AWS:root?secret=JBSWY3DPEHPK3PXP&issuer=AWS&counter=4" 
 tess add "otpauth://totp/Cloudflare:ibra%40example.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=Cloudflare" >/dev/null
 tess add "otpauth://totp/Fastmail:ibra%40fastmail.com?secret=KRSXG5DFOIQHI2DJONQSA2LTEBUW4ZJAMVXGG4TZOB2GSZLE&issuer=Fastmail" >/dev/null
 tess add "otpauth://totp/Tailscale:ibra?secret=ORSXG5DFOIQHI2DJONQSAZLYMFWXA3DF&issuer=Tailscale" >/dev/null
-tess add "otpauth://totp/npm:ibra?secret=NZYW2IDUMVZXIIDTMVRXEZLU&issuer=npm" >/dev/null
 tess add "otpauth://totp/Steam:ibra?secret=JBSWY3DPEHPK3PXP&issuer=Steam" --type steam >/dev/null
 
-# start at the top of a 30 s TOTP window so the bars are full in the poster
-sleep $((30 - $(date +%s) % 30))
+# the poster is the first shown frame, so the bars must be full then: vhs takes
+# 9 to 11 s (startup plus the hidden setup) before it reaches Show; a lead of 7 lands
+# the poster 2 to 4 s into the window
+lead=${HERO_LEAD:-7}
+sleep $(( (30 - ($(date +%s) + lead) % 30) % 30 ))
 vhs "$here/hero.tape" >/dev/null
+# the stills tape reaches its first screenshot about 5 s in; land it just after a window top
+sleep $(( (30 - ($(date +%s) + 5) % 30) % 30 ))
 vhs "$here/stills.tape" >/dev/null
 
 mkdir -p "$site/public/media"

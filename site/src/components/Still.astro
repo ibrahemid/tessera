@@ -13,7 +13,7 @@ const { src, alt, class: cls = "", sizes = "(min-width: 900px) 40vw, 92vw", eage
 const widths = [Math.round(src.width / 2), src.width];
 ---
 <figure class:list={["still", cls]}>
-  <Image src={src} alt={alt} widths={widths} sizes={sizes} format="webp" quality={88} loading={eager ? "eager" : "lazy"} style={`max-width: ${src.width}px`} />
+  <Image src={src} alt={alt} widths={widths} sizes={sizes} format="webp" quality={88} loading={eager ? "eager" : "lazy"} style={`max-width: ${src.width}px; margin-inline-start: auto`} />
 </figure>
 
 <style>
