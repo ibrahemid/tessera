@@ -1,0 +1,70 @@
+---
+import Base from "../../layouts/Base.astro";
+import PageHead from "../../components/PageHead.astro";
+import AppShot from "../../components/AppShot.astro";
+
+const rows = [
+  ["Price", "Free", "Free"],
+  ["Source", "Open source", "Open source, Apache-2.0"],
+  ["Sync", "End-to-end encrypted sync through an Ente account", "None. The vault is a file you copy, back up, or merge with tess merge"],
+  ["Platforms", "iOS, Android, web, and a desktop app for macOS, Windows and Linux", "A native macOS app; the tess CLI on macOS and Linux"],
+  ["Mac App Store", "Not listed, checked 2026-08-22", "Listed, sandboxed, privacy label Data Not Collected"],
+  ["Command line", "None", "tess: codes, --json, watch, import, export, completions"],
+  ["Vault format", "Ente's own", "Documented spec with two independent implementations tested against shared vectors"],
+  ["Import", "otpauth links and QR codes, plus exports from other apps", "otpauth links, QR images, Google Authenticator exports, Aegis, 2FAS and Raivo files"],
+];
+---
+<Base
+  title="Tessera vs Ente Auth"
+  description="An honest comparison: Ente Auth syncs your codes everywhere; Tessera keeps one vault on a Mac and adds a command line. Which to pick, and how to move."
+  current="/vs/ente"
+>
+  <PageHead kicker="Compared" title="Tessera vs Ente Auth.">
+    Two open-source authenticators with different jobs. If you want your codes on your phone, laptop and browser at once, use Ente Auth. Tessera is for keeping one vault on a Mac and reaching it from the terminal.
+    <AppShot slot="media" sizes="(min-width: 900px) 34vw, 80vw" />
+  </PageHead>
+
+  <div class="measure cmp">
+    <table>
+      <thead>
+        <tr><th></th><th>Ente Auth</th><th>Tessera</th></tr>
+      </thead>
+      <tbody>
+        {rows.map(([k, a, b]) => (
+          <tr><th scope="row">{k}</th><td>{a}</td><td>{b}</td></tr>
+        ))}
+      </tbody>
+    </table>
+
+    <h2 class="h-sub mt-14">Pick Ente Auth if</h2>
+    <ul class="mt-4 soft list">
+      <li>You use more than one device and want them in sync without doing anything.</li>
+      <li>You want a phone app from the same vendor.</li>
+    </ul>
+
+    <h2 class="h-sub mt-12">Pick Tessera if</h2>
+    <ul class="mt-4 soft list">
+      <li>Your codes should stay on one Mac, in a file you can read the format of.</li>
+      <li>You want <span class="mono">tess code github -c</span> in a shell, JSON for scripts, and Touch ID in the app.</li>
+      <li>You want the app to come through the Mac App Store, sandboxed, with no network entitlement.</li>
+    </ul>
+
+    <h2 class="h-sub mt-12">Moving in either direction</h2>
+    <p class="mt-4 soft">
+      Both read standard otpauth links and QR codes. For any service, the setup QR from its security page works in either app. Tessera also imports an Ente-style export only if it is a plain file of otpauth lines; encrypted exports need to be decrypted first.
+    </p>
+    <p class="mt-4 soft">Facts about Ente Auth were checked on 2026-08-22 and may have changed; its site is <a href="https://ente.io/auth/" rel="noopener">ente.io/auth</a>.</p>
+  </div>
+</Base>
+
+<style>
+  .cmp { padding-block: 1rem 6rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+  th, td { text-align: left; vertical-align: top; padding: 0.8rem 1rem 0.8rem 0; border-bottom: 1px solid var(--line); }
+  thead th { font-family: var(--font-display); font-size: 1.05rem; }
+  tbody th { color: var(--ink); white-space: nowrap; }
+  td { color: var(--ink-soft); }
+  .list li { padding-left: 1.1rem; position: relative; }
+  .list li + li { margin-top: 0.5rem; }
+  .list li::before { content: ""; position: absolute; left: 0; top: 0.72em; width: 0.4rem; height: 0.4rem; border-radius: 2px; background: var(--gold); }
+</style>

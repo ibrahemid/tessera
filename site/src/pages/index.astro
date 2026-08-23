@@ -1,75 +1,74 @@
 ---
 import Base from "../layouts/Base.astro";
-import TileMosaic from "../components/TileMosaic.astro";
-import Terminal from "../components/Terminal.astro";
+import AppShot from "../components/AppShot.astro";
+import HeroVideo from "../components/HeroVideo.astro";
 
 const repo = "https://github.com/ibrahemid/tessera";
+const blob = `${repo}/blob/main`;
 const appStore = "https://apps.apple.com/app/tessera-2fa-authenticator/id6788814172";
 
-const features = [
-  {
-    k: "01",
-    t: "Works with any TOTP service",
-    b: "Standard TOTP, plus HOTP and Steam Guard.",
-    c: "var(--violet)",
-  },
-  {
-    k: "02",
-    t: "Move in, in minutes",
-    b: "Import from Google Authenticator, paste otpauth links, or scan a QR. One account or a hundred at once, nothing to retype.",
-    c: "var(--blue)",
-  },
-  {
-    k: "03",
-    t: "Scan from the screen",
-    b: "Point the app at a QR code on your display and it reads it. The CLI reads QR images straight from a file.",
-    c: "var(--teal)",
-  },
-  {
-    k: "04",
-    t: "A real command line",
-    b: "Lists, watches, and copies codes.",
-    c: "var(--gold-bright)",
-  },
-  {
-    k: "05",
-    t: "Open with Touch ID",
-    b: "Your vault key can be sealed by the Secure Enclave. Turn on Require Touch ID and the key won't open without your fingerprint.",
-    c: "var(--coral)",
-  },
-  {
-    k: "06",
-    t: "Encrypted on your device",
-    b: "A random key encrypts every secret with XChaCha20-Poly1305, wrapped by the Secure Enclave on a Mac or by an argon2id key from your passphrase. Plain secrets never touch disk.",
-    c: "var(--green)",
-  },
-];
-
-const cliCmds = [
-  ["tess add", "add an account from an otpauth link or QR"],
-  ["tess", "print current codes with countdown bars"],
-  ["tess watch", "live view: search, copy, refresh"],
-  ["tess code github -c", "copy one code to the clipboard"],
-];
-
-const appleGlyph =
-  "M16.36 12.78c-.02-2.3 1.88-3.4 1.96-3.46-1.07-1.56-2.73-1.78-3.32-1.8-1.41-.14-2.76.83-3.48.83-.72 0-1.82-.81-3-.79-1.54.02-2.96.9-3.75 2.28-1.6 2.78-.41 6.89 1.15 9.14.76 1.1 1.67 2.34 2.86 2.3 1.15-.05 1.58-.74 2.97-.74 1.38 0 1.77.74 2.98.72 1.23-.02 2.01-1.12 2.76-2.23.87-1.28 1.23-2.52 1.25-2.58-.03-.01-2.4-.92-2.42-3.64zM14.13 6.13c.64-.78 1.07-1.85.95-2.93-.92.04-2.03.61-2.69 1.38-.59.69-1.11 1.79-.97 2.85 1.02.08 2.07-.52 2.71-1.3z";
-
 const cliVersion = "1.0.2";
-const brewCmd = "brew install ibrahemid/tap/tess";
-const curlCmd = `curl -fsSL ${repo.replace("github.com", "raw.githubusercontent.com")}/main/install.sh | sh`;
+const goCmd = "go install github.com/ibrahemid/tessera/go/cmd/tess@latest";
 const releaseBase = `${repo}/releases/download/v${cliVersion}`;
 const tarballs = [
+  ["macOS, Apple silicon", `tess_${cliVersion}_darwin_arm64.tar.gz`, "f0b41aa4a75baf57dd6f55e9191e3dcac4761653f4fa2ca0ced85001810be18d"],
+  ["macOS, Intel", `tess_${cliVersion}_darwin_amd64.tar.gz`, "16c16f0adb8bd967a4597b0d86cc7b6d2cafa2995c1539b64e757a69fc34a491"],
+  ["Linux, arm64", `tess_${cliVersion}_linux_arm64.tar.gz`, "1988dcf8dcca0eafd3ae8d9b16dd978db799ff06464a841a46f2386df2f115fe"],
+  ["Linux, x86_64", `tess_${cliVersion}_linux_amd64.tar.gz`, "3758e770c7da4547fb4e31e54fd97e5c9761468d4a356fe41ee3170ac52f838f"],
+];
+
+const pillars = [
   {
-    label: "macOS · Apple silicon",
-    file: `tess_${cliVersion}_darwin_arm64.tar.gz`,
-    sha: "f0b41aa4a75baf57dd6f55e9191e3dcac4761653f4fa2ca0ced85001810be18d",
+    h: "Canonical JSON",
+    p: "Before encryption the account list is serialized one way only: keys sorted by UTF-8 byte order, Go's string escaping with HTML escaping off, no whitespace, integers only. Both cores produce the same bytes, so cross-decrypt can diff them.",
+    links: [[`${blob}/spec/vault-format.md`, "spec/vault-format.md"], [`${blob}/spec/canonical_edge.json`, "spec/canonical_edge.json"]],
   },
   {
-    label: "macOS · Intel",
-    file: `tess_${cliVersion}_darwin_amd64.tar.gz`,
-    sha: "16c16f0adb8bd967a4597b0d86cc7b6d2cafa2995c1539b64e757a69fc34a491",
+    h: "Shared vector suite",
+    p: "spec/testvectors.json pins envelopes, wraps, codes and the edge cases. The Go tests, the swiftc verifier and the XCTest suite all read the same file; a change to one core that the other cannot open fails the vectors.",
+    links: [[`${blob}/spec/testvectors.json`, "spec/testvectors.json"], [`${blob}/swift/Tools/verify/main.swift`, "swift/Tools/verify/main.swift"], [`${blob}/go/internal/spectest`, "go/internal/spectest"]],
   },
+  {
+    h: "CI cross-decrypt",
+    p: "Every push runs the Go suite, compiles TesseraCore with swiftc against the vectors, and runs swift test, which decrypts a Go-written vault with real argon2id.",
+    links: [[`${blob}/.github/workflows/ci.yml`, ".github/workflows/ci.yml"], [`${blob}/go/internal/vault/crossdecrypt_test.go`, "go/internal/vault/crossdecrypt_test.go"]],
+  },
+];
+
+const security = [
+  {
+    t: "argon2id",
+    d: "A passphrase wraps the vault key through argon2id at 128 MiB, t=3, p=4 with a 16-byte salt. Go uses golang.org/x/crypto; Swift uses the vendored PHC reference implementation, checked against the same known answer.",
+    links: [[`${blob}/go/internal/vault/vault.go`, "go/internal/vault/vault.go"], [`${blob}/swift/Sources/CArgon2`, "swift/Sources/CArgon2"]],
+  },
+  {
+    t: "XChaCha20-Poly1305",
+    d: "A random 256-bit key encrypts the account payload with a fresh 24-byte nonce on every write. Each unlock method wraps that key separately, so adding or removing a method never re-encrypts the payload.",
+    links: [[`${blob}/spec/vault-format.md`, "spec/vault-format.md"], [`${blob}/swift/Sources/TesseraCore/XChaCha.swift`, "swift/Sources/TesseraCore/XChaCha.swift"]],
+  },
+  {
+    t: "Secure Enclave wrap",
+    d: "The app wraps the key with a non-extractable Secure Enclave P-256 key (HKDF-SHA256 over a self key agreement). Require Touch ID adds the biometry access control. Set a recovery passphrase in Settings and the same file gains an argon2id wrap the CLI can open.",
+    links: [[`${blob}/swift/App/Sources/SecureEnclaveWrap.swift`, "swift/App/Sources/SecureEnclaveWrap.swift"]],
+  },
+  {
+    t: "No network entitlement",
+    d: "The app's entitlements are App Sandbox, user-selected files and app-scoped bookmarks. There is no network entitlement, so the app cannot open a connection. The CLI makes no network connections: it imports neither net nor net/http.",
+    links: [[`${blob}/swift/App/Resources/Tessera.entitlements`, "swift/App/Resources/Tessera.entitlements"], [`${blob}/go/go.mod`, "go/go.mod"]],
+  },
+  {
+    t: "Sandboxed",
+    d: "The Mac app runs in the App Sandbox and ships through the Mac App Store, where its privacy label reads Data Not Collected. The vault it shares with the CLI is reached through a bookmark you grant once.",
+    links: [[appStore, "App Store listing"], [`${blob}/swift/App/Resources/PrivacyInfo.xcprivacy`, "PrivacyInfo.xcprivacy"]],
+  },
+];
+
+const others = [
+  ["Ente Auth", "Free, open source, end-to-end encrypted sync across devices. Not on the Mac App Store.", "Local only, on the Mac App Store, with a command line.", "/vs/ente"],
+  ["Authy", "Tied to a phone number and an account, closed source; the desktop app ended in August 2024.", "No account. A local file you own.", "/vs/authy"],
+  ["2FAS", "A phone app; on a Mac, a browser extension.", "A native Mac app plus a command line.", null],
+  ["Raivo", "Open source on Apple platforms until it changed hands.", "Apache-2.0, a documented format, export in one command.", null],
+  ["oathtool, pass-otp", "Command-line tools with secrets in plain files or gpg, and no app.", "The same scriptability, an encrypted vault, Touch ID in the app, a window when you want one.", null],
 ];
 
 const softwareLd = {
@@ -77,7 +76,7 @@ const softwareLd = {
   "@type": "SoftwareApplication",
   name: "Tessera",
   applicationCategory: "SecurityApplication",
-  operatingSystem: "macOS",
+  operatingSystem: "macOS 14",
   url: "https://tessera.ibrahemid.com",
   downloadUrl: [appStore, `${repo}/releases`],
   installUrl: [appStore, `${repo}/releases`],
@@ -88,395 +87,259 @@ const softwareLd = {
 };
 ---
 
-<Base>
-  <!-- ===== HERO ===== -->
-  <section class="relative overflow-hidden">
-    <div class="grout-bg absolute inset-0 -z-10" style="mask-image: radial-gradient(120% 80% at 70% 0%, #000 20%, transparent 75%); -webkit-mask-image: radial-gradient(120% 80% at 70% 0%, #000 20%, transparent 75%);"></div>
-    <div class="mx-auto w-full max-w-[var(--maxw)] px-5 sm:px-7 pt-14 sm:pt-20 pb-10">
-      <div class="grid lg:grid-cols-[1.05fr_0.95fr] gap-12 lg:gap-16 items-center">
-        <div>
-          <span class="eyebrow">Local-first · Open source</span>
-          <h1 class="mt-5" style="font-size: clamp(2.4rem, 5.2vw, 4rem)">
-            Two-factor codes<br />you actually own.
-          </h1>
-          <p class="lede mt-6 max-w-[34rem]">
-            Tessera keeps your 2FA codes in an encrypted vault on your Mac,
-            reachable from a native app and a real command line. No account, and
-            no server to trust.
-          </p>
-          <div class="mt-8 flex flex-wrap items-center gap-3">
-            <a href={appStore} rel="noopener" class="btn btn-gold" aria-label="Download Tessera on the Mac App Store">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={appleGlyph} /></svg>
-              Mac App Store
-            </a>
-            <div class="inline-flex items-center gap-2 h-12 pl-4 pr-2 rounded-[0.8rem] border border-line" style="background: var(--surface)">
-              <code class="mono text-sm whitespace-nowrap"><span style="color: var(--green)">$</span> {brewCmd}</code>
-              <button type="button" class="copy-btn text-xs font-semibold px-2 py-1 rounded-md" data-copy={brewCmd} style="color: var(--gold); background: var(--gold-tint)" aria-label="Copy the Homebrew command">Copy</button>
-            </div>
-          </div>
-          <ul class="mt-9 flex flex-wrap gap-x-6 gap-y-2 text-sm" style="color: var(--ink-soft)">
-            <li class="flex items-center gap-2"><span class="dotcheck"></span> Apache-2.0 licensed</li>
-            <li class="flex items-center gap-2"><span class="dotcheck"></span> argon2id + XChaCha20</li>
-            <li><a href="#get" style="color: var(--gold)">All install options</a></li>
-          </ul>
-        </div>
+<Base current="/" preloadImage="/media/hero-poster.webp">
+  <script slot="head" type="application/ld+json" is:inline set:html={JSON.stringify(softwareLd)} />
 
-        <div class="relative">
-          <div class="absolute -inset-8 -z-10 opacity-60" style="background: radial-gradient(60% 55% at 60% 40%, var(--gold-tint), transparent 70%)"></div>
-          <TileMosaic />
+  <!-- ===== HERO: dark band, the real CLI on the right ===== -->
+  <section class="band band-ink hero-band">
+    <div class="u-bleed-right hero">
+      <div class="hero-copy">
+        <h1 class="h-display">Two-factor codes you own.</h1>
+        <p class="lede mt-6 measure">
+          A native Mac app and the <span class="mono" style="color: var(--gold)">tess</span> command line on one documented vault format. Offline, with no account.
+        </p>
+        <div class="mt-8 flex flex-wrap items-center gap-3">
+          <a href={appStore} rel="noopener" aria-label="Download on the Mac App Store">
+            <img src="/mac-app-store-badge.svg" alt="" width="156" height="40" class="badge-store" />
+          </a>
+          <a href="#install" class="btn btn-ghost" style="height: 3.1rem">Get the <span class="mono" style="margin: 0 0.1em">tess</span> CLI</a>
         </div>
+        <p class="mt-5 text-sm faint">
+          macOS 14 or later · Apache-2.0 · tess {cliVersion} for macOS and Linux
+        </p>
+      </div>
+      <div class="hero-demo">
+        <HeroVideo
+          src="/media/hero"
+          poster="/media/hero-poster.webp"
+          width={1000}
+          height={560}
+          bleed
+          alt="tess in a terminal: the live watch view with countdown bars, then adding an account from a QR image, copying a code and printing JSON"
+        />
+        <p class="mono text-xs faint mt-3">Recorded from the real CLI against a throwaway vault. Those secrets are not in use.</p>
       </div>
     </div>
   </section>
 
-  <!-- ===== EXPLAINER ===== -->
-  <section class="mx-auto w-full max-w-[var(--maxw)] px-5 sm:px-7 py-20 sm:py-28">
-    <div class="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
-      <div class="reveal">
-        <span class="eyebrow">New to 2FA?</span>
-        <h2 class="mt-4" style="font-size: clamp(1.8rem, 3.4vw, 2.7rem)">A second key,<br />just for you.</h2>
-        <div class="mt-6 space-y-4 text-[1.02rem] leading-relaxed" style="color: var(--ink-soft); max-width: 36rem">
-          <p>
-            A password can be guessed, leaked, or phished. Two-factor
-            authentication adds a second step that a thief can't fake: a
-            six-digit code that changes every 30 seconds and only your device
-            can produce.
-          </p>
-          <p>
-            Even if someone has your password, they can't get in without that
-            code. Tessera is where your codes live: offline, and only
-            yours.
-          </p>
-        </div>
-        <a href="/support" class="inline-flex items-center gap-1.5 mt-7 font-medium" style="color: var(--gold)">
-          How to set it up <span aria-hidden="true">→</span>
+  <!-- ===== INSTALL: sunken band right under the hero ===== -->
+  <section id="install" class="band band-sunken install scroll-mt-20">
+    <div class="install-grid">
+      <div class="install-app">
+        <h2 class="h-sub">The Mac app</h2>
+        <a href={appStore} rel="noopener" class="inline-block mt-4" aria-label="Download on the Mac App Store">
+          <img src="/mac-app-store-badge.svg" alt="" width="156" height="40" class="badge-store" style="height: 3.4rem" />
         </a>
+        <p class="mt-3 text-sm soft">macOS 14 or later. Version 1.0.2.</p>
+        <p class="mt-6 text-sm soft measure">The app and the CLI are separate downloads. They share one vault once you open the CLI's file in the app, or set a recovery passphrase in the app's settings.</p>
       </div>
-
-      <div class="reveal">
-        <figure class="tile p-7 sm:p-9 mx-auto max-w-sm">
-          <figcaption class="eyebrow mb-5" style="color: var(--ink-faint)">Anatomy of a code</figcaption>
-          <div class="flex items-center gap-3">
-            <span class="grid place-items-center w-9 h-9 rounded-[0.6rem] text-white font-mono text-xs font-semibold" style="background: var(--violet)">{`{ }`}</span>
-            <span class="font-semibold">GitHub</span>
-            <span class="ml-auto text-xs" style="color: var(--ink-faint)">the issuer</span>
+      <div class="install-cli">
+        <h2 class="h-sub">The <span class="mono">tess</span> CLI</h2>
+        <dl class="rows mt-4">
+          <div class="row">
+            <dt>Tarballs</dt>
+            <dd>
+              <ul class="space-y-2">
+                {tarballs.map(([label, file, sha]) => (
+                  <li>
+                    <a href={`${releaseBase}/${file}`} rel="noopener">{label}</a>
+                    <span class="block mono text-[0.72rem] faint break-all">sha256 {sha}</span>
+                  </li>
+                ))}
+              </ul>
+              <span class="src">v{cliVersion} · <a href={`${releaseBase}/checksums.txt`} rel="noopener">checksums.txt</a> · <a href={`${repo}/releases`} rel="noopener">all releases</a></span>
+            </dd>
           </div>
-          <div class="mt-6 mono tnum" style="font-size: 2.6rem; letter-spacing: 0.06em; line-height: 1">824 159</div>
-          <div class="mt-2 text-xs" style="color: var(--ink-faint)">your six-digit code, right now</div>
-          <div class="mt-6 h-px" style="background: var(--line)"></div>
-          <div class="mt-5 flex items-center gap-3">
-            <div class="flex-1 h-2 rounded-full overflow-hidden" style="background: var(--line)">
-              <div class="h-full rounded-full" style="width: 60%; background: var(--gold-bright)"></div>
-            </div>
-            <span class="text-xs tnum" style="color: var(--ink-faint)">rolls in 18s</span>
+          <div class="row">
+            <dt>From source</dt>
+            <dd>
+              <div class="cmd"><code><span class="p">$</span>{goCmd}</code><button type="button" data-copy={goCmd} aria-label="Copy the go install command">Copy</button></div>
+              <span class="src">Go 1.26.2 or later.</span>
+            </dd>
           </div>
-        </figure>
-      </div>
-    </div>
-  </section>
-
-  <!-- ===== FEATURES ===== -->
-  <section id="features" class="mx-auto w-full max-w-[var(--maxw)] px-5 sm:px-7 py-12">
-    <div class="reveal max-w-2xl">
-      <span class="eyebrow">What's inside</span>
-      <h2 class="mt-4" style="font-size: clamp(1.8rem, 3.4vw, 2.7rem)">Everything. Including the command line.</h2>
-      <p class="lede mt-5">
-        Touch ID, auto-launch, HOTP, Steam Guard, and bulk import. Plus the one
-        thing dedicated Mac authenticators almost never ship: a real command
-        line.
-      </p>
-    </div>
-
-    <div class="mt-12 grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-      {features.map((f) => (
-        <article class="tile tile-hover p-6 reveal" style={`--c: ${f.c}`}>
-          <div class="flex items-center justify-between">
-            <span class="grid place-items-center w-9 h-9 rounded-[0.6rem]" style={`background: color-mix(in srgb, ${f.c} 15%, transparent)`}>
-              <span class="w-3 h-3 rounded-[0.25rem]" style={`background: ${f.c}`}></span>
-            </span>
-            <span class="text-xs tnum" style="color: var(--ink-faint)">{f.k}</span>
-          </div>
-          <h3 class="mt-5" style="font-size: 1.15rem">{f.t}</h3>
-          <p class="mt-2 text-sm leading-relaxed" style="color: var(--ink-soft)">{f.b}</p>
-        </article>
-      ))}
-    </div>
-  </section>
-
-  <!-- ===== CLI MOMENT ===== -->
-  <section class="mx-auto w-full max-w-[var(--maxw)] px-5 sm:px-7 py-20 sm:py-28">
-    <div class="grid lg:grid-cols-[0.9fr_1.1fr] gap-12 lg:gap-16 items-center">
-      <div class="reveal">
-        <span class="eyebrow">The command line</span>
-        <h2 class="mt-4" style="font-size: clamp(1.8rem, 3.4vw, 2.7rem)">For people who live in the terminal.</h2>
-        <p class="lede mt-5 max-w-[32rem]">
-          <span class="mono text-[0.95em]" style="color: var(--gold)">tess</span> is the same vault, fully
-          scriptable, with JSON output and shell completions.
-        </p>
-        <ul class="mt-7 space-y-3">
-          {cliCmds.map(([cmd, desc]) => (
-            <li class="flex flex-col sm:flex-row sm:items-baseline gap-1 sm:gap-3">
-              <code class="mono text-sm px-2 py-1 rounded-md whitespace-nowrap" style="background: var(--surface-sunken); color: var(--ink)">{cmd}</code>
-              <span class="text-sm" style="color: var(--ink-soft)">{desc}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
-      <div class="reveal">
-        <Terminal />
-      </div>
-    </div>
-  </section>
-
-  <!-- ===== TRUST ===== -->
-  <section id="trust" class="relative">
-    <div class="mx-auto w-full max-w-[var(--maxw)] px-5 sm:px-7 py-20 sm:py-28">
-      <div class="reveal max-w-2xl">
-        <span class="eyebrow">Why you can trust it</span>
-        <h2 class="mt-4" style="font-size: clamp(1.8rem, 3.4vw, 2.7rem)">Security you can read.</h2>
-        <p class="lede mt-5">
-          A 2FA app holds the keys to your accounts, so it has to earn that
-          trust. Tessera does it in the open.
+        </dl>
+        <p class="mt-5 text-sm soft">
+          Then <span class="mono">tess vault init</span>, <span class="mono">tess add</span>, <span class="mono">tess watch</span>.
+          Vault path: <span class="mono">~/.local/share/tessera/vault.json</span>. The full reference is on <a href="/cli">/cli</a>.
         </p>
       </div>
-
-      <div class="mt-12 grid md:grid-cols-3 gap-4">
-        <article class="tile p-7 reveal">
-          <h3 style="font-size: 1.2rem">Open and auditable</h3>
-          <p class="mt-3 text-sm leading-relaxed" style="color: var(--ink-soft)">
-            Apache-2.0, end to end. The CLI and app share one documented vault
-            format, checked byte-for-byte against a public test suite. Build it
-            and verify it yourself.
-          </p>
-          <a href={repo} rel="noopener" class="inline-block mt-4 text-sm font-medium" style="color: var(--gold)">github.com/ibrahemid/tessera →</a>
-        </article>
-        <article class="tile p-7 reveal">
-          <h3 style="font-size: 1.2rem">Local-first by default</h3>
-          <p class="mt-3 text-sm leading-relaxed" style="color: var(--ink-soft)">
-            Codes are generated entirely offline. There's no Tessera account and
-            no Tessera server, so there's no central database of your secrets to
-            breach or subpoena.
-          </p>
-        </article>
-        <article class="tile p-7 reveal">
-          <h3 style="font-size: 1.2rem">No tracking</h3>
-          <p class="mt-3 text-sm leading-relaxed" style="color: var(--ink-soft)">
-            No analytics or crash SDKs. Apple's privacy label reads
-            <span class="font-medium" style="color: var(--ink)"> Data Not Collected</span>.
-            This site ships no trackers.
-          </p>
-        </article>
-      </div>
-
-      <div class="mt-4 tile p-7 sm:p-9 reveal" style="background: var(--surface-sunken)">
-        <div class="grid md:grid-cols-[auto_1fr] gap-4 md:gap-10 md:items-center">
-          <span class="eyebrow" style="color: var(--ink-faint)">The crypto, plainly</span>
-          <p class="text-sm leading-relaxed" style="color: var(--ink-soft)">
-            A random 256-bit key encrypts your accounts with
-            <span class="font-medium" style="color: var(--ink)"> XChaCha20-Poly1305</span>. Each unlock
-            method wraps that key on its own: the <span style="color: var(--ink)">Secure Enclave</span> on
-            a Mac, and a key derived from your passphrase with
-            <span class="font-medium" style="color: var(--ink)"> argon2id</span>. Touch ID can gate the
-            Secure Enclave wrap.
-            Two independent builds, Go and Swift, prove they read the same vault
-            on every change. Secrets live as raw bytes; they're never logged.
-          </p>
-        </div>
-      </div>
     </div>
   </section>
 
-  <!-- ===== PLATFORMS / ROADMAP ===== -->
-  <section class="mx-auto w-full max-w-[var(--maxw)] px-5 sm:px-7 py-12">
-    <div class="reveal max-w-2xl">
-      <span class="eyebrow">Where it runs</span>
-      <h2 class="mt-4" style="font-size: clamp(1.8rem, 3.4vw, 2.7rem)">macOS first, portable by design.</h2>
-      <p class="lede mt-5">
-        macOS is the first home. The vault format and the CLI are
-        cross-platform already, so a phone app starts from a working core rather
-        than from scratch.
+  <!-- ===== THE APP: cream, the live window runs off the right edge ===== -->
+  <section id="app" class="u-bleed-right app scroll-mt-20">
+    <div class="app-copy">
+      <h2 class="h-section">A native Mac app on the same vault.</h2>
+      <p class="lede mt-5 measure">
+        Live codes with countdown rings, one-click copy, on-screen QR scanning and Touch ID unlock.
+        It opens a vault the CLI created, and the CLI keeps working on the same file.
       </p>
-    </div>
-
-    <div class="mt-12 grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-      <article class="tile p-6 reveal">
-        <div class="flex items-center justify-between">
-          <span class="font-semibold">macOS app</span>
-          <span class="status status-now">Now</span>
-        </div>
-        <p class="mt-3 text-sm leading-relaxed" style="color: var(--ink-soft)">Native Mac app with Touch ID, on the Mac App Store.</p>
-      </article>
-      <article class="tile p-6 reveal">
-        <div class="flex items-center justify-between">
-          <span class="font-semibold">Command line</span>
-          <span class="status status-now">Now</span>
-        </div>
-        <p class="mt-3 text-sm leading-relaxed" style="color: var(--ink-soft)">The <span class="mono">tess</span> CLI runs today. Written in Go, it builds anywhere Go does.</p>
-      </article>
-      <article class="tile p-6 reveal">
-        <div class="flex items-center justify-between">
-          <span class="font-semibold">iPhone</span>
-          <span class="status status-soon">Planned</span>
-        </div>
-        <p class="mt-3 text-sm leading-relaxed" style="color: var(--ink-soft)">The same vault, in your pocket. On the roadmap, not yet shipped.</p>
-      </article>
-      <article class="tile p-6 reveal">
-        <div class="flex items-center justify-between">
-          <span class="font-semibold">Android</span>
-          <span class="status status-soon">Planned</span>
-        </div>
-        <p class="mt-3 text-sm leading-relaxed" style="color: var(--ink-soft)">The same vault on Android. On the roadmap, not yet shipped.</p>
-      </article>
-    </div>
-  </section>
-
-  <!-- ===== FREE ===== -->
-  <section class="mx-auto w-full max-w-[var(--maxw)] px-5 sm:px-7 py-20 sm:py-28">
-    <div class="reveal mx-auto max-w-3xl tile p-9 sm:p-12 text-center" style="background: var(--surface-sunken)">
-      <span class="eyebrow">Pricing</span>
-      <h2 class="mt-4" style="font-size: clamp(1.8rem, 3.4vw, 2.7rem)">All of it. For nothing.</h2>
-      <p class="lede mt-5 mx-auto max-w-xl">
-        Every feature, the app and the CLI, free. There's no upgrade to buy.
-        Your codes stay yours.
-      </p>
-      <ul class="mt-8 flex flex-wrap justify-center gap-x-6 gap-y-2.5 text-sm">
-        {["Touch ID unlock", "The tess CLI, HOTP, Steam Guard", "Bulk import & QR", "Encrypted local vault"].map((x) => (
-          <li class="flex items-center gap-2.5" style="color: var(--ink)"><span class="dotcheck"></span> {x}</li>
-        ))}
+      <ul class="mt-7 space-y-2 soft">
+        <li>TOTP, HOTP and Steam Guard.</li>
+        <li>Imports otpauth links, Google Authenticator exports, and Aegis, 2FAS or Raivo files.</li>
+        <li>Folders, pinning, and a short handle per account that both surfaces share.</li>
+        <li>Copied codes are marked concealed for clipboard managers, and the window is excluded from screen capture.</li>
       </ul>
     </div>
+    <AppShot class="app-shot" bleed sizes="(min-width: 900px) 52vw, 92vw" />
   </section>
 
-  <!-- ===== GET IT ===== -->
-  <section id="get" class="mx-auto w-full max-w-[var(--maxw)] px-5 sm:px-7 py-12 scroll-mt-20">
-    <div class="reveal max-w-2xl">
-      <span class="eyebrow">Get Tessera</span>
-      <h2 class="mt-4" style="font-size: clamp(1.8rem, 3.4vw, 2.7rem)">Two ways in.</h2>
-      <p class="lede mt-5">
-        Download the Mac app from the App Store, or install the CLI.
+  <!-- ===== ONE VAULT, TWO IMPLEMENTATIONS: sunken wide band ===== -->
+  <section id="one-vault" class="band band-sunken one-vault">
+    <div class="measure">
+      <h2 class="h-section">One vault, two implementations.</h2>
+      <p class="lede mt-6">
+        The Go CLI and the Swift app are separate codebases that must open each other's files byte for byte.
+        The contract is written down, pinned to test vectors, and checked in CI on every push.
       </p>
     </div>
-
-    <div class="mt-10 grid lg:grid-cols-2 gap-4">
-      <article class="tile p-7 sm:p-8 reveal">
-        <h3 style="font-size: 1.2rem">Command line</h3>
-        <p class="mt-2 text-sm" style="color: var(--ink-soft)">Homebrew, then create a vault and watch your codes.</p>
-        <div class="mt-5 rounded-xl overflow-hidden border border-line">
-          <div class="flex items-center justify-between px-4 py-2.5" style="background: var(--surface-sunken)">
-            <span class="mono text-xs" style="color: var(--ink-faint)">terminal</span>
-            <button type="button" class="copy-btn text-xs font-semibold px-2 py-1 rounded-md" data-copy={`${brewCmd}\ntess vault init\ntess watch`} style="color: var(--gold); background: var(--gold-tint)" aria-label="Copy the Homebrew commands">Copy</button>
-          </div>
-          <pre class="mono text-sm overflow-x-auto p-4 leading-relaxed" style="background: var(--surface)"><code><span style="color: var(--green)">$</span> {brewCmd}
-<span style="color: var(--green)">$</span> tess vault init
-<span style="color: var(--green)">$</span> tess watch</code></pre>
+    <div class="u-wide pillars">
+      {pillars.map((x) => (
+        <div class="pillar">
+          <h3 class="h-sub">{x.h}</h3>
+          <p class="mt-3 soft">{x.p}</p>
+          <ul class="mt-4 space-y-1">
+            {x.links.map(([href, label]) => (
+              <li><a href={href} rel="noopener" class="mono text-[0.8rem]">{label}</a></li>
+            ))}
+          </ul>
         </div>
+      ))}
+    </div>
+    <p class="mt-10 soft">
+      The whole contract is on <a href="/vault-format">/vault-format</a>.
+    </p>
+  </section>
 
-        <p class="mt-6 text-sm font-semibold">No Homebrew</p>
-        <p class="mt-1 text-sm" style="color: var(--ink-soft)">The script downloads the release for your architecture, checks its sha256, and installs to <span class="mono">/usr/local/bin</span> or <span class="mono">~/.local/bin</span>.</p>
-        <div class="mt-3 rounded-xl overflow-hidden border border-line">
-          <div class="flex items-center justify-between px-4 py-2.5" style="background: var(--surface-sunken)">
-            <span class="mono text-xs" style="color: var(--ink-faint)">terminal</span>
-            <button type="button" class="copy-btn text-xs font-semibold px-2 py-1 rounded-md" data-copy={curlCmd} style="color: var(--gold); background: var(--gold-tint)" aria-label="Copy the install script command">Copy</button>
-          </div>
-          <pre class="mono text-xs overflow-x-auto p-4 leading-relaxed" style="background: var(--surface)"><code><span style="color: var(--green)">$</span> {curlCmd}</code></pre>
+  <!-- ===== SECURITY YOU CAN READ: two-column reading rows ===== -->
+  <section id="security" class="security">
+    <div class="security-head">
+      <h2 class="h-section">Security you can read.</h2>
+      <p class="lede mt-4 measure">Each line links to the file that does it.</p>
+    </div>
+    <dl class="rows mt-10">
+      {security.map((s) => (
+        <div class="row">
+          <dt>{s.t}</dt>
+          <dd>
+            {s.d}
+            <span class="src">
+              {s.links.map(([href, label], i) => (
+                <>{i > 0 && " · "}<a href={href} rel="noopener">{label}</a></>
+              ))}
+            </span>
+          </dd>
         </div>
-        <p class="mt-2 text-xs" style="color: var(--ink-faint)">
-          Read it first: <a href={`${repo}/blob/main/install.sh`} rel="noopener" style="color: var(--gold)">install.sh</a>
-        </p>
+      ))}
+    </dl>
+    <p class="mt-6 soft">
+      More on <a href="/security">/security</a>, including what to do if you find something.
+    </p>
+  </section>
 
-        <p class="mt-6 text-sm font-semibold">Binary downloads</p>
-        <ul class="mt-2 space-y-2 text-sm">
-          {tarballs.map((t) => (
-            <li>
-              <a href={`${releaseBase}/${t.file}`} rel="noopener" style="color: var(--gold)">{t.label}</a>
-              <div class="mono text-[0.68rem] break-all" style="color: var(--ink-faint)">sha256 {t.sha}</div>
-            </li>
+  <!-- ===== THE OTHERS: sunken band, two columns ===== -->
+  <section id="compare" class="band band-sunken compare">
+    <div class="measure">
+      <h2 class="h-sub">Compared with the others</h2>
+    </div>
+    <div class="u-wide cmp-wrap mt-8">
+      <table class="cmp">
+        <thead>
+          <tr><th></th><th>Them</th><th>Tessera</th></tr>
+        </thead>
+        <tbody>
+          {others.map(([name, them, us, href]) => (
+            <tr>
+              <th scope="row">
+                {name}
+                {href && <a href={href} class="block mono text-[0.78rem] mt-1" style="font-weight: 400">{`Tessera vs ${name}`}</a>}
+              </th>
+              <td>{them}</td>
+              <td>{us}</td>
+            </tr>
           ))}
-        </ul>
-        <p class="mt-2 text-xs" style="color: var(--ink-faint)">
-          v{cliVersion} · <a href={`${releaseBase}/checksums.txt`} rel="noopener" style="color: var(--gold)">checksums.txt</a> ·
-          <a href={`${repo}/releases`} rel="noopener" style="color: var(--gold)">all releases</a>, Linux included
-        </p>
-
-        <p class="mt-6 text-sm font-semibold">From source</p>
-        <p class="mt-1 mono text-xs break-all" style="color: var(--ink-soft)">go install github.com/ibrahemid/tessera/go/cmd/tess@latest</p>
-        <p class="mt-2 text-xs" style="color: var(--ink-faint)">Needs Go 1.26+. Vault: <span class="mono">~/.local/share/tessera/vault.json</span></p>
-      </article>
-
-      <article class="tile p-7 sm:p-8 reveal flex flex-col">
-        <h3 style="font-size: 1.2rem">macOS app</h3>
-        <p class="mt-2 text-sm" style="color: var(--ink-soft)">Native Mac app with Touch ID, on-screen QR scanning, folders, and one-click copy.</p>
-        <div class="mt-auto pt-6">
-          <a href={appStore} rel="noopener" class="inline-flex items-center gap-3 px-5 py-3 rounded-xl border border-line tile-hover" style="background: var(--surface-sunken)" aria-label="Download Tessera on the Mac App Store">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="color: var(--ink)"><path d="M16.36 12.78c-.02-2.3 1.88-3.4 1.96-3.46-1.07-1.56-2.73-1.78-3.32-1.8-1.41-.14-2.76.83-3.48.83-.72 0-1.82-.81-3-.79-1.54.02-2.96.9-3.75 2.28-1.6 2.78-.41 6.89 1.15 9.14.76 1.1 1.67 2.34 2.86 2.3 1.15-.05 1.58-.74 2.97-.74 1.38 0 1.77.74 2.98.72 1.23-.02 2.01-1.12 2.76-2.23.87-1.28 1.23-2.52 1.25-2.58-.03-.01-2.4-.92-2.42-3.64zM14.13 6.13c.64-.78 1.07-1.85.95-2.93-.92.04-2.03.61-2.69 1.38-.59.69-1.11 1.79-.97 2.85 1.02.08 2.07-.52 2.71-1.3z"/></svg>
-            <div class="text-left leading-tight">
-              <div class="text-[0.6rem] uppercase tracking-wide" style="color: var(--ink-faint)">Download on the</div>
-              <div class="font-semibold text-sm" style="color: var(--ink)">Mac App Store</div>
-            </div>
-          </a>
-          <p class="mt-4 text-sm" style="color: var(--ink-soft)">Sandboxed, and opens the same vault you built in the terminal.</p>
-        </div>
-      </article>
+        </tbody>
+      </table>
     </div>
   </section>
 
-  <script type="application/ld+json" is:inline set:html={JSON.stringify(softwareLd)} />
+  <!-- ===== CLOSE ===== -->
+  <section class="close">
+    <h2 class="h-display">All of it, free.</h2>
+    <div class="mt-8 flex flex-wrap items-center gap-3">
+      <a href={appStore} rel="noopener" aria-label="Download on the Mac App Store">
+        <img src="/mac-app-store-badge.svg" alt="" width="156" height="40" class="badge-store" />
+      </a>
+      <a href="#install" class="btn btn-ghost" style="height: 3.1rem">Get the <span class="mono" style="margin: 0 0.1em">tess</span> CLI</a>
+    </div>
+  </section>
 </Base>
 
 <style>
-  .dotcheck {
-    width: 1.05rem; height: 1.05rem; border-radius: 99px; flex: none;
-    background: var(--gold-tint);
+  .hero-band { overflow: hidden; }
+  .hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2.5rem;
+    padding-block: 3.5rem 3rem;
+    align-items: center;
+  }
+  .hero-copy { padding-right: var(--gap); }
+  .hero-demo { padding-right: var(--gap); }
+  @media (min-width: 1024px) {
+    .hero {
+      grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+      gap: 3.5rem;
+      padding-block: 5.5rem 5rem;
+    }
+    .hero-demo { padding-right: 0; }
+  }
+
+  .install { padding-block: 3.5rem 4rem; }
+  .install-grid { display: grid; gap: 3rem; }
+  @media (min-width: 900px) { .install-grid { grid-template-columns: minmax(0, 0.6fr) minmax(0, 1.4fr); gap: 4rem; } }
+  .install .row { grid-template-columns: 1fr; }
+  @media (min-width: 720px) { .install .row { grid-template-columns: minmax(8rem, 0.25fr) 1fr; } }
+  .install .row > dd { max-width: none; }
+
+  .app {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2.5rem;
+    padding-block: 5rem 0;
+    align-items: end;
     position: relative;
+    z-index: 1;
   }
-  .dotcheck::after {
-    content: ""; position: absolute; inset: 0;
-    background: var(--gold);
-    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='%23000' stroke-width='3' stroke-linecap='round' stroke-linejoin='round' d='M5 12.5l4 4 10-10'/%3E%3C/svg%3E") center/64% no-repeat;
-    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='%23000' stroke-width='3' stroke-linecap='round' stroke-linejoin='round' d='M5 12.5l4 4 10-10'/%3E%3C/svg%3E") center/64% no-repeat;
+  .app-copy { padding-right: var(--gap); padding-bottom: 2rem; }
+  .app-copy li { padding-left: 1.1rem; position: relative; }
+  .app-copy li::before { content: ""; position: absolute; left: 0; top: 0.72em; width: 0.45rem; height: 0.45rem; border-radius: 2px; background: var(--gold); }
+  @media (min-width: 900px) {
+    .app { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 4rem; padding-block: 6.5rem 0; }
+    .app-copy { padding-bottom: 7rem; }
+    .app-shot { margin-bottom: -3.5rem; }
   }
-  .dotcheck-faint { background: var(--line); }
-  .dotcheck-faint::after { background: var(--ink-faint); }
 
-  .status {
-    font-family: var(--font-body);
-    font-size: 0.66rem;
-    font-weight: 650;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    padding: 0.2rem 0.55rem;
-    border-radius: 99px;
-    white-space: nowrap;
+  .one-vault { padding-block: 6rem 5rem; }
+  @media (min-width: 900px) { .one-vault { padding-top: 9.5rem; } }
+  .pillars { display: grid; gap: 2rem; margin-top: 3.5rem; }
+  .pillar { padding-top: 1.5rem; border-top: 1px solid var(--line-strong); }
+  @media (min-width: 900px) {
+    .pillars { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; }
+    .pillar { border-top: 0; border-left: 1px solid var(--line-strong); padding: 0.25rem 2rem 0 2rem; }
+    .pillar:first-child { padding-left: 0; border-left: 0; }
   }
-  .status-now { color: var(--green); background: color-mix(in srgb, var(--green) 13%, transparent); }
-  .status-soon { color: var(--ink-faint); background: var(--surface-sunken); border: 1px solid var(--line); }
-  .copy-btn { cursor: pointer; transition: opacity 0.15s; }
-  .copy-btn:hover { opacity: 0.8; }
+
+  .security { padding-block: 6rem 5rem; }
+
+  .compare { padding-block: 5rem; }
+  .cmp-wrap { overflow-x: auto; }
+  .cmp { width: 100%; border-collapse: collapse; font-size: 0.97rem; min-width: 40rem; }
+  .cmp th, .cmp td { text-align: left; vertical-align: top; padding: 1rem 1.5rem 1rem 0; border-bottom: 1px solid var(--line); }
+  .cmp thead th { font-family: var(--font-display); font-size: 1.05rem; }
+  .cmp tbody th { font-family: var(--font-display); font-size: 1.05rem; color: var(--ink); width: 14rem; }
+  .cmp td { color: var(--ink-soft); width: 40%; }
+  .cmp tbody th a { color: var(--gold); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.15em; }
+
+  .close { padding-block: 7rem 6rem; }
 </style>
-
-<script>
-  const io = new IntersectionObserver(
-    (entries) => {
-      for (const e of entries) {
-        if (e.isIntersecting) {
-          e.target.classList.add("in");
-          io.unobserve(e.target);
-        }
-      }
-    },
-    { rootMargin: "0px 0px -10% 0px", threshold: 0.1 }
-  );
-  document.querySelectorAll(".reveal").forEach((el) => io.observe(el));
-
-  document.querySelectorAll<HTMLButtonElement>(".copy-btn").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const text = btn.dataset.copy || "";
-      try {
-        await navigator.clipboard.writeText(text);
-        const prev = btn.textContent;
-        btn.textContent = "Copied";
-        setTimeout(() => (btn.textContent = prev), 1400);
-      } catch (_) {}
-    });
-  });
-</script>

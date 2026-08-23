@@ -1,0 +1,75 @@
+---
+import Base from "../layouts/Base.astro";
+import PageHead from "../components/PageHead.astro";
+import AppShot from "../components/AppShot.astro";
+
+const repo = "https://github.com/ibrahemid/tessera";
+const appStore = "https://apps.apple.com/app/tessera-2fa-authenticator/id6788814172";
+
+const entries = [
+  {
+    v: "Unreleased",
+    date: "not yet released",
+    items: [
+      "go install builds report the module version in tess --version.",
+      "This site: real terminal recording, app captures, /cli, /security, /vault-format, /changelog, /press, comparison pages.",
+    ],
+    links: [[`${repo}/commits/main`, "commits on main"]],
+  },
+  {
+    v: "1.0.2",
+    date: "CLI 2026-08-10 · App Store 2026-08-09",
+    items: [
+      "App: recovery passphrase in Settings, which adds an argon2id wrap the CLI can open.",
+      "App: clipboard contents marked concealed when a code is copied; the window is excluded from screen capture.",
+      "CLI: vault hardening, a lock file serializes writes between tess processes, clearer error reporting.",
+      "Interop: strict base32, otpauth label and query encoding, HOTP counter bounds; vectors regenerated.",
+      "App Store screenshots regenerated.",
+    ],
+    links: [[`${repo}/releases/tag/v1.0.2`, "v1.0.2 release"], [appStore, "App Store"]],
+  },
+  {
+    v: "1.0.0",
+    date: "CLI 2026-07-21 · App Store 2026-07-19",
+    items: [
+      "First release of tess (Go) and the Mac app (SwiftUI) on one vault format.",
+      "TOTP, HOTP and Steam Guard; import from otpauth links, Google Authenticator exports and QR images; encrypted vault with argon2id and Secure Enclave wraps.",
+      "CLI: live watch view, --json output, --copy, keychain unlock, vault status, merge and show, account handles with alias.",
+      "App: windowed app with Touch ID unlock, on-screen QR scanning, full account edit sheet, shared CLI vault.",
+    ],
+    links: [[`${repo}/releases/tag/v1.0.0`, "v1.0.0 release"]],
+  },
+];
+---
+<Base title="Changelog — Tessera" description="What changed in each Tessera release, app and CLI." current="/changelog">
+  <PageHead kicker="Changelog" title="What changed.">
+    The CLI and the app version together. Release tarballs and checksums are on <a href={`${repo}/releases`} rel="noopener">GitHub releases</a>.
+    <AppShot slot="media" sizes="(min-width: 900px) 34vw, 80vw" />
+  </PageHead>
+
+  <div class="measure log">
+    {entries.map((e) => (
+      <section class="entry">
+        <div class="entry-head">
+          <h2 class="h-sub">{e.v}</h2>
+          <p class="mono text-[0.8rem] faint mt-1">{e.date}</p>
+        </div>
+        <ul class="mt-4 space-y-2 soft">
+          {e.items.map((i) => <li>{i}</li>)}
+        </ul>
+        <p class="mt-4 mono text-[0.8rem]">
+          {e.links.map(([href, label], i) => (
+            <>{i > 0 && <span class="faint"> · </span>}<a href={href} rel="noopener">{label}</a></>
+          ))}
+        </p>
+      </section>
+    ))}
+  </div>
+</Base>
+
+<style>
+  .log { padding-bottom: 6rem; }
+  .entry { padding-block: 2.5rem; border-top: 1px solid var(--line); }
+  .entry li { padding-left: 1.1rem; position: relative; }
+  .entry li::before { content: ""; position: absolute; left: 0; top: 0.72em; width: 0.4rem; height: 0.4rem; border-radius: 2px; background: var(--gold); }
+</style>

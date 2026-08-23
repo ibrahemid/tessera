@@ -1,12 +1,21 @@
 ---
 import Base from "../layouts/Base.astro";
+import Still from "../components/Still.astro";
+import nopeStill from "../assets/still-not-found.png";
 ---
-<Base title="Not found · Tessera" description="That page rolled over.">
-  <section class="mx-auto w-full max-w-[var(--maxw)] px-5 sm:px-7 py-28 text-center">
-    <div class="mono tnum mx-auto" style="font-size: clamp(3rem, 12vw, 7rem); letter-spacing: 0.04em; color: var(--ink)">4 0 4</div>
-    <p class="mono text-sm mt-2" style="color: var(--gold)">code expired</p>
-    <h1 class="mt-6" style="font-size: clamp(1.5rem, 4vw, 2.2rem)">That page rolled over.</h1>
-    <p class="lede mt-4 max-w-md mx-auto">Like a one-time code, it isn't here anymore. Head back and grab a fresh one.</p>
-    <a href="/" class="btn btn-gold mt-8">Back to Tessera</a>
+<Base title="Not found — Tessera" description="That page rolled over.">
+  <section class="nf">
+    <div class="measure">
+      <p class="kicker">404</p>
+      <h1 class="h-section mt-3">That page rolled over.</h1>
+      <p class="lede mt-4">Like a one-time code, it is not here anymore.</p>
+      <a href="/" class="btn btn-gold mt-8">Back to Tessera</a>
+    </div>
+    <Still src={nopeStill} alt="tess code nope returning: error: no account matches nope" eager sizes="(min-width: 900px) 44vw, 92vw" />
   </section>
 </Base>
+
+<style>
+  .nf { display: grid; gap: 3rem; padding-block: 5rem 7rem; align-items: center; }
+  @media (min-width: 900px) { .nf { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4rem; padding-block: 7rem 9rem; } }
+</style>

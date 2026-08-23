@@ -1,0 +1,114 @@
+---
+import Base from "../layouts/Base.astro";
+import PageHead from "../components/PageHead.astro";
+import Still from "../components/Still.astro";
+import statusStill from "../assets/still-vault-status.png";
+
+const repo = "https://github.com/ibrahemid/tessera";
+const blob = `${repo}/blob/main`;
+const appStore = "https://apps.apple.com/app/tessera-2fa-authenticator/id6788814172";
+
+const sections = [
+  {
+    id: "vault",
+    h: "The vault",
+    body: [
+      "A vault is one JSON file. A random 256-bit data encryption key (DEK) seals the account list with XChaCha20-Poly1305 under a fresh 24-byte nonce on every write. The DEK is wrapped once per unlock method and every wrap sits in the file, so one vault can carry a Secure Enclave wrap for the app and a passphrase wrap for the CLI at the same time. Adding or removing a method re-wraps the DEK; the payload is not touched.",
+      "Before encryption the account list is canonical JSON: keys in UTF-8 byte order, Go's string escaping with HTML escaping off, no whitespace, integers only. Secrets are raw bytes in that payload; base32 exists only at otpauth import and export. Readers reject duplicate keys, base64url, missing padding, unknown versions and tampered ciphertext.",
+    ],
+    links: [["/vault-format", "Vault format, rendered"], [`${blob}/spec/vault-format.md`, "spec/vault-format.md"], [`${blob}/go/internal/vault/vault.go`, "go/internal/vault/vault.go"], [`${blob}/swift/Sources/TesseraCore/Vault.swift`, "swift/Sources/TesseraCore/Vault.swift"]],
+  },
+  {
+    id: "unlock",
+    h: "Unlocking",
+    body: [
+      "Passphrase: argon2id at 128 MiB, t=3, p=4 with a 16-byte salt derives the wrap key. Go uses golang.org/x/crypto; Swift uses the vendored PHC reference implementation (portable C, no SIMD), and a known-answer test keeps the two equal. Cost parameters read from a file are bounds-checked before the KDF runs.",
+      "Secure Enclave, app only: a non-extractable P-256 key created with privateKeyUsage wraps the DEK through HKDF-SHA256 over a self key agreement. Require Touch ID adds biometryCurrentSet, so the wrap stops opening after a fingerprint change. Set a recovery passphrase in Settings and the same file gains an argon2id wrap, which is also how the CLI opens an app-created vault.",
+      "Keychain, CLI only and opt in: tess vault remember stores the passphrase in the macOS login keychain after verifying it against the vault; tess vault forget removes it. The entry is protected at the same level as an ssh key on disk. Scripts can set TESSERA_PASSPHRASE instead.",
+    ],
+    links: [[`${blob}/swift/App/Sources/SecureEnclaveWrap.swift`, "swift/App/Sources/SecureEnclaveWrap.swift"], [`${blob}/swift/Sources/CArgon2`, "swift/Sources/CArgon2"], [`${blob}/go/internal/keychain`, "go/internal/keychain"]],
+  },
+  {
+    id: "app",
+    h: "What the app is allowed to do",
+    body: [
+      "Three entitlements: App Sandbox, user-selected files for the open and save panels, and app-scoped bookmarks so a vault you opened once (for example the CLI's file) reopens without a prompt. There is no network entitlement. On-screen QR scanning uses ScreenCaptureKit and asks macOS for Screen Recording permission at the moment you scan. Auto-launch, when you turn it on, registers a login item.",
+      "The privacy manifest declares the required-reason APIs the app uses. The Mac App Store privacy label reads Data Not Collected. The clipboard is marked concealed when the app copies a code, and the window is excluded from screen capture.",
+    ],
+    links: [[`${blob}/swift/App/Resources/Tessera.entitlements`, "Tessera.entitlements"], [`${blob}/swift/App/Resources/PrivacyInfo.xcprivacy`, "PrivacyInfo.xcprivacy"], [appStore, "App Store listing"]],
+  },
+  {
+    id: "cli",
+    h: "What the CLI touches",
+    body: [
+      "tess reads and writes the vault at $TESSERA_VAULT or ~/.local/share/tessera/vault.json and holds a lock file next to it for the length of a command, so two tess processes cannot interleave writes. The Go module imports golang.org/x/crypto, cobra, the terminal and QR packages; it imports neither net nor net/http.",
+      "Commands that print secrets are explicit and say so in their help: tess export --uri, --secret, --qr and tess show --secret, --uri. Colored output turns off when piped or when NO_COLOR is set.",
+    ],
+    links: [[`${blob}/go/go.mod`, "go/go.mod"], [`${blob}/go/internal/store`, "go/internal/store"], ["/cli", "CLI reference"]],
+  },
+  {
+    id: "interop",
+    h: "Two implementations, checked against each other",
+    body: [
+      "The Go CLI and the Swift app are separate codebases. spec/testvectors.json and spec/canonical_edge.json pin envelopes, wraps, codes and escaping edge cases; the Go tests, the swiftc verifier and the XCTest suite all run against them on every push, including a full decrypt of a Go-written vault from Swift with real argon2id.",
+    ],
+    links: [[`${blob}/.github/workflows/ci.yml`, ".github/workflows/ci.yml"], [`${blob}/spec/testvectors.json`, "spec/testvectors.json"], [`${blob}/swift/Tools/verify/main.swift`, "swift/Tools/verify/main.swift"]],
+  },
+  {
+    id: "scope",
+    h: "Out of scope",
+    body: [
+      "This website, and attacks that need root or physical access to an unlocked machine. An attacker who can read your unlocked session can read your codes, in Tessera and in every other authenticator.",
+    ],
+    links: [[`${blob}/SECURITY.md`, "SECURITY.md"]],
+  },
+];
+---
+<Base
+  title="Security — Tessera"
+  description="How Tessera encrypts, unlocks and isolates your 2FA vault, with a link to the file behind each claim. Reporting instructions included."
+  current="/security"
+>
+  <PageHead kicker="Security" title="Security you can read." bleed>
+    What Tessera does with your secrets, and the file that does it. Where this page and the code disagree, the code is right; tell us.
+    <Still slot="media" src={statusStill} alt="tess vault status printing the vault path, file size, the wrap methods in the header, and the keychain state" eager />
+  </PageHead>
+
+  <nav class="measure toc" aria-label="On this page">
+    <ul>
+      {sections.map((s) => <li><a href={`#${s.id}`}>{s.h}</a></li>)}
+      <li><a href="#report">Reporting</a></li>
+    </ul>
+  </nav>
+
+  {sections.map((s) => (
+    <section id={s.id} class="sec measure scroll-mt-20">
+      <h2 class="h-sub">{s.h}</h2>
+      {s.body.map((p) => <p class="mt-4 soft">{p}</p>)}
+      <p class="mt-4 mono text-[0.8rem] srcs">
+        {s.links.map(([href, label], i) => (
+          <>{i > 0 && <span class="faint"> · </span>}<a href={href} rel={href.startsWith("http") ? "noopener" : undefined}>{label}</a></>
+        ))}
+      </p>
+    </section>
+  ))}
+
+  <section id="report" class="band band-sunken report scroll-mt-20">
+    <div class="measure">
+      <h2 class="h-sub">Reporting</h2>
+      <p class="mt-4 soft">
+        Report privately through <a href={`${repo}/security/advisories/new`} rel="noopener">GitHub Security Advisories</a> or
+        <a href="mailto:security@ibrahemid.com">security@ibrahemid.com</a>. You get an acknowledgment within 48 hours and a fix or a status update within 7 days, and credit in the release notes unless you prefer otherwise. Do not open a public issue for anything exploitable.
+      </p>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .toc ul { display: flex; flex-wrap: wrap; gap: 0.4rem 1.4rem; font-size: 0.92rem; color: var(--ink-soft); }
+  .toc a:hover { color: var(--ink); }
+  .sec { padding-top: 3.5rem; }
+  .sec:last-of-type { padding-bottom: 1rem; }
+  .srcs a { color: var(--gold); }
+  .report { margin-top: 5rem; padding-block: 4rem; }
+</style>

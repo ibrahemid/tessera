@@ -1,0 +1,61 @@
+---
+import "@fontsource-variable/schibsted-grotesk";
+import "@fontsource-variable/hanken-grotesk";
+import "@fontsource/ibm-plex-mono/400.css";
+import "../styles/global.css";
+import Wordmark from "../components/Wordmark.astro";
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Tessera OG</title>
+    <meta name="robots" content="noindex" />
+  </head>
+  <body class="og-body">
+    <div class="og band-ink">
+      <div class="og-copy">
+        <Wordmark size={30} />
+        <p class="og-h">Two-factor codes you own.</p>
+        <p class="og-sub">A native Mac app and the <span class="mono">tess</span> command line on one documented vault format. Offline, with no account.</p>
+      </div>
+      <img class="og-term" src="/media/hero-poster.webp" alt="" width="1000" height="560" />
+    </div>
+  </body>
+</html>
+
+<style>
+  .og-body { margin: 0; width: 1200px; height: 630px; overflow: hidden; background: #0e0f13; }
+  .og { position: relative; width: 1200px; height: 630px; overflow: hidden; display: block; }
+  .og-copy { position: absolute; left: 64px; top: 64px; width: 600px; }
+  .og-h {
+    margin-top: 40px;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 78px;
+    line-height: 0.98;
+    letter-spacing: -0.035em;
+    color: var(--ink);
+    text-wrap: balance;
+  }
+  .og-sub {
+    margin-top: 28px;
+    font-family: var(--font-body);
+    font-size: 25px;
+    line-height: 1.4;
+    color: var(--ink-soft);
+    max-width: 22em;
+  }
+  .og-sub .mono { color: var(--gold); }
+  .og-term {
+    position: absolute;
+    left: 640px;
+    top: 310px;
+    width: 600px;
+    height: auto;
+    border-radius: 14px 0 0 0;
+    border: 1px solid var(--band-line);
+    box-sizing: content-box;
+  }
+</style>

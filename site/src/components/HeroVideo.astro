@@ -1,0 +1,45 @@
+---
+interface Props {
+  src: string;
+  poster: string;
+  width: number;
+  height: number;
+  alt: string;
+  bleed?: boolean;
+  class?: string;
+}
+const { src, poster, width, height, alt, bleed = false, class: cls = "" } = Astro.props;
+---
+<div class:list={["hero-media", cls, { bleed }]} data-hero>
+  <video data-hero-video muted playsinline loop preload="none" poster={poster} width={width} height={height} aria-label={alt}>
+    <source src={`${src}.webm`} type="video/webm" />
+    <source src={`${src}.mp4`} type="video/mp4" />
+  </video>
+  <img class="fallback" src={poster} alt={alt} width={width} height={height} fetchpriority="high" />
+</div>
+
+<style>
+  @media (min-width: 1024px) {
+    .hero-media.bleed { width: calc(100% + 3rem); border-radius: 0.9rem 0 0 0.9rem; }
+  }
+</style>
+
+<script is:inline>
+  (() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const videos = document.querySelectorAll("[data-hero-video]");
+    if (!videos.length || !("IntersectionObserver" in window)) return;
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        const v = entry.target;
+        if (entry.isIntersecting) {
+          const p = v.play();
+          if (p && p.catch) p.catch(() => v.closest("[data-hero]")?.setAttribute("data-video-blocked", ""));
+        } else if (!v.paused) {
+          v.pause();
+        }
+      });
+    }, { threshold: 0.25 });
+    videos.forEach((v) => io.observe(v));
+  })();
+</script>

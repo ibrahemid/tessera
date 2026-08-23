@@ -1,0 +1,78 @@
+---
+import Base from "../layouts/Base.astro";
+import PageHead from "../components/PageHead.astro";
+import AppShot from "../components/AppShot.astro";
+import Still from "../components/Still.astro";
+import codesStill from "../assets/still-codes.png";
+
+const repo = "https://github.com/ibrahemid/tessera";
+const raw = "https://raw.githubusercontent.com/ibrahemid/tessera/main/docs/appstore-assets";
+const appStore = "https://apps.apple.com/app/tessera-2fa-authenticator/id6788814172";
+
+const facts = [
+  ["Name", "Tessera. The App Store listing is titled Tessera 2FA Authenticator; the CLI is tess."],
+  ["What it is", "A TOTP, HOTP and Steam Guard authenticator for macOS: a native app and a command-line tool that can share one encrypted vault."],
+  ["Price", "Free. No in-app purchases."],
+  ["License", "Apache-2.0. Source at github.com/ibrahemid/tessera."],
+  ["Platforms", "macOS 14 or later for the app. The CLI runs on macOS and Linux, arm64 and x86_64."],
+  ["Versions", "App 1.0.2 on the Mac App Store (2026-08-09). tess 1.0.2 (2026-08-10)."],
+  ["First release", "App Store 2026-07-19. CLI 2026-07-21."],
+  ["Storage", "An encrypted local file. XChaCha20-Poly1305 payload; the key is wrapped by argon2id from a passphrase and, in the app, by the Secure Enclave. There is no account and no server."],
+  ["Contact", "support@ibrahemid.com"],
+];
+
+const downloads = [
+  ["/press/tessera-icon-1024.png", "App icon, 1024 × 1024 PNG"],
+  [`${raw}/01-vault-dark.png`, "The app, dark, 2560 × 1600 PNG"],
+  [`${raw}/01-vault-light.png`, "The app, light, 2560 × 1600 PNG"],
+  [`${raw}/03-cli-dark.png`, "tess watch, dark, 2560 × 1600 PNG"],
+  [`${raw}/03-cli-light.png`, "tess watch, light, 2560 × 1600 PNG"],
+  ["/media/hero.mp4", "Terminal recording, 1000 × 560 MP4"],
+  ["/media/hero-poster.webp", "Terminal still, 1000 × 560 WebP"],
+];
+---
+<Base title="Press kit — Tessera" description="Facts, links and downloadable assets for writing about Tessera: the app icon, screenshots and a terminal recording." current="/press">
+  <PageHead kicker="Press" title="Facts and assets.">
+    Everything on this page can be checked against the repository or the App Store listing. There are no quotes to attribute; if you need one, write to <a href="mailto:support@ibrahemid.com">support@ibrahemid.com</a>.
+    <AppShot slot="media" sizes="(min-width: 900px) 34vw, 80vw" />
+  </PageHead>
+
+  <div class="measure">
+    <dl class="rows">
+      {facts.map(([k, v]) => (
+        <div class="row"><dt>{k}</dt><dd>{v}</dd></div>
+      ))}
+    </dl>
+    <p class="mt-5 mono text-[0.8rem]">
+      <a href={appStore} rel="noopener">App Store</a><span class="faint"> · </span>
+      <a href={repo} rel="noopener">GitHub</a><span class="faint"> · </span>
+      <a href="/security">Security</a><span class="faint"> · </span>
+      <a href="/vault-format">Vault format</a><span class="faint"> · </span>
+      <a href="/changelog">Changelog</a>
+    </p>
+  </div>
+
+  <section class="u-wide assets">
+    <h2 class="h-sub">Assets</h2>
+    <div class="asset-preview mt-6">
+      <img src="/press/tessera-icon-1024.png" alt="The Tessera app icon: four rounded tiles, one gold" width="1024" height="1024" loading="lazy" class="icon" />
+      <Still src={codesStill} alt="tess printing four accounts with codes and countdown bars" sizes="(min-width: 900px) 40vw, 92vw" />
+      <AppShot sizes="(min-width: 900px) 22vw, 60vw" />
+    </div>
+    <ul class="downloads mt-8">
+      {downloads.map(([href, label]) => (
+        <li><a href={href} rel="noopener">{label}</a></li>
+      ))}
+    </ul>
+    <p class="mt-6 soft measure">Use them as they are. The name is Tessera, set in the same case; the icon is not to be recolored.</p>
+  </section>
+</Base>
+
+<style>
+  .assets { padding-block: 5rem 6rem; }
+  .asset-preview { display: grid; gap: 1.5rem; align-items: start; grid-template-columns: 1fr; }
+  @media (min-width: 900px) { .asset-preview { grid-template-columns: 0.35fr 1.3fr 0.75fr; gap: 2.5rem; } }
+  .asset-preview .icon { display: block; width: 100%; max-width: 200px; height: auto; }
+  .downloads { display: grid; gap: 0.5rem 2rem; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); font-size: 0.95rem; }
+  .downloads a { color: var(--gold); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.15em; }
+</style>

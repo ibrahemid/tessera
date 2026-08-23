@@ -1,5 +1,7 @@
 ---
 import Base from "../layouts/Base.astro";
+import PageHead from "../components/PageHead.astro";
+import AppShot from "../components/AppShot.astro";
 const repo = "https://github.com/ibrahemid/tessera";
 const sections = [
   {
@@ -8,7 +10,7 @@ const sections = [
   },
   {
     h: "What Tessera transmits",
-    b: "Nothing. Codes are generated entirely offline. Tessera connects to no server we operate and contains no analytics, advertising, or crash-reporting SDKs.",
+    b: "Nothing. Codes are generated offline. Tessera connects to no server we operate and contains no analytics, advertising, or crash-reporting SDKs. The app has no network entitlement.",
   },
   {
     h: "Permissions",
@@ -16,50 +18,42 @@ const sections = [
   },
   {
     h: "Data collection",
-    b: "Tessera collects no data, as Apple's App Privacy guidelines define it. We cannot see your accounts or your codes. The Mac App Store privacy label reads “Data Not Collected.”",
+    b: "Tessera collects no data, as Apple's App Privacy guidelines define it. We cannot see your accounts or your codes. The Mac App Store privacy label reads Data Not Collected.",
+  },
+  {
+    h: "This website",
+    b: "Page views are counted with a self-hosted Umami instance at stats.ibrahemid.com. It sets no cookies, stores no IP addresses, and shares nothing with third parties.",
   },
 ];
 ---
-<Base title="Privacy · Tessera" description="Tessera collects nothing. Your 2FA secrets are encrypted on your device and never transmitted.">
-  <article class="mx-auto w-full max-w-[var(--prose)] px-5 sm:px-7 py-16 sm:py-20">
-    <span class="eyebrow">Privacy</span>
-    <h1 class="mt-4" style="font-size: clamp(2rem, 5vw, 3rem)">Nothing to collect.</h1>
-    <p class="text-xs mt-3" style="color: var(--ink-faint)">Last updated August 2026</p>
+<Base title="Privacy — Tessera" description="Tessera collects nothing. Your 2FA secrets are encrypted on your device and never transmitted. This site counts page views with self-hosted Umami." current="/privacy">
+  <PageHead kicker="Privacy" title="Nothing to collect.">
+    Tessera has no accounts and no servers. Your data stays on your device, encrypted, and we have no way to see it.
+    <span class="block mt-3 text-sm faint">Last updated August 2026</span>
+    <AppShot slot="media" sizes="(min-width: 900px) 34vw, 80vw" />
+  </PageHead>
 
-    <div class="tile p-6 sm:p-7 mt-9">
-      <p class="leading-relaxed" style="color: var(--ink)">
-        <strong>The short version:</strong> Tessera has no accounts, no servers we
-        operate, and no analytics or tracking of any kind. Your data stays on your
-        device, encrypted, and we have no way to see it. This site counts page views
-        with a self-hosted Umami instance at stats.ibrahemid.com. It sets no cookies,
-        stores no IP addresses, and shares nothing with third parties.
+  <article class="measure body">
+    {sections.map((s) => (
+      <section class="mt-10">
+        <h2 class="h-small">{s.h}</h2>
+        <p class="mt-2.5 soft">{s.b}</p>
+      </section>
+    ))}
+    <section class="mt-10">
+      <h2 class="h-small">Open source</h2>
+      <p class="mt-2.5 soft">
+        Tessera is open source under Apache-2.0. You can read exactly what it does and build it yourself:
+        <a href={repo} rel="noopener">github.com/ibrahemid/tessera</a>. The security details are on <a href="/security">/security</a>.
       </p>
-    </div>
-
-    <div class="mt-10 space-y-9">
-      {sections.map((s) => (
-        <section>
-          <h2 style="font-size: 1.25rem">{s.h}</h2>
-          <p class="mt-2.5 leading-relaxed" style="color: var(--ink-soft)">{s.b}</p>
-        </section>
-      ))}
-
-      <section>
-        <h2 style="font-size: 1.25rem">Open source</h2>
-        <p class="mt-2.5 leading-relaxed" style="color: var(--ink-soft)">
-          Tessera is open source under Apache-2.0. You can read exactly what it does
-          and build it yourself:
-          <a class="font-medium" style="color: var(--gold)" href={repo} rel="noopener"> github.com/ibrahemid/tessera</a>.
-        </p>
-      </section>
-
-      <section>
-        <h2 style="font-size: 1.25rem">Contact</h2>
-        <p class="mt-2.5 leading-relaxed" style="color: var(--ink-soft)">
-          Questions about privacy:
-          <a class="font-medium" style="color: var(--gold)" href="mailto:support@ibrahemid.com"> support@ibrahemid.com</a>.
-        </p>
-      </section>
-    </div>
+    </section>
+    <section class="mt-10">
+      <h2 class="h-small">Contact</h2>
+      <p class="mt-2.5 soft">Questions about privacy: <a href="mailto:support@ibrahemid.com">support@ibrahemid.com</a>.</p>
+    </section>
   </article>
 </Base>
+
+<style>
+  .body { padding-block: 0 6rem; }
+</style>
