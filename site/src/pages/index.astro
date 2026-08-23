@@ -9,6 +9,9 @@ const appStore = "https://apps.apple.com/app/tessera-2fa-authenticator/id6788814
 
 const cliVersion = "1.0.2";
 const goCmd = "go install github.com/ibrahemid/tessera/go/cmd/tess@latest";
+const brewCmd = "brew install ibrahemid/tap/tess";
+const trustCmd = "brew trust ibrahemid/tap";
+const tapFormula = "https://github.com/ibrahemid/homebrew-tap/blob/main/Formula/tess.rb";
 const releaseBase = `${repo}/releases/download/v${cliVersion}`;
 const tarballs = [
   ["macOS, Apple silicon", `tess_${cliVersion}_darwin_arm64.tar.gz`, "f0b41aa4a75baf57dd6f55e9191e3dcac4761653f4fa2ca0ced85001810be18d"],
@@ -102,10 +105,10 @@ const softwareLd = {
           <a href={appStore} rel="noopener" aria-label="Download on the Mac App Store">
             <img src="/mac-app-store-badge.svg" alt="" width="156" height="40" class="badge-store" />
           </a>
-          <a href="#install" class="btn btn-ghost" style="height: 3.1rem">Get the <span class="mono" style="margin: 0 0.1em">tess</span> CLI</a>
+          <div class="cmd hero-cmd"><code><span class="p">$</span>{brewCmd}</code><button type="button" data-copy={brewCmd} aria-label="Copy the Homebrew command">Copy</button></div>
         </div>
         <p class="mt-5 text-sm faint">
-          macOS 14 or later · Apache-2.0 · tess {cliVersion} for macOS and Linux
+          macOS 14 or later · Apache-2.0 · tess {cliVersion} for macOS and Linux · <a href="#install">all install options</a>
         </p>
       </div>
       <div class="hero-demo">
@@ -136,6 +139,13 @@ const softwareLd = {
       <div class="install-cli">
         <h2 class="h-sub">The <span class="mono">tess</span> CLI</h2>
         <dl class="rows mt-4">
+          <div class="row">
+            <dt>Homebrew</dt>
+            <dd>
+              <div class="cmd"><code><span class="p">$</span>{brewCmd}</code><button type="button" data-copy={brewCmd} aria-label="Copy the Homebrew command">Copy</button></div>
+              <span class="src">Homebrew 6 loads a third-party tap only after <span class="mono">{trustCmd}</span>; run that first. Formula: <a href={tapFormula} rel="noopener">ibrahemid/homebrew-tap</a>.</span>
+            </dd>
+          </div>
           <div class="row">
             <dt>Tarballs</dt>
             <dd>
@@ -285,6 +295,7 @@ const softwareLd = {
     align-items: center;
   }
   .hero-copy { padding-right: var(--gap); }
+  .hero-cmd { max-width: 100%; }
   .hero-demo { padding-right: var(--gap); }
   @media (min-width: 1024px) {
     .hero {

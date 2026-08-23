@@ -41,6 +41,8 @@ A native SwiftUI app: live codes with countdown rings, one-click copy, on-screen
 brew install ibrahemid/tap/tess
 ```
 
+Homebrew 6 loads a third-party tap only after `brew trust ibrahemid/tap`; run that first.
+
 Or without Homebrew (downloads the release for your os/arch and verifies its sha256):
 
 ```sh
