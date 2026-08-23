@@ -11,6 +11,7 @@ const cliVersion = "1.0.2";
 const goCmd = "go install github.com/ibrahemid/tessera/go/cmd/tess@latest";
 const brewCmd = "brew install ibrahemid/tap/tess";
 const trustCmd = "brew trust ibrahemid/tap";
+const curlCmd = `curl -fsSL ${repo.replace("github.com", "raw.githubusercontent.com")}/main/install.sh | sh`;
 const tapFormula = "https://github.com/ibrahemid/homebrew-tap/blob/main/Formula/tess.rb";
 const releaseBase = `${repo}/releases/download/v${cliVersion}`;
 const tarballs = [
@@ -144,6 +145,13 @@ const softwareLd = {
             <dd>
               <div class="cmd"><code><span class="p">$</span>{brewCmd}</code><button type="button" data-copy={brewCmd} aria-label="Copy the Homebrew command">Copy</button></div>
               <span class="src">Homebrew 6 loads a third-party tap only after <span class="mono">{trustCmd}</span>; run that first. Formula: <a href={tapFormula} rel="noopener">ibrahemid/homebrew-tap</a>.</span>
+            </dd>
+          </div>
+          <div class="row">
+            <dt>Script</dt>
+            <dd>
+              <div class="cmd"><code><span class="p">$</span>{curlCmd}</code><button type="button" data-copy={curlCmd} aria-label="Copy the install script command">Copy</button></div>
+              <span class="src">Downloads the release tarball for the current OS and CPU, verifies its sha256 against checksums.txt, and puts <span class="mono">tess</span> in /usr/local/bin or ~/.local/bin. Read <a href={`${blob}/install.sh`} rel="noopener">install.sh</a> first.</span>
             </dd>
           </div>
           <div class="row">
