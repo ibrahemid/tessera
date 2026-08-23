@@ -1571,6 +1571,15 @@ struct WindowConfigurator: NSViewRepresentable {
         // sheets must not travel through a call or a screen capture. Standard for
         // an authenticator, and there is no reason to make it optional.
         window.sharingType = .none
+        #if DEBUG
+        // The App Store frames are real window captures, which the line above
+        // blocks outright. TESSERA_ALLOW_CAPTURE=1 lifts the shield for that one
+        // run against a throwaway vault; DEBUG-only, so no shipping binary can
+        // reach it. See docs/APP_STORE.md, Screenshots.
+        if ProcessInfo.processInfo.environment["TESSERA_ALLOW_CAPTURE"] == "1" {
+            window.sharingType = .readOnly
+        }
+        #endif
         return true
     }
 

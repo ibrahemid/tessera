@@ -1,0 +1,13 @@
+[33m~[39m [32m$[39m tess move github Work
+Moved GitHub (ibrahem) to /Work
+[33m~[39m [32m$[39m tess move cloudflare Work
+Moved Cloudflare (ibrahem) to /Work
+[33m~[39m [32m$[39m tess tag github ci
+Updated tags on GitHub (ibrahem)
+[33m~[39m [32m$[39m tess list --folder Work
+  [1m[38;2;142;91;166mcl[0m  [1m[38;2;242;242;245mCloudflare (ibrahem)              [0m  [38;2;105;110;121mtotp /Work[39m
+  [1m[38;2;176;80;110mgi[0m  [1m[38;2;242;242;245mGitHub (ibrahem)                  [0m  [38;2;105;110;121mtotp /Work #ci[39m
+[33m~[39m [32m$[39m
+
+
+
