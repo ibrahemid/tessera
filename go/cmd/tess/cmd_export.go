@@ -32,7 +32,8 @@ func newExportCmd() *cobra.Command {
   tess export --qr ./qrcodes        # a QR PNG per account (scan into a phone)
   tess export --qr ./qrcodes github # one account's QR PNG
   tess export --file backup.json    # an encrypted copy of the whole vault (safe to store)`,
-		Args: cobra.MaximumNArgs(1),
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeFirstArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if filePath != "" {
 				return exportEncrypted(cmd, filePath)

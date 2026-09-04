@@ -407,7 +407,8 @@ func newID() string {
 	return hex.EncodeToString(b)
 }
 
-func now() time.Time { return time.Now() }
+// now is the clock, replaceable in tests.
+var now = time.Now
 
 // minPassphraseLen is the floor for a passphrase the user chooses.
 const minPassphraseLen = 8
@@ -462,4 +463,10 @@ func promptNewPassphrase() (string, error) {
 // out writes a line to the command's stdout.
 func out(cmd *cobra.Command, format string, a ...any) {
 	fmt.Fprintf(cmd.OutOrStdout(), format+"\n", a...)
+}
+
+// errOut writes a line to the command's stderr, for progress notes that must
+// stay out of piped output.
+func errOut(cmd *cobra.Command, format string, a ...any) {
+	fmt.Fprintf(cmd.ErrOrStderr(), format+"\n", a...)
 }

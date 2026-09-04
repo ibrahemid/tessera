@@ -38,34 +38,55 @@ func main() {
 }
 
 func newRootCmd() *cobra.Command {
+	opts := &codeOptions{}
 	root := &cobra.Command{
-		Use:           "tess",
-		Short:         "Tessera: a CLI-first TOTP/2FA authenticator",
+		Use:   "tess [query]",
+		Short: "Tessera: a CLI-first TOTP/2FA authenticator",
+		Long: `Print and copy TOTP/HOTP/Steam codes from an encrypted local vault.
+
+  tess                     current codes for every account
+  tess acme                one account's code, copied to the clipboard
+  tess watch               live view with countdown bars
+  tess add <uri|key|file>  add accounts
+  tess vault init          create a vault`,
 		Version:       resolveVersion(),
+		Args:          cobra.MaximumNArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		// With no subcommand, print current codes for all accounts.
+		// A bare argument is an account query: `tess acme` is `tess code acme`.
+		// Cobra matches subcommands by exact name, so a command name always wins.
+		ValidArgsFunction: completeFirstArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCodeAll(cmd, false)
+			return runCode(cmd, args, opts)
 		},
 	}
 	root.PersistentFlags().StringVar(&vaultPath, "vault", "", "vault file path (default $TESSERA_VAULT or ~/.local/share/tessera/vault.json)")
+	bindCodeFlags(root, opts)
 
-	root.AddCommand(
-		newVaultCmd(),
-		newAddCmd(),
-		newListCmd(),
-		newCodeCmd(),
-		newWatchCmd(),
-		newImportCmd(),
-		newExportCmd(),
-		newMergeCmd(),
-		newShowCmd(),
-		newRemoveCmd(),
-		newRenameCmd(),
-		newAliasCmd(),
-		newMoveCmd(),
-		newTagCmd(),
+	root.AddGroup(
+		&cobra.Group{ID: "codes", Title: "Codes:"},
+		&cobra.Group{ID: "accounts", Title: "Accounts:"},
+		&cobra.Group{ID: "transfer", Title: "Transfer:"},
+		&cobra.Group{ID: "vault", Title: "Vault:"},
 	)
+	groups := []struct {
+		id   string
+		cmds []*cobra.Command
+	}{
+		{"codes", []*cobra.Command{newCodeCmd(), newWatchCmd()}},
+		{"accounts", []*cobra.Command{
+			newAddCmd(), newListCmd(), newShowCmd(), newRenameCmd(),
+			newAliasCmd(), newMoveCmd(), newTagCmd(), newRemoveCmd(),
+		}},
+		{"transfer", []*cobra.Command{newImportCmd(), newExportCmd(), newMergeCmd()}},
+		{"vault", []*cobra.Command{newVaultCmd()}},
+	}
+	for _, g := range groups {
+		for _, c := range g.cmds {
+			c.GroupID = g.id
+			root.AddCommand(c)
+		}
+	}
+	root.AddCommand(newClipClearCmd())
 	return root
 }

@@ -6,9 +6,10 @@ import (
 
 func newRemoveCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "rm <query>",
-		Short: "Remove an account",
-		Args:  cobra.ExactArgs(1),
+		Use:               "rm <query>",
+		Short:             "Remove an account",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeFirstArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := openSession()
 			if err != nil {
@@ -33,9 +34,10 @@ func newRemoveCmd() *cobra.Command {
 func newRenameCmd() *cobra.Command {
 	var issuer, acct, handle string
 	cmd := &cobra.Command{
-		Use:   "rename <query>",
-		Short: "Rename an account's issuer, account label, and/or handle",
-		Args:  cobra.ExactArgs(1),
+		Use:               "rename <query>",
+		Short:             "Rename an account's issuer, account label, and/or handle",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeFirstArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := openSession()
 			if err != nil {
@@ -73,9 +75,10 @@ func newRenameCmd() *cobra.Command {
 
 func newAliasCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "alias <account> <handle>",
-		Short: "Set an account's handle (the short name you type to reference it)",
-		Args:  cobra.ExactArgs(2),
+		Use:               "alias <account> <handle>",
+		Short:             "Set an account's handle (the short name you type to reference it)",
+		Args:              cobra.ExactArgs(2),
+		ValidArgsFunction: completeFirstArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := openSession()
 			if err != nil {
@@ -100,9 +103,10 @@ func newAliasCmd() *cobra.Command {
 
 func newMoveCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "move <query> <folder>",
-		Short: "Move an account into a folder (empty folder to clear)",
-		Args:  cobra.ExactArgs(2),
+		Use:               "move <query> <folder>",
+		Short:             "Move an account into a folder (empty folder to clear)",
+		Args:              cobra.ExactArgs(2),
+		ValidArgsFunction: completeFirstArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := openSession()
 			if err != nil {
@@ -127,9 +131,10 @@ func newMoveCmd() *cobra.Command {
 func newTagCmd() *cobra.Command {
 	var remove bool
 	cmd := &cobra.Command{
-		Use:   "tag <query> <tag>",
-		Short: "Add or remove a tag on an account",
-		Args:  cobra.ExactArgs(2),
+		Use:               "tag <query> <tag>",
+		Short:             "Add or remove a tag on an account",
+		Args:              cobra.ExactArgs(2),
+		ValidArgsFunction: completeFirstArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := openSession()
 			if err != nil {

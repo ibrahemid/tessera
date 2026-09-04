@@ -23,7 +23,8 @@ func newShowCmd() *cobra.Command {
   tess show github            # details, no secret
   tess show github --secret   # also print the base32 setup key (cleartext)
   tess show github --uri      # also print the otpauth:// setup link (cleartext)`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeFirstArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := openSession()
 			if err != nil {

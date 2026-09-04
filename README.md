@@ -61,11 +61,14 @@ Then:
 tess vault init                      # create an encrypted vault
 tess add "otpauth://totp/ACME:me@x.com?secret=JBSWY3DPEHPK3PXP&issuer=ACME"
 tess add --qr ~/Desktop/code.png     # from a QR image
+tess add --screen                    # select a QR code on screen (macOS)
 tess import --migration "otpauth-migration://offline?data=..."
+cat export.json | tess import -      # read the input from stdin (also `tess add -`)
 tess                                 # print current codes (colored, with countdown bars)
 tess watch                           # live TUI: countdown bars, search (/), copy (enter/c), q to quit
-tess code acme -c                    # code for one account, copied to the clipboard
-tess code ac -c                      # reference an account by its handle (shown by `tess list`)
+tess acme                            # one account's code, copied to the clipboard
+tess ac --no-copy                    # by handle (shown by `tess list`), printed only
+tess code acme --clear 30            # copy, then clear the clipboard after 30s
 tess alias ac work                   # set an account's handle
 tess code --json                     # machine-readable output for scripts
 tess ls --json                       # alias for `tess list`
@@ -76,6 +79,10 @@ tess completion zsh > ...            # shell completions (bash/zsh/fish)
 ```
 
 Binaries for macOS and Linux (arm64 and x86_64) are attached to every [release](https://github.com/ibrahemid/tessera/releases), with `checksums.txt`. Unpack the tarball and put `tess` on your `PATH`.
+
+`tess <query>` is short for `tess code <query>`; a subcommand name always wins over an account handle. The code goes to the clipboard on a terminal, so `tess acme` prints it and copies it. Piped or with `--json`, tess prints the digits and leaves the clipboard alone. `--clear <seconds>` (default `$TESSERA_CLIP_CLEAR`) wipes the copy afterwards, and only while the clipboard still holds that code. A code with under four seconds left is held back until the next one, unless you pass `--now`.
+
+Completions offer your account handles once the vault opens without a prompt, from `$TESSERA_PASSPHRASE` or the login keychain.
 
 Colored output auto-disables when piped or when `NO_COLOR` is set.
 

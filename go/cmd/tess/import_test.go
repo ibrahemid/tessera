@@ -361,3 +361,34 @@ func writeTwoQRPNG(t *testing.T, path, textA, textB string) {
 		t.Fatalf("png encode: %v", err)
 	}
 }
+
+// stubStdin replaces the standard input source for one test.
+func stubStdin(t *testing.T, text string) {
+	t.Helper()
+	old := stdinReader
+	stdinReader = strings.NewReader(text)
+	t.Cleanup(func() { stdinReader = old })
+}
+
+// TestImportStdinReadsThePipeline covers `... | tess import -`, including the
+// dash arriving among ordinary paths.
+func TestImportStdinReadsThePipeline(t *testing.T) {
+	stubStdin(t, "otpauth://totp/Pipe:me?secret=JBSWY3DPEHPK3PXP&issuer=Pipe\n")
+
+	b := collectImport(nil, nil, nil, nil, []string{"-"})
+	if len(b.accounts) != 1 || b.accounts[0].Issuer != "Pipe" {
+		t.Fatalf("stdin not parsed: %+v (%v)", b.accounts, b.problems)
+	}
+}
+
+func TestImportStdinAttributesFailuresToStdin(t *testing.T) {
+	stubStdin(t, "otpauth://totp/Pipe:me?secret=JBSWY3DPEHPK3PXP&issuer=Pipe\nnot a uri\n")
+
+	b := collectImport(nil, nil, nil, nil, []string{"-"})
+	if len(b.accounts) != 1 {
+		t.Fatalf("the good line should still import: %+v", b.accounts)
+	}
+	if len(b.problems) != 1 || !strings.HasPrefix(b.problems[0].source, "stdin") {
+		t.Fatalf("problem should name stdin, got %+v", b.problems)
+	}
+}

@@ -213,23 +213,16 @@ func TestCodeMultiMatch(t *testing.T) {
 	path := withVault(t)
 	sealVault(t, path, []account.Account{totp("a", "ACME", "one", 1), totp("b", "ACME", "two", 2)})
 
-	// Without --copy: prints a table with codes and exits 0.
+	// Every match is listed with its code, and the command exits 0: the table
+	// answers the question, so there is nothing to disambiguate for.
 	c := newCodeCmd()
 	var buf bytes.Buffer
 	c.SetOut(&buf)
 	c.SetArgs([]string{"acme"})
 	if err := c.Execute(); err != nil {
-		t.Fatalf("code without -c on multi-match should not error: %v", err)
+		t.Fatalf("code on multi-match should not error: %v", err)
 	}
 	if !strings.Contains(buf.String(), "code") {
 		t.Fatalf("expected a code column:\n%s", buf.String())
-	}
-
-	// With --copy: no single target, prints the table and exits non-zero.
-	c2 := newCodeCmd()
-	c2.SetOut(io.Discard)
-	c2.SetArgs([]string{"acme", "-c"})
-	if err := c2.Execute(); err == nil {
-		t.Fatal("code -c on multi-match must error")
 	}
 }

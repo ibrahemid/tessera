@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/base64"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -18,19 +19,20 @@ import (
 
 func newAddCmd() *cobra.Command {
 	var (
-		qrPath    string
-		issuer    string
-		acct      string
-		secret    string
-		typ       string
-		algorithm string
-		digits    int
-		period    int
-		folder    string
+		qrPath     string
+		issuer     string
+		acct       string
+		secret     string
+		typ        string
+		algorithm  string
+		digits     int
+		period     int
+		folder     string
+		fromScreen bool
 	)
 	cmd := &cobra.Command{
 		Use:   "add [input]",
-		Short: "Add accounts from an otpauth/migration URI, a setup key, a QR image, an export file, or manual flags",
+		Short: "Add accounts from an otpauth/migration URI, a setup key, a QR image, an export file, the screen, or manual flags",
 		Args:  cobra.MaximumNArgs(1),
 		Long: `Add one or more accounts. The positional argument auto-detects:
 
@@ -38,6 +40,8 @@ func newAddCmd() *cobra.Command {
   tess add ZB573K4APD63E6RLD3WAHI3QFZ35RLEP        # bare base32 setup key -> TOTP
   tess add code.png                                # QR image (all codes decoded)
   tess add export.json                             # Aegis/2FAS/Raivo export, or migration/otpauth lines
+  tess add --screen                                # select a QR code on screen (macOS)
+  cat export.json | tess add -                     # read the input from stdin
 
 For a setup key, --issuer/--account/--digits/--period/--algorithm override the
 TOTP defaults. --qr and --secret keep working as before.`,
@@ -46,6 +50,8 @@ TOTP defaults. --qr and --secret keep working as before.`,
 			var problems []importProblem
 			var err error
 			switch {
+			case fromScreen:
+				accts, problems, err = addFromScreen()
 			case len(args) == 1:
 				accts, problems, err = addFromArg(args[0], issuer, acct, algorithm, digits, period)
 			case qrPath != "":
@@ -57,7 +63,7 @@ TOTP defaults. --qr and --secret keep working as before.`,
 					accts = []account.Account{a}
 				}
 			default:
-				return fmt.Errorf("provide an otpauth URI, a setup key, a file path, --qr <image>, or --secret with manual flags")
+				return fmt.Errorf("provide an otpauth URI, a setup key, a file path, -, --qr <image>, --screen, or --secret with manual flags")
 			}
 			if err != nil {
 				return err
@@ -117,6 +123,7 @@ TOTP defaults. --qr and --secret keep working as before.`,
 	f.IntVar(&digits, "digits", 6, "code digits (manual/setup key)")
 	f.IntVar(&period, "period", 30, "period seconds (manual/setup key)")
 	f.StringVar(&folder, "folder", "", "folder to place the account(s) in")
+	f.BoolVar(&fromScreen, "screen", false, "select a QR code on screen and add it (macOS)")
 	return cmd
 }
 
@@ -126,6 +133,9 @@ TOTP defaults. --qr and --secret keep working as before.`,
 // back as problems alongside the ones that parsed, never as a silent drop
 // (spec/otpauth.md § partial-failure semantics).
 func addFromArg(arg, issuer, acct, algorithm string, digits, period int) ([]account.Account, []importProblem, error) {
+	if arg == "-" {
+		return addFromStdin()
+	}
 	if _, err := os.Stat(arg); err == nil {
 		if isImagePath(arg) {
 			return addFromImage(arg)
@@ -156,6 +166,20 @@ func addFromArg(arg, issuer, acct, algorithm string, digits, period int) ([]acco
 	default:
 		return nil, nil, fmt.Errorf("unrecognized input (expected an otpauth URI, setup key, or file path)")
 	}
+}
+
+// stdinReader is the standard input source, replaceable in tests.
+var stdinReader io.Reader = os.Stdin
+
+// addFromStdin parses everything on stdin, so tess can sit at the end of a
+// pipeline that produces otpauth URIs or an export file.
+func addFromStdin() ([]account.Account, []importProblem, error) {
+	data, err := io.ReadAll(stdinReader)
+	if err != nil {
+		return nil, nil, fmt.Errorf("read stdin: %w", err)
+	}
+	accts, errs := detect.ParseText(string(data))
+	return accts, itemProblems("stdin", errs), nil
 }
 
 // addFromImage decodes every QR code in an image and parses each payload.
