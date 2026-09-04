@@ -122,7 +122,7 @@ so the fuller list can go back the day both ship and the site is deployed.
 
 **App name (≤30):** `Tessera 2FA Authenticator`
 
-**Subtitle (≤30):** `2FA for your Mac and CLI`
+**Subtitle (≤30):** `2FA codes, app and terminal` (1.0.3 was rejected under 5.2.5 for "Mac" in the subtitle; keep Apple product names out of name and subtitle)
 
 **Keywords (≤100, no space after the commas):**
 
@@ -130,7 +130,7 @@ so the fuller list can go back the day both ship and the site is deployed.
 totp,hotp,steam guard,terminal,open source,touch id,offline,no account
 ```
 
-Words already carried by the name and subtitle (authenticator, 2FA, Mac, CLI)
+Words already carried by the name and subtitle (authenticator, 2FA, codes, app, terminal)
 are left out; Apple indexes those fields too, so repeating them wastes the
 budget. `steam guard` names a code type the app generates, which reads as a
 capability rather than an affiliation, but it is the first keyword to drop if
