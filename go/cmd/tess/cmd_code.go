@@ -38,16 +38,24 @@ const freshnessFloor = 4
 type codeOptions struct {
 	next       bool
 	noCopy     bool
+	forceCopy  bool
 	asJSON     bool
 	nowOnly    bool
 	clearAfter int
 }
 
-// shouldCopy reports whether this run puts the code on the clipboard: only an
-// interactive run that asked for neither JSON nor --no-copy. A piped run is a
-// script's, and a script that wanted the clipboard would say so.
+// shouldCopy reports whether this run puts the code on the clipboard.
+// --no-copy always wins and -c always copies; left to itself, only an
+// interactive run that did not ask for JSON copies. A piped run is a script's,
+// and a script that wants the clipboard says so with -c.
 func (o codeOptions) shouldCopy() bool {
-	return !o.noCopy && !o.asJSON && stdoutIsTTY()
+	if o.noCopy {
+		return false
+	}
+	if o.forceCopy {
+		return true
+	}
+	return !o.asJSON && stdoutIsTTY()
 }
 
 func newCodeCmd() *cobra.Command {
@@ -62,8 +70,8 @@ func newCodeCmd() *cobra.Command {
   tess code acme --json     # machine-readable, never copies
   tess code                 # every account's code
 
-The code is copied only on a terminal. Piped or with --json, tess prints the
-raw digits and leaves the clipboard alone.`,
+The code is copied on a terminal. Piped or with --json, tess prints the raw
+digits and leaves the clipboard alone unless you pass -c.`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeFirstArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -85,9 +93,8 @@ func bindCodeFlags(cmd *cobra.Command, opts *codeOptions) {
 	f.BoolVar(&opts.nowOnly, "now", false, "print the current code instead of waiting for the next one")
 	f.IntVar(&opts.clearAfter, "clear", defaultClipClear(),
 		"clear the clipboard after this many seconds, 0 to keep (default $TESSERA_CLIP_CLEAR)")
-	// Copying is the default now; the flag stays so older scripts keep running.
-	legacyCopy := false
-	f.BoolVarP(&legacyCopy, "copy", "c", false, "copy the code to the clipboard (now the default)")
+	f.BoolVarP(&opts.forceCopy, "copy", "c", false,
+		"copy the code to the clipboard (the default on a terminal; -c copies even when piped)")
 	_ = f.MarkHidden("copy")
 }
 

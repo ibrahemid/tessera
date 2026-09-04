@@ -80,7 +80,7 @@ tess completion zsh > ...            # shell completions (bash/zsh/fish)
 
 Binaries for macOS and Linux (arm64 and x86_64) are attached to every [release](https://github.com/ibrahemid/tessera/releases), with `checksums.txt`. Unpack the tarball and put `tess` on your `PATH`.
 
-`tess <query>` is short for `tess code <query>`; a subcommand name always wins over an account handle. The code goes to the clipboard on a terminal, so `tess acme` prints it and copies it. Piped or with `--json`, tess prints the digits and leaves the clipboard alone. `--clear <seconds>` (default `$TESSERA_CLIP_CLEAR`) wipes the copy afterwards, and only while the clipboard still holds that code. A code with under four seconds left is held back until the next one, unless you pass `--now`.
+`tess <query>` is short for `tess code <query>`; a subcommand name always wins over an account handle. The code goes to the clipboard on a terminal, so `tess acme` prints it and copies it. Piped or with `--json`, tess prints the digits and leaves the clipboard alone unless you pass `-c`. `--clear <seconds>` (default `$TESSERA_CLIP_CLEAR`) wipes the copy afterwards, and only while the clipboard still holds that code. A code with under four seconds left is held back until the next one, unless you pass `--now`.
 
 Completions offer your account handles once the vault opens without a prompt, from `$TESSERA_PASSPHRASE` or the login keychain.
 

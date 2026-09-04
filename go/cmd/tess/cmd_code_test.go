@@ -128,6 +128,39 @@ func TestCodeLegacyCopyFlagStillAccepted(t *testing.T) {
 	}
 }
 
+// TestCodeCopyRules pins who ends up on the clipboard. A launcher that runs
+// tess with a pipe (Raycast, Alfred) asks with -c and must be served.
+func TestCodeCopyRules(t *testing.T) {
+	cases := []struct {
+		name string
+		tty  bool
+		args []string
+		want bool
+	}{
+		{"piped with -c copies", false, []string{"acme", "-c"}, true},
+		{"piped without -c does not", false, []string{"acme"}, false},
+		{"terminal copies", true, []string{"acme"}, true},
+		{"no-copy on a terminal does not", true, []string{"acme", "--no-copy"}, false},
+		{"no-copy beats -c", true, []string{"acme", "-c", "--no-copy"}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := withVault(t)
+			sealVault(t, path, []account.Account{totp("a", "ACME", "x", 1)})
+			stubTTY(t, tc.tty)
+			var copied string
+			stubClipboard(t, func(s string) error { copied = s; return nil })
+
+			if _, err := runCodeCmd(t, tc.args...); err != nil {
+				t.Fatalf("code %v: %v", tc.args, err)
+			}
+			if got := copied != ""; got != tc.want {
+				t.Errorf("copied %q, want copy = %v", copied, tc.want)
+			}
+		})
+	}
+}
+
 func TestCodeNoCopyPrintsWithoutTouchingClipboard(t *testing.T) {
 	path := withVault(t)
 	sealVault(t, path, []account.Account{totp("a", "ACME", "x", 1)})
