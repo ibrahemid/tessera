@@ -9,7 +9,7 @@ const repo = "https://github.com/ibrahemid/tessera";
 const blob = `${repo}/blob/main`;
 const appStore = "https://apps.apple.com/app/tessera-2fa-authenticator/id6788814172";
 
-const cliVersion = "1.0.2";
+const cliVersion = "1.1.0";
 const goCmd = "go install github.com/ibrahemid/tessera/go/cmd/tess@latest";
 const brewCmd = "brew install ibrahemid/tap/tess";
 const trustCmd = "brew trust ibrahemid/tap";
@@ -17,10 +17,10 @@ const curlCmd = `curl -fsSL ${repo.replace("github.com", "raw.githubusercontent.
 const tapFormula = "https://github.com/ibrahemid/homebrew-tap/blob/main/Formula/tess.rb";
 const releaseBase = `${repo}/releases/download/v${cliVersion}`;
 const tarballs = [
-  ["macOS, Apple silicon", `tess_${cliVersion}_darwin_arm64.tar.gz`, "f0b41aa4a75baf57dd6f55e9191e3dcac4761653f4fa2ca0ced85001810be18d"],
-  ["macOS, Intel", `tess_${cliVersion}_darwin_amd64.tar.gz`, "16c16f0adb8bd967a4597b0d86cc7b6d2cafa2995c1539b64e757a69fc34a491"],
-  ["Linux, arm64", `tess_${cliVersion}_linux_arm64.tar.gz`, "1988dcf8dcca0eafd3ae8d9b16dd978db799ff06464a841a46f2386df2f115fe"],
-  ["Linux, x86_64", `tess_${cliVersion}_linux_amd64.tar.gz`, "3758e770c7da4547fb4e31e54fd97e5c9761468d4a356fe41ee3170ac52f838f"],
+  ["macOS, Apple silicon", `tess_${cliVersion}_darwin_arm64.tar.gz`, "75df08b715dc31a326d25061a64171423bce245cf6f5943753577470a0275568"],
+  ["macOS, Intel", `tess_${cliVersion}_darwin_amd64.tar.gz`, "84cd31b461cc868cdb219b3da47c7885fff70f9a6b501a69258d1b5aea5399f7"],
+  ["Linux, arm64", `tess_${cliVersion}_linux_arm64.tar.gz`, "baf83665ca822a8f75882cc9e08178593d8ca65bbf8c6deb3d4158fbb4264346"],
+  ["Linux, x86_64", `tess_${cliVersion}_linux_amd64.tar.gz`, "94144967eddcc5635ce2f1087ea51644fc7195b8482a7c28c12622804b933387"],
 ];
 
 const pillars = [
