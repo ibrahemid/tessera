@@ -160,7 +160,10 @@ func addFromArg(arg, issuer, acct, algorithm string, digits, period int) ([]acco
 		return accts, nil, err
 	case detect.SetupKey:
 		return []account.Account{setupKeyAccount(arg, issuer, acct, algorithm, digits, period)}, nil, nil
-	case detect.ExportJSON:
+	case detect.ExportJSON, detect.ExportCSV, detect.ExportBinary:
+		// An export pasted as an argument rather than handed over as a file: a
+		// CSV export starts with its header line, a .1pux or an encrypted
+		// Stratum backup with its magic bytes.
 		accts, errs := detect.ParseText(arg)
 		return accts, itemProblems("input", errs), nil
 	default:

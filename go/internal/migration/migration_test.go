@@ -176,3 +176,19 @@ func TestParseRejectsGarbageBase64(t *testing.T) {
 		}
 	}
 }
+
+// TestParseErrorNeverEchoesTheURI: a migration payload holds every secret in
+// the batch, so a parse failure must not print the URI back.
+func TestParseErrorNeverEchoesTheURI(t *testing.T) {
+	const data = "Ci0KCkhlbGxvId6tvu8SDkV4YW1wbGU6YWxpY2Ug"
+	_, err := Parse("otpauth-migration://offline?data=" + data + "\x7f")
+	if err == nil {
+		t.Fatal("a URI with a control character should not parse")
+	}
+	if strings.Contains(err.Error(), data) {
+		t.Fatalf("the error leaks the payload: %v", err)
+	}
+	if strings.Contains(err.Error(), "otpauth-migration://") {
+		t.Fatalf("the error echoes the URI: %v", err)
+	}
+}

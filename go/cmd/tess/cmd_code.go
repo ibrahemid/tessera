@@ -95,7 +95,6 @@ func bindCodeFlags(cmd *cobra.Command, opts *codeOptions) {
 		"clear the clipboard after this many seconds, 0 to keep (default $TESSERA_CLIP_CLEAR)")
 	f.BoolVarP(&opts.forceCopy, "copy", "c", false,
 		"copy the code to the clipboard (the default on a terminal; -c copies even when piped)")
-	_ = f.MarkHidden("copy")
 }
 
 // defaultClipClear reads the --clear default from $TESSERA_CLIP_CLEAR. Anything

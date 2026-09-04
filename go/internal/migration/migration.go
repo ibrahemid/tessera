@@ -9,6 +9,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math"
 	"net/url"
@@ -68,7 +69,9 @@ const (
 func Parse(uri string) ([]account.Account, error) {
 	u, err := url.Parse(strings.TrimSpace(uri))
 	if err != nil {
-		return nil, fmt.Errorf("migration: parse uri: %w", err)
+		// url.Error embeds the URL, and the data parameter is the export
+		// payload: every secret in the batch. Report the failure without it.
+		return nil, errors.New("migration: invalid URI")
 	}
 	if u.Scheme != "otpauth-migration" {
 		return nil, fmt.Errorf("migration: not an otpauth-migration uri (scheme %q)", u.Scheme)

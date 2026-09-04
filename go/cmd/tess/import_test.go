@@ -392,3 +392,37 @@ func TestImportStdinAttributesFailuresToStdin(t *testing.T) {
 		t.Fatalf("problem should name stdin, got %+v", b.problems)
 	}
 }
+
+// TestAddFromArgParsesAPastedCSVExport: an export handed over as text, not as a
+// file path, must take the same route a JSON export does. Only a file path is
+// read from disk; everything else is classified from its content.
+func TestAddFromArgParsesAPastedCSVExport(t *testing.T) {
+	csv := "Title,URL,Username,Password,Notes,OTPAuth\n" +
+		"GitHub,https://github.com,me@example.com,hunter2,,otpauth://totp/GitHub:me@example.com?secret=JBSWY3DPEHPK3PXP\n"
+
+	accts, problems, err := addFromArg(csv, "", "", "SHA1", 6, 30)
+	if err != nil {
+		t.Fatalf("addFromArg: %v", err)
+	}
+	if len(problems) != 0 {
+		t.Fatalf("unexpected problems: %+v", problems)
+	}
+	if len(accts) != 1 || accts[0].Issuer != "GitHub" {
+		t.Fatalf("want the GitHub account, got %+v", accts)
+	}
+}
+
+// TestAddFromArgReportsAPastedEncryptedBackup: a binary export names the app it
+// came from instead of falling through to "unrecognized input".
+func TestAddFromArgReportsAPastedEncryptedBackup(t *testing.T) {
+	accts, problems, err := addFromArg("AUTHENTICATORPRO\x00\x01binary", "", "", "SHA1", 6, 30)
+	if err != nil {
+		t.Fatalf("addFromArg: %v", err)
+	}
+	if len(accts) != 0 {
+		t.Fatalf("an encrypted backup must not yield accounts, got %+v", accts)
+	}
+	if len(problems) != 1 || !strings.Contains(problems[0].reason, "Stratum") {
+		t.Fatalf("want one problem naming Stratum, got %+v", problems)
+	}
+}
