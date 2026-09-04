@@ -19,6 +19,7 @@ func TestClassifyTable(t *testing.T) {
 		{"setup-key upper", "ZB573K4APD63E6RLD3WAHI3QFZ35RLEP", SetupKey},
 		{"setup-key spaces", "zb573k4a pd63e6rl d3wahi3q fz35rlep", SetupKey},
 		{"setup-key dashes", "zb573k4a-pd63e6rl-d3wahi3q-fz35rlep", SetupKey},
+		{"setup-key padded", "\tZB573K4APD63E6RLD3WAHI3QFZ35RLEP\n", SetupKey},
 		{"too short", "GEZDGNBV", Invalid},
 		{"two tokens", "hello world", Invalid},
 		{"otpauth totp", "otpauth://totp/Example:alice@google.com?secret=JBSWY3DPEHPK3PXP&issuer=Example", OTPAuth},
@@ -70,6 +71,20 @@ func TestClassifyMultilinePerLine(t *testing.T) {
 		if got := Classify(line); got != want[i] {
 			t.Fatalf("line %d Classify(%q) = %v, want %v", i+1, line, got, want[i])
 		}
+	}
+}
+
+// TestParseTextTrimsEachLine pins the spec row "leading/trailing whitespace is
+// trimmed before every rule" on the per-line path: an indented setup key
+// imports exactly like a bare one.
+func TestParseTextTrimsEachLine(t *testing.T) {
+	input := "otpauth://totp/A?secret=JBSWY3DPEHPK3PXP\n\tZB573K4APD63E6RLD3WAHI3QFZ35RLEP  \n"
+	accts, errs := ParseText(input)
+	if len(errs) != 0 {
+		t.Fatalf("expected no item errors, got %v", errs)
+	}
+	if len(accts) != 2 {
+		t.Fatalf("expected 2 accounts, got %d", len(accts))
 	}
 }
 

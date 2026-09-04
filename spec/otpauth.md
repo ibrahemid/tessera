@@ -186,6 +186,7 @@ Canonical classification cases. Both suites port these; `kind` is one of `migrat
 | `ZB573K4APD63E6RLD3WAHI3QFZ35RLEP` | setup-key | 32 chars; SHA1/6/30 defaults; empty issuer+account |
 | `zb573k4a pd63e6rl d3wahi3q fz35rlep` | setup-key | spaces stripped; same key as above |
 | `zb573k4a-pd63e6rl-d3wahi3q-fz35rlep` | setup-key | dashes stripped; same key |
+| `\tZB573K4APD63E6RLD3WAHI3QFZ35RLEP\n` (escapes are real control characters) | setup-key | leading/trailing whitespace is trimmed before every rule |
 | `GEZDGNBV` | invalid | 8 chars < 16 min |
 | `hello world` | invalid | two tokens; not `^[A-Za-z2-7]+$` |
 | `otpauth://totp/Example:alice@google.com?secret=JBSWY3DPEHPK3PXP&issuer=Example` | otpauth | TOTP; secret base32 |

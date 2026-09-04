@@ -25,6 +25,11 @@ func (migrationExporter) Description() string {
 	return "Google Authenticator transfer QR codes (PNG per batch)"
 }
 
+// MultiFile is true: an export is split into batches of at most 10 accounts, so
+// a large vault renders many PNGs and a small one renders a single PNG that
+// still belongs in a directory alongside its siblings.
+func (migrationExporter) MultiFile() bool { return true }
+
 // MigrationPayload wire field numbers, mirroring internal/migration.
 const (
 	fieldOtpParameters protowire.Number = 1

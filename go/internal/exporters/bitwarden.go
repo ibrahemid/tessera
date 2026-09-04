@@ -14,6 +14,8 @@ type bitwardenExporter struct{}
 
 func (bitwardenExporter) Name() string { return "bitwarden" }
 
+func (bitwardenExporter) MultiFile() bool { return false }
+
 func (bitwardenExporter) Description() string { return "Bitwarden Authenticator JSON export" }
 
 type bitwardenExport struct {

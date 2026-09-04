@@ -16,6 +16,8 @@ type appleCSVExporter struct{}
 
 func (appleCSVExporter) Name() string { return "apple-csv" }
 
+func (appleCSVExporter) MultiFile() bool { return false }
+
 func (appleCSVExporter) Description() string { return "Apple Passwords CSV (Title,URL,...,OTPAuth)" }
 
 // appleCSVHeader must stay byte-identical to the header the importer matches.

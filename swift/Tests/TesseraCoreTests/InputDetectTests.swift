@@ -23,6 +23,7 @@ final class InputDetectTests: XCTestCase {
             ("ZB573K4APD63E6RLD3WAHI3QFZ35RLEP", .setupKey),
             ("zb573k4a pd63e6rl d3wahi3q fz35rlep", .setupKey),
             ("zb573k4a-pd63e6rl-d3wahi3q-fz35rlep", .setupKey),
+            ("\tZB573K4APD63E6RLD3WAHI3QFZ35RLEP\n", .setupKey),
             ("GEZDGNBV", .invalid),
             ("hello world", .invalid),
             ("otpauth://totp/Example:alice@google.com?secret=JBSWY3DPEHPK3PXP&issuer=Example", .otpauth),
@@ -141,6 +142,15 @@ final class InputDetectTests: XCTestCase {
         XCTAssertEqual(errors.count, 1)
         XCTAssertEqual(errors[0].line, 2)
         XCTAssertEqual(errors[0].reason, "Not recognized")
+    }
+
+    /// Spec row: leading/trailing whitespace is trimmed before every rule, on
+    /// the per-line path as well as for a single payload.
+    func testParseTextTrimsEachLine() {
+        let input = "otpauth://totp/A?secret=JBSWY3DPEHPK3PXP\n\tZB573K4APD63E6RLD3WAHI3QFZ35RLEP  \n"
+        let (accounts, errors) = InputDetect.parseText(input)
+        XCTAssertTrue(errors.isEmpty, "\(errors)")
+        XCTAssertEqual(accounts.count, 2)
     }
 
     func testParseTextWrappedURIRepair() {

@@ -110,7 +110,7 @@ const completionsHtml = completionLines
           Accounts resolve by exact handle, then exact issuer or account name, then a unique substring. When more than one account matches, tess lists them with their handles instead of guessing.
         </p>
         <p class="mt-4 soft">
-          <span class="mono">tess acme</span> is short for <span class="mono">tess code acme</span>; a subcommand name always wins over an account handle. On a terminal the code is copied as well as printed; piped or with <span class="mono">--json</span> tess prints the digits and leaves the clipboard alone. <span class="mono">--no-copy</span> turns the copy off, and <span class="mono">--clear</span> wipes it after a delay, only while the clipboard still holds that code. A code with under four seconds left is held back until the next one unless you pass <span class="mono">--now</span>.
+          <span class="mono">tess acme</span> is short for <span class="mono">tess code acme</span>; a subcommand name always wins over an account handle. On a terminal the code is copied as well as printed; piped or with <span class="mono">--json</span> tess prints the digits and leaves the clipboard alone, unless you pass <span class="mono">-c</span>. <span class="mono">--no-copy</span> turns the copy off, and <span class="mono">--clear</span> wipes it after a delay, only while the clipboard still holds that code. A code with under four seconds left is held back until the next one unless you pass <span class="mono">--now</span>.
         </p>
       </section>
 

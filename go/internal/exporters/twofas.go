@@ -15,6 +15,8 @@ type twofasExporter struct{}
 
 func (twofasExporter) Name() string { return "2fas" }
 
+func (twofasExporter) MultiFile() bool { return false }
+
 func (twofasExporter) Description() string { return "2FAS Auth backup JSON (no backup password)" }
 
 type twofasExport struct {

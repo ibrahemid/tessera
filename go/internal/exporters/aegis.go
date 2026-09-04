@@ -12,6 +12,8 @@ type aegisExporter struct{}
 
 func (aegisExporter) Name() string { return "aegis" }
 
+func (aegisExporter) MultiFile() bool { return false }
+
 func (aegisExporter) Description() string { return "Aegis Authenticator vault JSON (unencrypted)" }
 
 type aegisExport struct {

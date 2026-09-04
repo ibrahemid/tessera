@@ -13,6 +13,8 @@ type protonExporter struct{}
 
 func (protonExporter) Name() string { return "proton" }
 
+func (protonExporter) MultiFile() bool { return false }
+
 func (protonExporter) Description() string {
 	return "Proton Authenticator JSON export (no password; TOTP and Steam only)"
 }

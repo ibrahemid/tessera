@@ -139,7 +139,7 @@ func exportFormat(cmd *cobra.Command, accts []account.Account, format, outPath s
 		return fmt.Errorf("nothing to export: %s cannot store any of these accounts", e.Name())
 	}
 	if outPath == "" {
-		if len(files) > 1 {
+		if e.MultiFile() {
 			return fmt.Errorf("--format %s writes several files; pass --out <directory>", e.Name())
 		}
 		// A rendered image cannot be piped through the text output path.
@@ -150,7 +150,7 @@ func exportFormat(cmd *cobra.Command, accts []account.Account, format, outPath s
 		reportSkipped(cmd, skipped)
 		return nil
 	}
-	if err := writeExportFiles(cmd, files, outPath); err != nil {
+	if err := writeExportFiles(cmd, files, outPath, e.MultiFile()); err != nil {
 		return err
 	}
 	reportSkipped(cmd, skipped)
@@ -158,10 +158,13 @@ func exportFormat(cmd *cobra.Command, accts []account.Account, format, outPath s
 }
 
 // writeExportFiles puts the rendered files at outPath. outPath is a directory
-// when it ends in a separator, already exists as one, or more than one file was
-// rendered; otherwise it is the single file to write.
-func writeExportFiles(cmd *cobra.Command, files []exporters.File, outPath string) error {
-	asDir := len(files) > 1 || strings.HasSuffix(outPath, string(os.PathSeparator))
+// when the format can render several files, when it ends in a separator, or
+// when it already exists as one; otherwise it is the single file to write.
+// multi is a property of the format rather than of this run: a batching format
+// that happened to render one file still writes into a directory, so a small
+// vault does not turn --out ./qr into an extensionless PNG.
+func writeExportFiles(cmd *cobra.Command, files []exporters.File, outPath string, multi bool) error {
+	asDir := multi || strings.HasSuffix(outPath, string(os.PathSeparator))
 	if info, err := os.Stat(outPath); err == nil && info.IsDir() {
 		asDir = true
 	}

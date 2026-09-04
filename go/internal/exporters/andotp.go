@@ -11,6 +11,8 @@ type andOTPExporter struct{}
 
 func (andOTPExporter) Name() string { return "andotp" }
 
+func (andOTPExporter) MultiFile() bool { return false }
+
 func (andOTPExporter) Description() string { return "andOTP plain backup JSON" }
 
 type andOTPExportEntry struct {

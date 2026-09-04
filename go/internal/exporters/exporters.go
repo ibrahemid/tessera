@@ -40,6 +40,12 @@ type Exporter interface {
 	Description() string
 	// Render builds the export files. Account order is vault order.
 	Render(accts []account.Account) (files []File, skipped []Skipped, err error)
+	// MultiFile reports whether this format can render more than one file for
+	// a single export. It is a property of the format, not of one run: a
+	// format that batches renders a single file for a small vault, so the
+	// caller must still write that file into a directory rather than treat
+	// the --out path as the file name.
+	MultiFile() bool
 }
 
 var registry = map[string]Exporter{}

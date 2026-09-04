@@ -132,6 +132,37 @@ func TestExportFormatWritesDirectory(t *testing.T) {
 	}
 }
 
+// TestExportFormatSingleBatchStillWritesADirectory: a batching format is always
+// written into a directory, even when the vault is small enough to render one
+// file. Otherwise --out ./qr produced an extensionless PNG named "qr".
+func TestExportFormatSingleBatchStillWritesADirectory(t *testing.T) {
+	path := withVault(t)
+	sealVault(t, path, []account.Account{totp("a", "ACME", "x", 1)})
+	dir := filepath.Join(t.TempDir(), "qr")
+
+	if _, _, err := runExport(t, "--format", "google-migration", "--out", dir); err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("stat %q: %v", dir, err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("%q is not a directory", dir)
+	}
+	if info.Mode().Perm() != 0o700 {
+		t.Errorf("export directory mode = %v, want 0700", info.Mode().Perm())
+	}
+	file := filepath.Join(dir, "google-migration-1-of-1.png")
+	fi, err := os.Stat(file)
+	if err != nil {
+		t.Fatalf("stat %q: %v", file, err)
+	}
+	if fi.Mode().Perm() != 0o600 {
+		t.Errorf("%s mode = %v, want 0600", fi.Name(), fi.Mode().Perm())
+	}
+}
+
 // TestExportFormatRejectsIllegalCombinations: every rejected run must write
 // nothing at all.
 func TestExportFormatRejectsIllegalCombinations(t *testing.T) {

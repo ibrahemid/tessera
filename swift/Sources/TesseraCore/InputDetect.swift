@@ -53,7 +53,7 @@ public enum InputDetect {
         // The binary magics must be checked before the setup-key guardrail: both
         // spellings of the Stratum header are 16 letters that decode as base32.
         if Importers.isZip(bytes) || Importers.isStratumEncrypted(bytes) { return .exportBinary }
-        if isLikelyBase32Secret(input) { return .setupKey }
+        if isLikelyBase32Secret(trimmed) { return .setupKey }
         return .invalid
     }
 
@@ -130,8 +130,8 @@ public enum InputDetect {
 
         let lines = input.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)
         for (i, raw) in lines.enumerated() {
-            let line = String(raw)
-            if line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { continue }
+            let line = String(raw).trimmingCharacters(in: .whitespacesAndNewlines)
+            if line.isEmpty { continue }
             let lineNo = i + 1
             switch classify(line) {
             case .migration:
