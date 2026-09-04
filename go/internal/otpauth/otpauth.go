@@ -4,6 +4,7 @@
 package otpauth
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -18,7 +19,10 @@ func Parse(uri string) (account.Account, error) {
 	var a account.Account
 	u, err := url.Parse(strings.TrimSpace(uri))
 	if err != nil {
-		return a, fmt.Errorf("otpauth: parse uri: %w", err)
+		// url.Error prints the whole URL it failed on, and this one carries a
+		// secret. The reason is dropped with it: nothing in it identifies the
+		// account, and the caller reports a redacted display form of the input.
+		return a, errors.New("otpauth: invalid URI")
 	}
 	if u.Scheme != "otpauth" {
 		return a, fmt.Errorf("otpauth: not an otpauth uri (scheme %q)", u.Scheme)

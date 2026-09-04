@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "header": {
+    "slots": [ { "type": 1, "uuid": "1e4b2b18-0000-4000-8000-000000000000", "key": "00", "key_params": { "nonce": "00", "tag": "00" }, "n": 32768, "r": 8, "p": 1, "salt": "00" } ],
+    "params": { "nonce": "000000000000000000000000", "tag": "00000000000000000000000000000000" }
+  },
+  "db": "AAAABBBBCCCCDDDDEEEEFFFF=="
+}

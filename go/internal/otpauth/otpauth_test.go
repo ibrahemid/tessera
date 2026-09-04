@@ -247,3 +247,20 @@ func TestParseRejectsNonOTPAuth(t *testing.T) {
 		}
 	}
 }
+
+// TestParseErrorNeverEchoesTheURI: url.Error prints the URL it failed on, and
+// an otpauth URI is a secret in cleartext.
+func TestParseErrorNeverEchoesTheURI(t *testing.T) {
+	const secret = "JBSWY3DPEHPK3PXP"
+	malformed := "otpauth://totp/GitHub:me?secret=" + secret + "\x7f"
+	_, err := Parse(malformed)
+	if err == nil {
+		t.Fatal("a URI with a control character should not parse")
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Fatalf("the error leaks the secret: %v", err)
+	}
+	if strings.Contains(err.Error(), "otpauth://") {
+		t.Fatalf("the error echoes the URI: %v", err)
+	}
+}

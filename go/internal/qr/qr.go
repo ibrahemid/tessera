@@ -4,6 +4,7 @@
 package qr
 
 import (
+	"bytes"
 	"fmt"
 	"image"
 	"image/png"
@@ -80,18 +81,33 @@ func DecodeFileAll(path string) ([]string, error) {
 	return texts, nil
 }
 
-// EncodePNG renders text (typically an otpauth:// URI) as a QR code and writes it
-// as a PNG to path. size is the image edge length in pixels.
-func EncodePNG(text, path string, size int) error {
+// EncodePNGBytes renders text as a QR code and returns the PNG bytes. It exists
+// for callers that assemble files in memory (the exporters render without
+// touching the filesystem) and is the encoder EncodePNG writes out.
+func EncodePNGBytes(text string, size int) ([]byte, error) {
 	if text == "" {
-		return fmt.Errorf("qr: empty payload")
+		return nil, fmt.Errorf("qr: empty payload")
 	}
 	if size <= 0 {
 		size = 512
 	}
 	bits, err := qrcode.NewQRCodeWriter().Encode(text, gozxing.BarcodeFormat_QR_CODE, size, size, nil)
 	if err != nil {
-		return fmt.Errorf("qr: encode: %w", err)
+		return nil, fmt.Errorf("qr: encode: %w", err)
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, bits); err != nil {
+		return nil, fmt.Errorf("qr: encode png: %w", err)
+	}
+	return buf.Bytes(), nil
+}
+
+// EncodePNG renders text (typically an otpauth:// URI) as a QR code and writes it
+// as a PNG to path. size is the image edge length in pixels.
+func EncodePNG(text, path string, size int) error {
+	data, err := EncodePNGBytes(text, size)
+	if err != nil {
+		return err
 	}
 	// The payload is a cleartext secret; keep the file owner-only like the vault.
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
@@ -104,7 +120,7 @@ func EncodePNG(text, path string, size int) error {
 	if err := f.Chmod(0o600); err != nil {
 		return fmt.Errorf("qr: restrict %q: %w", path, err)
 	}
-	if err := png.Encode(f, bits); err != nil {
+	if _, err := f.Write(data); err != nil {
 		return fmt.Errorf("qr: write %q: %w", path, err)
 	}
 	return nil

@@ -96,7 +96,7 @@ server.
 - **Completeness (2.1):** no placeholder UI; provide a demo passphrase/flow if a
   reviewer needs to see a populated vault.
 
-## Listing metadata (1.0.3)
+## Listing metadata (1.1.0)
 
 Paste-ready, and the place to edit the wording. App Store Connect is a copy of
 this, not the other way round.
@@ -122,7 +122,7 @@ so the fuller list can go back the day both ship and the site is deployed.
 
 **App name (≤30):** `Tessera 2FA Authenticator`
 
-**Subtitle (≤30):** `2FA for your Mac and CLI`
+**Subtitle (≤30):** `2FA codes, app and terminal` (1.0.3 was rejected under 5.2.5 for "Mac" in the subtitle; keep Apple product names out of name and subtitle)
 
 **Keywords (≤100, no space after the commas):**
 
@@ -130,7 +130,7 @@ so the fuller list can go back the day both ship and the site is deployed.
 totp,hotp,steam guard,terminal,open source,touch id,offline,no account
 ```
 
-Words already carried by the name and subtitle (authenticator, 2FA, Mac, CLI)
+Words already carried by the name and subtitle (authenticator, 2FA, codes, app, terminal)
 are left out; Apple indexes those fields too, so repeating them wastes the
 budget. `steam guard` names a code type the app generates, which reads as a
 capability rather than an affiliation, but it is the first keyword to drop if
@@ -147,7 +147,7 @@ TOTP, HOTP, and Steam Guard codes in the app, and in your terminal with the tess
 ```
 Tessera is an open-source authenticator for macOS with a command line. Set a recovery passphrase, or point the app at the vault tess already uses, and both read the same encrypted file.
 
-Generate the codes you already use: TOTP, HOTP, and Steam Guard. Add an account by scanning a QR code on screen, pasting a setup link or a setup key, or importing a Google Authenticator transfer or an Aegis, 2FAS, or Raivo export.
+Generate the codes you already use: TOTP, HOTP, and Steam Guard. Add an account by scanning a QR code on screen, pasting a setup link or a setup key, or importing an export from Google Authenticator, Aegis, 2FAS, Raivo, Bitwarden, Proton Authenticator, Ente Auth, andOTP, FreeOTP+, Stratum, 1Password or Apple Passwords.
 
 Unlock with Touch ID. Search, pin the ones you use most, and group them into folders. Click a row to copy its code (an HOTP row advances the counter).
 
@@ -162,18 +162,14 @@ tess, the command-line tool, is a free separate download; see tessera.ibrahemid.
 Works with any service that supports standard two-factor authentication. Tessera is not affiliated with Google, Microsoft, Steam, or any other provider.
 ```
 
-**What's New (1.0.3):**
+**What's New (1.1.0):**
 
 ```
-No app changes. This version updates the description and screenshots so they match what the app does.
+Import from more apps: Bitwarden, Proton Authenticator, Ente Auth, andOTP, FreeOTP+, Stratum, 1Password and Apple Passwords exports, alongside Google Authenticator, Aegis, 2FAS and Raivo. Encrypted exports are refused with a note on how to export them unencrypted.
 ```
 
-`git log v1.0.2..HEAD` is a single commit and it touches `go/` only, so nothing
-user-facing changed in the app since the shipped 1.0.2 build. 1.0.3 is a listing
-update, but an App Store Connect version record will not ship without a build
-attached, so it still needs one: `swift/project.yml` reads
-`MARKETING_VERSION 1.0.3` / `CURRENT_PROJECT_VERSION 8`; re-archive the same
-source and upload it.
+The description's import sentence lists the same apps. `swift/project.yml`
+reads `MARKETING_VERSION 1.1.0` / `CURRENT_PROJECT_VERSION 9`.
 
 **Review notes (paste):**
 

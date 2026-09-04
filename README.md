@@ -21,7 +21,9 @@ Tessera keeps your 2FA codes in an encrypted vault on your Mac, reachable from a
 ## Features
 
 - TOTP (RFC 6238), HOTP (RFC 4226), Steam Guard
-- Import: `otpauth://`, Google Authenticator export (`otpauth-migration://`), QR images (CLI) / on-screen QR (app)
+- Import: `otpauth://`, setup keys, Google Authenticator exports (`otpauth-migration://`), QR images (CLI) / on-screen QR (app), and unencrypted exports from Aegis, 2FAS, Raivo, andOTP, FreeOTP+, Stratum, Bitwarden, Proton Authenticator, Ente Auth, Apple Passwords and 1Password
+- Export: otpauth URIs, QR images, an encrypted vault copy, or another app's export format (Aegis, 2FAS, Bitwarden Authenticator, Proton Authenticator, andOTP, Apple Passwords CSV, Google Authenticator transfer QR codes)
+- Merge two vaults, one way or both ways, when the CLI and the app copies drift apart
 - Encrypted vault: random DEK, XChaCha20-Poly1305 payload, unlocked by an argon2id passphrase wrap, a Touch ID (Secure Enclave) wrap, or both
 - Search, folders, tags, pinning (app)
 - No account, no server, no analytics, no network
@@ -61,23 +63,35 @@ Then:
 tess vault init                      # create an encrypted vault
 tess add "otpauth://totp/ACME:me@x.com?secret=JBSWY3DPEHPK3PXP&issuer=ACME"
 tess add --qr ~/Desktop/code.png     # from a QR image
+tess add --screen                    # select a QR code on screen (macOS)
 tess import --migration "otpauth-migration://offline?data=..."
+tess import aegis-export.json        # another app's export (see docs/TRANSFER.md)
+cat export.json | tess import -      # read the input from stdin (also `tess add -`)
 tess                                 # print current codes (colored, with countdown bars)
 tess watch                           # live TUI: countdown bars, search (/), copy (enter/c), q to quit
-tess code acme -c                    # code for one account, copied to the clipboard
-tess code ac -c                      # reference an account by its handle (shown by `tess list`)
+tess acme                            # one account's code, copied to the clipboard
+tess ac --no-copy                    # by handle (shown by `tess list`), printed only
+tess code acme --clear 30            # copy, then clear the clipboard after 30s
 tess alias ac work                   # set an account's handle
 tess code --json                     # machine-readable output for scripts
 tess ls --json                       # alias for `tess list`
 tess vault remember                  # store the passphrase in the macOS login keychain
 tess vault status                    # path, file details, wrap methods, keychain state
 tess export --uri acme               # otpauth URI (cleartext secret)
+tess export --format aegis --out aegis.json   # the vault in another app's export format
+tess merge --two-way ~/other.json    # reconcile two vaults, writing both
 tess completion zsh > ...            # shell completions (bash/zsh/fish)
 ```
 
 Binaries for macOS and Linux (arm64 and x86_64) are attached to every [release](https://github.com/ibrahemid/tessera/releases), with `checksums.txt`. Unpack the tarball and put `tess` on your `PATH`.
 
+`tess <query>` is short for `tess code <query>`; a subcommand name always wins over an account handle. The code goes to the clipboard on a terminal, so `tess acme` prints it and copies it. Piped or with `--json`, tess prints the digits and leaves the clipboard alone unless you pass `-c`. `--clear <seconds>` (default `$TESSERA_CLIP_CLEAR`) wipes the copy afterwards, and only while the clipboard still holds that code. A code with under four seconds left is held back until the next one, unless you pass `--now`.
+
+Completions offer your account handles once the vault opens without a prompt, from `$TESSERA_PASSPHRASE` or the login keychain.
+
 Colored output auto-disables when piped or when `NO_COLOR` is set.
+
+Moving accounts between Tessera and another app, in either direction: [`docs/TRANSFER.md`](docs/TRANSFER.md).
 
 Vault path: `$TESSERA_VAULT` or `~/.local/share/tessera/vault.json`. For scripting, set `TESSERA_PASSPHRASE` to avoid the prompt (`tess vault passwd` also reads `TESSERA_NEW_PASSPHRASE`).
 

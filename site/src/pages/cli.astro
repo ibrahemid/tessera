@@ -11,16 +11,22 @@ const quickStart = [
   ["tess vault init", "create an encrypted vault"],
   ['tess add "otpauth://totp/ACME:me@x.com?secret=JBSWY3DPEHPK3PXP&issuer=ACME"', ""],
   ["tess add code.png", "from a QR image"],
+  ["tess add --screen", "select a QR code on screen (macOS)"],
   ['tess import --migration "otpauth-migration://offline?data=..."', "Google Authenticator export"],
+  ["tess import aegis-export.json", "another app's export, recognized by content"],
+  ["cat export.json | tess import -", "read the input from stdin, as tess add - does too"],
   ["tess", "current codes with countdown bars"],
   ["tess watch", "live view: / search, enter or c copy, q quit"],
-  ["tess code acme -c", "one account's code, copied to the clipboard"],
-  ["tess code ac -c", "by handle, as shown by tess list"],
+  ["tess acme", "one account's code, copied to the clipboard"],
+  ["tess ac --no-copy", "by handle, as shown by tess list, printed only"],
+  ["tess code acme --clear 30", "copy, then clear the clipboard after 30s"],
   ["tess alias ac work", "set a handle"],
   ["tess code --json", "machine-readable"],
   ["tess vault remember", "store the passphrase in the login keychain"],
   ["tess vault status", "path, file details, wrap methods, keychain state"],
   ["tess export --file backup.json", "encrypted copy of the vault"],
+  ["tess export --format aegis --out aegis.json", "the vault in another app's export format"],
+  ["tess merge --two-way ~/other.json", "reconcile two vaults, writing both"],
 ];
 
 const env = [
@@ -28,6 +34,7 @@ const env = [
   ["TESSERA_PASSPHRASE", "Skips the passphrase prompt. For scripts."],
   ["TESSERA_NEW_PASSPHRASE", "The replacement passphrase for tess vault passwd."],
   ["TESSERA_MERGE_PASSPHRASE", "The source vault's passphrase for tess merge, when it differs."],
+  ["TESSERA_CLIP_CLEAR", "Seconds after which a copied code is wiped from the clipboard. The --clear default."],
   ["NO_COLOR", "Turns colored output off. Output is also plain when piped."],
 ];
 
@@ -42,6 +49,7 @@ const quickStartHtml = quickStart
 const jsonHtml = `<span class="p">$ </span>tess code github --json\n${esc(`{
   "account": "ibra",
   "code": "899519",
+  "expires_in": 17,
   "issuer": "GitHub",
   "type": "totp"
 }`)}`;
@@ -96,13 +104,19 @@ const completionsHtml = completionLines
         <h2 class="h-sub">Quick start</h2>
         <pre class="term mt-5"><code set:html={quickStartHtml} /></pre>
         <p class="mt-4 soft">
+          <span class="mono">tess import</span> reads unencrypted exports from Aegis, 2FAS, Raivo, andOTP, FreeOTP+, Stratum, Bitwarden and Bitwarden Authenticator, Proton Authenticator, Ente Auth, Apple Passwords and 1Password, plus Google Authenticator transfer QR codes. <span class="mono">tess export --format</span> writes Aegis, 2FAS, Bitwarden Authenticator, Proton Authenticator, andOTP, Apple Passwords CSV and Google Authenticator QR codes back out.
+        </p>
+        <p class="mt-4 soft">
           Accounts resolve by exact handle, then exact issuer or account name, then a unique substring. When more than one account matches, tess lists them with their handles instead of guessing.
+        </p>
+        <p class="mt-4 soft">
+          <span class="mono">tess acme</span> is short for <span class="mono">tess code acme</span>; a subcommand name always wins over an account handle. On a terminal the code is copied as well as printed; piped or with <span class="mono">--json</span> tess prints the digits and leaves the clipboard alone, unless you pass <span class="mono">-c</span>. <span class="mono">--no-copy</span> turns the copy off, and <span class="mono">--clear</span> wipes it after a delay, only while the clipboard still holds that code. A code with under four seconds left is held back until the next one unless you pass <span class="mono">--now</span>.
         </p>
       </section>
 
       <section id="reference" class="mt-16 scroll-mt-20">
         <h2 class="h-sub">Reference</h2>
-        <p class="mt-3 soft">Global flag: <span class="mono">--vault</span> sets the vault file for any command. With no subcommand, <span class="mono">tess</span> prints current codes for every account.</p>
+        <p class="mt-3 soft">Global flag: <span class="mono">--vault</span> sets the vault file for any command. With no argument, <span class="mono">tess</span> prints current codes for every account; with one, it prints and copies that account's code.</p>
         <pre class="term mt-5"><code>{cli.root}</code></pre>
         {commands.map((c) => (
           <article id={c.name} class="mt-12 scroll-mt-20">
@@ -131,7 +145,7 @@ const completionsHtml = completionLines
 
       <section id="completions" class="mt-16 scroll-mt-20">
         <h2 class="h-sub">Shell completions</h2>
-        <p class="mt-3 soft">Once per shell:</p>
+        <p class="mt-3 soft">Once per shell. Completing an account name reads the vault, so handles are offered once it opens without a prompt, from <span class="mono">TESSERA_PASSPHRASE</span> or the login keychain.</p>
         <pre class="term mt-5"><code set:html={completionsHtml} /></pre>
         {shells.map((s) => (
           <details class="mt-4">

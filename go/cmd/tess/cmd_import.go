@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,14 +29,24 @@ func newImportCmd() *cobra.Command {
 parses is imported, and items that fail are listed without aborting the batch:
 
   tess import accounts.txt export.json code.png   # paths auto-detect by content
+  cat export.json | tess import -                 # read the input from stdin
   tess import --file accounts.txt                 # otpauth:// / otpauth-migration:// lines, or a setup key per line
-  tess import --file export.json                  # an Aegis, 2FAS, or Raivo export (unencrypted)
+  tess import --file export.json                  # an app export (see the list below)
   tess import --qr a.png --qr b.png               # QR images (multiple codes per image are all read)
   tess import --migration "otpauth-migration://offline?data=..."
   tess import --otpauth "otpauth://totp/...."
 
-App exports must be unencrypted (Aegis/2FAS: export with the backup password off).
-Duplicate accounts (same type, issuer, account and secret) are skipped.`,
+Exports it reads, recognized by content rather than by file name:
+
+  Aegis, 2FAS, Raivo, andOTP, FreeOTP+, Stratum (Authenticator Pro),
+  Bitwarden Authenticator, Bitwarden, Proton Authenticator, Ente Auth,
+  Apple Passwords (CSV), 1Password (CSV and .1pux), and Google Authenticator
+  (an otpauth-migration:// URI or a photo of its transfer QR code)
+
+An export must be unencrypted; an encrypted one is refused by name rather than
+half-read. Items with no one-time-password field, which is most of a password
+manager's export, are left out. Duplicate accounts (same type, issuer, account
+and secret) are skipped. docs/TRANSFER.md lists what to export from each app.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			batch := collectImport(qrPaths, filePaths, migrationURIs, otpauthURIs, args)
 			if len(batch.accounts) == 0 && len(batch.problems) == 0 {
@@ -67,7 +78,7 @@ Duplicate accounts (same type, issuer, account and secret) are skipped.`,
 		},
 	}
 	f := cmd.Flags()
-	f.StringArrayVar(&filePaths, "file", nil, "text or JSON export file (repeatable)")
+	f.StringArrayVar(&filePaths, "file", nil, "text, JSON, CSV or .1pux export file, - for stdin (repeatable)")
 	f.StringArrayVar(&migrationURIs, "migration", nil, "Google Authenticator otpauth-migration:// URI (repeatable)")
 	f.StringArrayVar(&otpauthURIs, "otpauth", nil, "single otpauth:// URI (repeatable)")
 	f.StringArrayVar(&qrPaths, "qr", nil, "QR image file (repeatable; png/jpeg/webp/tiff/bmp)")
@@ -143,6 +154,10 @@ func (b *importBatch) addImage(path string) {
 // addTextFile reads a file and parses it as text/JSON, recording per-line
 // failures against the file path and line number.
 func (b *importBatch) addTextFile(path string) {
+	if path == "-" {
+		b.addStdin()
+		return
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		b.problems = append(b.problems, importProblem{path, "could not read file"})
@@ -154,6 +169,24 @@ func (b *importBatch) addTextFile(path string) {
 		src := path
 		if e.Line > 0 {
 			src = fmt.Sprintf("%s line %d", path, e.Line)
+		}
+		b.problems = append(b.problems, importProblem{src, e.Err.Error()})
+	}
+}
+
+// addStdin reads all of stdin as import text, so tess can end a pipeline.
+func (b *importBatch) addStdin() {
+	data, err := io.ReadAll(stdinReader)
+	if err != nil {
+		b.problems = append(b.problems, importProblem{"stdin", "could not read stdin"})
+		return
+	}
+	accts, errs := detect.ParseText(string(data))
+	b.accounts = append(b.accounts, accts...)
+	for _, e := range errs {
+		src := "stdin"
+		if e.Line > 0 {
+			src = fmt.Sprintf("stdin line %d", e.Line)
 		}
 		b.problems = append(b.problems, importProblem{src, e.Err.Error()})
 	}

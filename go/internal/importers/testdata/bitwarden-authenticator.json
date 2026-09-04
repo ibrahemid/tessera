@@ -1,0 +1,11 @@
+{
+  "encrypted": false,
+  "items": [
+    { "id": "52a4dfb0-f19e-4c9d-82a1-bbee95bbef81", "name": "Example", "folderId": null, "organizationId": null, "collectionIds": null, "notes": null, "type": 1, "favorite": false,
+      "login": { "totp": "otpauth://totp/Example:alice@example.com?secret=JBSWY3DPEHPK3PXP&issuer=Example&algorithm=SHA1&digits=6&period=30" } },
+    { "id": "62a4dfb0-f19e-4c9d-82a1-bbee95bbef82", "name": "gabe", "folderId": null, "organizationId": null, "collectionIds": null, "notes": null, "type": 1, "favorite": false,
+      "login": { "totp": "steam://JBSWY3DPEHPK3PXP" } },
+    { "id": "72a4dfb0-f19e-4c9d-82a1-bbee95bbef83", "name": "Bank", "folderId": null, "organizationId": null, "collectionIds": null, "notes": null, "type": 1, "favorite": false,
+      "login": { "totp": "JBSWY3DPEHPK3PXP" } }
+  ]
+}

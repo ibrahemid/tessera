@@ -1,25 +1,25 @@
 // Package importers parses plaintext (unencrypted) account exports from other
-// authenticator apps — Aegis, 2FAS, and Raivo — into the canonical account
-// model. Encrypted exports are detected and rejected with a clear error rather
-// than parsed wrong; decrypt them in the source app and re-export, or export
-// unencrypted. Secrets are decoded from base32 to raw bytes here.
+// authenticator apps and password managers into the canonical account model.
+// The container switch and the format ladders are the interop contract in
+// /spec/otpauth.md ("Input detection"); the Swift Importers must match.
+// Encrypted exports are detected and rejected with a clear error rather than
+// parsed wrong. Secrets are decoded to raw bytes here and never logged.
 package importers
 
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"strconv"
-	"strings"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
-	"github.com/ibrahemid/tessera/go/internal/base32x"
 )
 
 // Parse detects a supported app export and returns its accounts. ok is false
 // when data is not a recognized app export (the caller may fall back to parsing
-// otpauth lines). A recognized-but-encrypted export returns ok=true with an
-// error so the caller surfaces the real reason.
+// otpauth lines). A recognized-but-encrypted export, and a recognized export
+// that holds no OTP entries, return ok=true with an error so the caller
+// surfaces the real reason.
 func Parse(data []byte) (accts []account.Account, source string, ok bool, err error) {
 	trimmed := bytes.TrimSpace(data)
 	if len(trimmed) == 0 {
@@ -27,250 +27,138 @@ func Parse(data []byte) (accts []account.Account, source string, ok bool, err er
 	}
 	switch trimmed[0] {
 	case '[':
-		// A top-level JSON array is a Raivo export; malformed entries surface
-		// their real error instead of falling through to the otpauth parser.
-		if !json.Valid(trimmed) {
-			return nil, "", false, nil
-		}
-		a, e := parseRaivo(trimmed)
-		return a, "Raivo", true, e
+		return parseJSONArrayExport(trimmed)
 	case '{':
-		// Probe the keys to pick the format.
-		var probe map[string]json.RawMessage
-		if json.Unmarshal(trimmed, &probe) != nil {
-			return nil, "", false, nil
-		}
-		if _, has := probe["db"]; has {
-			a, e := parseAegis(trimmed)
-			return a, "Aegis", true, e
-		}
-		// Encrypted 2FAS backups carry BOTH an empty "services" array and the
-		// ciphertext in "servicesEncrypted" — check the ciphertext first.
+		return parseJSONObjectExport(trimmed)
+	}
+	if f, has := matchCSVHeader(data); has {
+		accts, err := parseCSV(data, f)
+		return recognized(f.name, accts, err)
+	}
+	if IsZip(data) {
+		accts, err := parse1PUX(data)
+		return recognized("1Password", accts, err)
+	}
+	if IsStratumEncrypted(data) {
+		return nil, "Stratum", true, errors.New("Stratum backup is encrypted; in Stratum choose Settings > Backup > Export unencrypted and try again")
+	}
+	return nil, "", false, nil
+}
+
+// recognized finishes one format branch. A recognized export that parsed
+// cleanly but yielded no accounts is a failure, not an empty success: silent
+// skipping of items without a second factor would otherwise make a
+// password-manager export indistinguishable from an empty input.
+func recognized(source string, accts []account.Account, err error) ([]account.Account, string, bool, error) {
+	if err == nil && len(accts) == 0 {
+		err = fmt.Errorf("%s export has no one-time-password entries; only items with a 2FA code are imported", source)
+	}
+	return accts, source, true, err
+}
+
+// parseJSONObjectExport walks the top-level key ladder of /spec/otpauth.md.
+// Each app's encrypted probe precedes its plaintext probe.
+func parseJSONObjectExport(trimmed []byte) ([]account.Account, string, bool, error) {
+	var probe map[string]json.RawMessage
+	if json.Unmarshal(trimmed, &probe) != nil {
+		return nil, "", false, nil
+	}
+	if _, has := probe["db"]; has {
+		accts, err := parseAegis(trimmed)
+		return recognized("Aegis", accts, err)
+	}
+	// Encrypted 2FAS backups carry BOTH an empty "services" array and the
+	// ciphertext in "servicesEncrypted" — check the ciphertext first.
+	if raw, has := probe["servicesEncrypted"]; has {
 		var enc string
-		if raw, has := probe["servicesEncrypted"]; has && json.Unmarshal(raw, &enc) == nil && enc != "" {
-			return nil, "2FAS", true, fmt.Errorf("2FAS export is encrypted; in 2FAS turn off the backup password (or decrypt) and export again")
+		if json.Unmarshal(raw, &enc) == nil && enc != "" {
+			return nil, "2FAS", true, errors.New("2FAS export is encrypted; in 2FAS turn off the backup password (or decrypt) and export again")
 		}
-		if _, has := probe["services"]; has {
-			a, e := parse2FAS(trimmed)
-			return a, "2FAS", true, e
+	}
+	if _, has := probe["services"]; has {
+		accts, err := parse2FAS(trimmed)
+		return recognized("2FAS", accts, err)
+	}
+	_, hasEncryptedData := probe["encryptedData"]
+	if _, hasNonce := probe["encryptionNonce"]; hasEncryptedData && hasNonce {
+		return nil, "Ente Auth", true, errors.New("Ente Auth export is encrypted; in Ente Auth choose Export > plain text (unencrypted) and try again")
+	}
+	if raw, has := probe["encrypted"]; has {
+		var encrypted bool
+		if json.Unmarshal(raw, &encrypted) == nil && encrypted {
+			return nil, "Bitwarden", true, errors.New("Bitwarden export is encrypted; in Bitwarden export again as unencrypted .json (File format: .json, not 'Password protected')")
 		}
+	}
+	if raw, has := probe["items"]; has && isJSONArray(raw) {
+		// A password-manager export always carries folders or collections; an
+		// authenticator export carries neither. A stripped export can collide,
+		// which changes only the reported source: one walker parses both.
+		_, hasFolders := probe["folders"]
+		_, hasCollections := probe["collections"]
+		source := "Bitwarden Authenticator"
+		if hasFolders || hasCollections {
+			source = "Bitwarden"
+		}
+		accts, err := parseBitwardenItems(trimmed)
+		return recognized(source, accts, err)
+	}
+	_, hasEntries := probe["entries"]
+	_, hasSalt := probe["salt"]
+	if _, hasContent := probe["content"]; hasSalt && hasContent && !hasEntries {
+		return nil, "Proton Authenticator", true, errors.New("Proton Authenticator export is encrypted; in Proton Authenticator export again without a password")
+	}
+	if raw, has := probe["entries"]; has && isJSONArray(raw) {
+		accts, err := parseProton(trimmed)
+		return recognized("Proton Authenticator", accts, err)
+	}
+	_, hasTokens := probe["tokens"]
+	if _, hasOrder := probe["tokenOrder"]; hasTokens && hasOrder {
+		accts, err := parseFreeOTPPlus(trimmed)
+		return recognized("FreeOTP+", accts, err)
+	}
+	if _, has := probe["Authenticators"]; has {
+		accts, err := parseStratum(trimmed)
+		return recognized("Stratum", accts, err)
+	}
+	if raw, has := probe["accounts"]; has && firstElementHasKey(raw, "vaults") {
+		accts, err := parse1PUXData(trimmed)
+		return recognized("1Password", accts, err)
+	}
+	return nil, "", false, nil
+}
+
+// parseJSONArrayExport probes the first element's keys: Raivo types its numbers
+// as strings and uses "kind"; andOTP uses "type" plus "label".
+func parseJSONArrayExport(trimmed []byte) ([]account.Account, string, bool, error) {
+	var elems []map[string]json.RawMessage
+	if json.Unmarshal(trimmed, &elems) != nil {
 		return nil, "", false, nil
-	default:
-		return nil, "", false, nil
 	}
+	if len(elems) == 0 {
+		return recognized("Raivo", nil, nil)
+	}
+	if _, has := elems[0]["kind"]; has {
+		accts, err := parseRaivo(trimmed)
+		return recognized("Raivo", accts, err)
+	}
+	_, hasType := elems[0]["type"]
+	if _, hasLabel := elems[0]["label"]; hasType && hasLabel {
+		accts, err := parseAndOTP(trimmed)
+		return recognized("andOTP", accts, err)
+	}
+	return nil, "", false, nil
 }
 
-// ---- Aegis ----
-
-type aegisFile struct {
-	Version int             `json:"version"`
-	DB      json.RawMessage `json:"db"`
+func isJSONArray(raw json.RawMessage) bool {
+	t := bytes.TrimSpace(raw)
+	return len(t) > 0 && t[0] == '['
 }
 
-type aegisDB struct {
-	Entries []aegisEntry `json:"entries"`
-}
-
-type aegisEntry struct {
-	Type   string `json:"type"`
-	Name   string `json:"name"`
-	Issuer string `json:"issuer"`
-	Info   struct {
-		Secret  string `json:"secret"`
-		Algo    string `json:"algo"`
-		Digits  int    `json:"digits"`
-		Period  int    `json:"period"`
-		Counter int64  `json:"counter"`
-	} `json:"info"`
-}
-
-func parseAegis(data []byte) ([]account.Account, error) {
-	var f aegisFile
-	if err := json.Unmarshal(data, &f); err != nil {
-		return nil, fmt.Errorf("aegis: %w", err)
+func firstElementHasKey(raw json.RawMessage, key string) bool {
+	var elems []map[string]json.RawMessage
+	if json.Unmarshal(raw, &elems) != nil || len(elems) == 0 {
+		return false
 	}
-	// In an encrypted export "db" is a base64 string, not an object.
-	if db := bytes.TrimSpace(f.DB); len(db) > 0 && db[0] == '"' {
-		return nil, fmt.Errorf("Aegis export is encrypted; export with encryption off (Aegis: Settings > Import/Export > Export, untick encryption) and try again")
-	}
-	var db aegisDB
-	if err := json.Unmarshal(f.DB, &db); err != nil {
-		return nil, fmt.Errorf("aegis db: %w", err)
-	}
-	out := make([]account.Account, 0, len(db.Entries))
-	for _, e := range db.Entries {
-		a, err := buildAccount(e.Type, e.Issuer, e.Name, e.Info.Secret,
-			e.Info.Algo, e.Info.Digits, e.Info.Period, e.Info.Counter)
-		if err != nil {
-			return nil, fmt.Errorf("aegis entry %q: %w", e.Name, err)
-		}
-		out = append(out, a)
-	}
-	return out, nil
-}
-
-// ---- 2FAS ----
-
-type twofasFile struct {
-	Services []twofasService `json:"services"`
-}
-
-type twofasService struct {
-	Name   string `json:"name"`
-	Secret string `json:"secret"`
-	OTP    struct {
-		Account   string `json:"account"`
-		Issuer    string `json:"issuer"`
-		Digits    int    `json:"digits"`
-		Period    int    `json:"period"`
-		Algorithm string `json:"algorithm"`
-		TokenType string `json:"tokenType"`
-		Counter   int64  `json:"counter"`
-	} `json:"otp"`
-}
-
-func parse2FAS(data []byte) ([]account.Account, error) {
-	var f twofasFile
-	if err := json.Unmarshal(data, &f); err != nil {
-		return nil, fmt.Errorf("2fas: %w", err)
-	}
-	out := make([]account.Account, 0, len(f.Services))
-	for _, s := range f.Services {
-		issuer := s.OTP.Issuer
-		if issuer == "" {
-			issuer = s.Name
-		}
-		a, err := buildAccount(s.OTP.TokenType, issuer, s.OTP.Account, s.Secret,
-			s.OTP.Algorithm, s.OTP.Digits, s.OTP.Period, s.OTP.Counter)
-		if err != nil {
-			return nil, fmt.Errorf("2fas service %q: %w", s.Name, err)
-		}
-		out = append(out, a)
-	}
-	return out, nil
-}
-
-// ---- Raivo ----
-
-type raivoEntry struct {
-	Issuer    string `json:"issuer"`
-	Account   string `json:"account"`
-	Secret    string `json:"secret"`
-	Algorithm string `json:"algorithm"`
-	Digits    string `json:"digits"`
-	Kind      string `json:"kind"`
-	Timer     string `json:"timer"`
-	Counter   string `json:"counter"`
-}
-
-func parseRaivo(data []byte) ([]account.Account, error) {
-	var entries []raivoEntry
-	if err := json.Unmarshal(data, &entries); err != nil {
-		return nil, err
-	}
-	if len(entries) == 0 {
-		return nil, fmt.Errorf("raivo: no entries")
-	}
-	out := make([]account.Account, 0, len(entries))
-	for _, e := range entries {
-		// Raivo stores numbers as strings.
-		if e.Secret == "" {
-			return nil, fmt.Errorf("raivo entry %q: missing secret", e.Issuer)
-		}
-		digits, err := atoiDefault(e.Digits, 6)
-		if err != nil {
-			return nil, fmt.Errorf("raivo entry %q: digits: %w", e.Issuer, err)
-		}
-		period, err := atoiDefault(e.Timer, 30)
-		if err != nil {
-			return nil, fmt.Errorf("raivo entry %q: timer: %w", e.Issuer, err)
-		}
-		counter, err := atoiDefault(e.Counter, 0)
-		if err != nil {
-			return nil, fmt.Errorf("raivo entry %q: counter: %w", e.Issuer, err)
-		}
-		a, err := buildAccount(e.Kind, e.Issuer, e.Account, e.Secret,
-			e.Algorithm, digits, period, int64(counter))
-		if err != nil {
-			return nil, fmt.Errorf("raivo entry %q: %w", e.Issuer, err)
-		}
-		out = append(out, a)
-	}
-	return out, nil
-}
-
-// ---- shared mapping ----
-
-func buildAccount(typ, issuer, acct, secretB32, algo string, digits, period int, counter int64) (account.Account, error) {
-	secret, err := base32x.Decode(secretB32)
-	if err != nil {
-		return account.Account{}, fmt.Errorf("decode secret: %w", err)
-	}
-	t, err := mapType(typ)
-	if err != nil {
-		return account.Account{}, err
-	}
-	algorithm, err := mapAlgo(algo)
-	if err != nil {
-		return account.Account{}, err
-	}
-	if digits == 0 {
-		digits = 6
-	}
-	if t == account.Steam {
-		digits = 5
-	}
-	if t != account.HOTP && period == 0 {
-		period = 30
-	}
-	return account.Account{
-		Type:      t,
-		Issuer:    strings.TrimSpace(issuer),
-		Account:   strings.TrimSpace(acct),
-		Secret:    secret,
-		Algorithm: algorithm,
-		Digits:    digits,
-		Period:    period,
-		Counter:   counter,
-	}, nil
-}
-
-// mapType rejects OTP schemes Tessera can't generate (Yandex, mOTP, ...) so an
-// import never silently produces wrong codes.
-func mapType(s string) (account.Type, error) {
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "", "totp":
-		return account.TOTP, nil
-	case "hotp":
-		return account.HOTP, nil
-	case "steam", "steam_totp", "steamtotp":
-		return account.Steam, nil
-	default:
-		return "", fmt.Errorf("unsupported account type %q", s)
-	}
-}
-
-func mapAlgo(s string) (string, error) {
-	switch strings.ToUpper(strings.TrimSpace(s)) {
-	case "", "SHA1":
-		return "SHA1", nil
-	case "SHA256":
-		return "SHA256", nil
-	case "SHA512":
-		return "SHA512", nil
-	default:
-		return "", fmt.Errorf("unsupported algorithm %q", s)
-	}
-}
-
-func atoiDefault(s string, def int) (int, error) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return def, nil
-	}
-	n, err := strconv.Atoi(s)
-	if err != nil {
-		return 0, fmt.Errorf("not a number: %q", s)
-	}
-	return n, nil
+	_, has := elems[0][key]
+	return has
 }

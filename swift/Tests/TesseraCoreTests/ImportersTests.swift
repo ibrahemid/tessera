@@ -164,4 +164,96 @@ final class ImportersTests: XCTestCase {
             XCTAssertNil(try parse(data), "expected nil for \(data)")
         }
     }
+
+    /// A recognized export that parses cleanly but holds no OTP entries fails,
+    /// naming the app: silent skipping of items without a second factor would
+    /// otherwise make it indistinguishable from an empty input.
+    func testEmptyRecognizedExportFails() {
+        XCTAssertThrowsError(try parse(#"{ "encrypted": false, "items": [] }"#)) { error in
+            XCTAssertEqual("\(error)",
+                           "Bitwarden Authenticator export has no one-time-password entries; only items with a 2FA code are imported")
+        }
+    }
+
+    // MARK: - shared fixture table
+
+    /// Runs go/internal/importers/testdata/expected.json, the same table the Go
+    /// TestTestdataTable runs. Rows whose "cores" omit "swift" are skipped: the
+    /// .1pux zip container is a CLI-only transport.
+    func testTestdataTable() throws {
+        let entries = try importerFixtures()
+        XCTAssertFalse(entries.isEmpty, "expected.json is empty")
+        let dir = importerTestdataDir()
+        for entry in entries {
+            let file = entry["file"] as! String
+            let cores = entry["cores"] as? [String] ?? ["go", "swift"]
+            if !cores.contains("swift") { continue }
+            let data = try Data(contentsOf: dir.appendingPathComponent(file))
+            let via = entry["via"] as? String ?? "importers"
+
+            var accounts: [Account] = []
+            var source = ""
+            var thrown: Error?
+            switch via {
+            case "importers":
+                var found: (accounts: [Account], source: String)?
+                do { found = try Importers.parse(data) } catch { thrown = error }
+                if thrown == nil {
+                    guard let found else {
+                        XCTFail("\(file): Importers.parse did not recognize the fixture as an export")
+                        continue
+                    }
+                    accounts = found.accounts
+                    source = found.source
+                }
+            case "detect":
+                let text = try XCTUnwrap(String(data: data, encoding: .utf8), "\(file): not UTF-8")
+                let (accs, errs) = InputDetect.parseText(text)
+                accounts = accs
+                if let first = errs.first {
+                    thrown = Importers.ImporterError.malformed(first.reason)
+                }
+            default:
+                XCTFail("\(file): unknown via \"\(via)\"")
+                continue
+            }
+
+            if let reject = entry["reject"] as? String {
+                guard let thrown else {
+                    XCTFail("\(file): expected the export to be rejected (\(reject)), got \(accounts.count) accounts")
+                    continue
+                }
+                let want = entry["message_contains"] as? String ?? ""
+                XCTAssertTrue("\(thrown)".contains(want), "\(file): error \"\(thrown)\" does not contain \"\(want)\"")
+                continue
+            }
+            if let thrown {
+                XCTFail("\(file): parse: \(thrown)")
+                continue
+            }
+            if let wantSource = entry["source"] as? String {
+                XCTAssertEqual(source, wantSource, "\(file): source")
+            }
+            try assertAccounts(file, accounts, entry["accounts"] as! [[String: Any]])
+        }
+    }
+
+    private func assertAccounts(_ file: String, _ got: [Account], _ want: [[String: Any]]) throws {
+        guard got.count == want.count else {
+            XCTFail("\(file): got \(got.count) accounts, want \(want.count)")
+            return
+        }
+        for (i, w) in want.enumerated() {
+            let a = got[i]
+            let at = "\(file) account \(i)"
+            XCTAssertEqual(a.type.rawValue, w["type"] as! String, "\(at): type")
+            XCTAssertEqual(a.issuer, w["issuer"] as! String, "\(at): issuer")
+            XCTAssertEqual(a.account, w["account"] as! String, "\(at): account")
+            XCTAssertEqual(a.secret, try Base32.decode(w["secret_b32"] as! String), "\(at): secret")
+            XCTAssertEqual(a.algorithm, w["algorithm"] as! String, "\(at): algorithm")
+            XCTAssertEqual(a.digits, (w["digits"] as! NSNumber).intValue, "\(at): digits")
+            XCTAssertEqual(a.period, (w["period"] as! NSNumber).intValue, "\(at): period")
+            XCTAssertEqual(a.counter, (w["counter"] as! NSNumber).int64Value, "\(at): counter")
+        }
+    }
 }

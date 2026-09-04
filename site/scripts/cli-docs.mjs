@@ -30,13 +30,23 @@ function run(args) {
   }
 }
 
+// Command names live between the Usage and Flags headings. A help text's Long
+// description can hold example lines shaped exactly like a command row, so the
+// whole text is not safe to scan.
+function commandNamesIn(help) {
+  const start = help.indexOf("Usage:");
+  const end = help.indexOf("\nFlags:", start);
+  const section = help.slice(start < 0 ? 0 : start, end < 0 ? help.length : end);
+  return [...section.matchAll(/^  ([a-z]+)\s{2,}/gm)].map((m) => m[1]).filter((n) => n !== "help");
+}
+
 const root = run(["--help"]);
 const version = run(["--version"]).trim();
-const commandNames = [...root.matchAll(/^  ([a-z]+)\s{2,}/gm)].map((m) => m[1]).filter((n) => n !== "help");
+const commandNames = commandNamesIn(root);
 
 const commands = commandNames.map((name) => {
   const help = run([name, "--help"]);
-  const subs = [...help.matchAll(/^  ([a-z]+)\s{2,}/gm)].map((m) => m[1]).filter((n) => n !== "help");
+  const subs = commandNamesIn(help);
   const subcommands = subs.map((sub) => ({ name: sub, help: run([name, sub, "--help"]) }));
   return { name, help, subcommands };
 });

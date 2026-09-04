@@ -1,0 +1,5 @@
+[
+  { "secret": "JBSWY3DPEHPK3PXP", "issuer": "GitHub", "label": "john@example.com", "digits": 6, "type": "TOTP", "algorithm": "SHA1", "thumbnail": "Default", "last_used": 0, "used_frequency": 0, "period": 30, "tags": [] },
+  { "secret": "JBSWY3DPEHPK3PXP", "issuer": "Bank", "label": "ops", "digits": 8, "type": "HOTP", "algorithm": "SHA256", "thumbnail": "Default", "last_used": 0, "used_frequency": 0, "counter": 5, "tags": [] },
+  { "secret": "JBSWY3DPEHPK3PXP", "issuer": "Steam", "label": "gabe", "digits": 5, "type": "STEAM", "algorithm": "SHA1", "thumbnail": "Steam", "last_used": 0, "used_frequency": 0, "period": 30, "tags": [] }
+]

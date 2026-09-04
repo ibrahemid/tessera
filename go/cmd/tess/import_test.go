@@ -361,3 +361,68 @@ func writeTwoQRPNG(t *testing.T, path, textA, textB string) {
 		t.Fatalf("png encode: %v", err)
 	}
 }
+
+// stubStdin replaces the standard input source for one test.
+func stubStdin(t *testing.T, text string) {
+	t.Helper()
+	old := stdinReader
+	stdinReader = strings.NewReader(text)
+	t.Cleanup(func() { stdinReader = old })
+}
+
+// TestImportStdinReadsThePipeline covers `... | tess import -`, including the
+// dash arriving among ordinary paths.
+func TestImportStdinReadsThePipeline(t *testing.T) {
+	stubStdin(t, "otpauth://totp/Pipe:me?secret=JBSWY3DPEHPK3PXP&issuer=Pipe\n")
+
+	b := collectImport(nil, nil, nil, nil, []string{"-"})
+	if len(b.accounts) != 1 || b.accounts[0].Issuer != "Pipe" {
+		t.Fatalf("stdin not parsed: %+v (%v)", b.accounts, b.problems)
+	}
+}
+
+func TestImportStdinAttributesFailuresToStdin(t *testing.T) {
+	stubStdin(t, "otpauth://totp/Pipe:me?secret=JBSWY3DPEHPK3PXP&issuer=Pipe\nnot a uri\n")
+
+	b := collectImport(nil, nil, nil, nil, []string{"-"})
+	if len(b.accounts) != 1 {
+		t.Fatalf("the good line should still import: %+v", b.accounts)
+	}
+	if len(b.problems) != 1 || !strings.HasPrefix(b.problems[0].source, "stdin") {
+		t.Fatalf("problem should name stdin, got %+v", b.problems)
+	}
+}
+
+// TestAddFromArgParsesAPastedCSVExport: an export handed over as text, not as a
+// file path, must take the same route a JSON export does. Only a file path is
+// read from disk; everything else is classified from its content.
+func TestAddFromArgParsesAPastedCSVExport(t *testing.T) {
+	csv := "Title,URL,Username,Password,Notes,OTPAuth\n" +
+		"GitHub,https://github.com,me@example.com,hunter2,,otpauth://totp/GitHub:me@example.com?secret=JBSWY3DPEHPK3PXP\n"
+
+	accts, problems, err := addFromArg(csv, "", "", "SHA1", 6, 30)
+	if err != nil {
+		t.Fatalf("addFromArg: %v", err)
+	}
+	if len(problems) != 0 {
+		t.Fatalf("unexpected problems: %+v", problems)
+	}
+	if len(accts) != 1 || accts[0].Issuer != "GitHub" {
+		t.Fatalf("want the GitHub account, got %+v", accts)
+	}
+}
+
+// TestAddFromArgReportsAPastedEncryptedBackup: a binary export names the app it
+// came from instead of falling through to "unrecognized input".
+func TestAddFromArgReportsAPastedEncryptedBackup(t *testing.T) {
+	accts, problems, err := addFromArg("AUTHENTICATORPRO\x00\x01binary", "", "", "SHA1", 6, 30)
+	if err != nil {
+		t.Fatalf("addFromArg: %v", err)
+	}
+	if len(accts) != 0 {
+		t.Fatalf("an encrypted backup must not yield accounts, got %+v", accts)
+	}
+	if len(problems) != 1 || !strings.Contains(problems[0].reason, "Stratum") {
+		t.Fatalf("want one problem naming Stratum, got %+v", problems)
+	}
+}

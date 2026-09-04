@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "header": { "slots": null, "params": null },
+  "db": {
+    "version": 3,
+    "entries": [
+      { "type": "totp", "uuid": "5f3a6e70-8f4a-4b8a-9c1e-1a2b3c4d5e6f", "name": "john@example.com", "issuer": "GitHub", "note": "", "favorite": false, "icon": null,
+        "info": { "secret": "JBSWY3DPEHPK3PXP", "algo": "SHA1", "digits": 6, "period": 30 }, "groups": [] },
+      { "type": "hotp", "uuid": "6f3a6e70-8f4a-4b8a-9c1e-1a2b3c4d5e70", "name": "ops", "issuer": "Bank", "note": "", "favorite": false, "icon": null,
+        "info": { "secret": "JBSWY3DPEHPK3PXP", "algo": "SHA256", "digits": 8, "counter": 5 }, "groups": [] },
+      { "type": "steam", "uuid": "7f3a6e70-8f4a-4b8a-9c1e-1a2b3c4d5e71", "name": "gabe", "issuer": "Steam", "note": "", "favorite": false, "icon": null,
+        "info": { "secret": "JBSWY3DPEHPK3PXP", "algo": "SHA1", "digits": 5, "period": 30 }, "groups": [] }
+    ],
+    "groups": [],
+    "icons_optimized": true
+  }
+}

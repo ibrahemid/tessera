@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "entries": [
+    { "id": "01J8Z0000000000000000000A1", "note": null,
+      "content": { "uri": "otpauth://totp/Example:alice@example.com?secret=JBSWY3DPEHPK3PXP&issuer=Example&algorithm=SHA1&digits=6&period=30", "entry_type": "Totp", "name": "Example" } },
+    { "id": "01J8Z0000000000000000000A2", "note": null,
+      "content": { "uri": "steam://JBSWY3DPEHPK3PXP", "entry_type": "Steam", "name": "gabe" } },
+    { "id": "01J8Z0000000000000000000A3", "note": "recovery",
+      "content": { "uri": "otpauth://hotp/Bank:ops?secret=JBSWY3DPEHPK3PXP&issuer=Bank&counter=5&digits=8&algorithm=SHA256", "entry_type": "Totp", "name": "Bank" } }
+  ]
+}

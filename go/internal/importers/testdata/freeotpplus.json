@@ -1,0 +1,11 @@
+{
+  "tokens": [
+    { "issuerInt": "GitHub", "issuerExt": "GitHub", "issuerAlt": null, "label": "john@example.com", "labelAlt": null, "image": null, "imageAlt": null,
+      "type": "TOTP", "algo": "SHA1", "secret": [72, 101, 108, 108, 111, 33, -34, -83, -66, -17], "digits": 6, "counter": 0, "period": 30, "category": null },
+    { "issuerInt": "Bank", "issuerExt": "Bank", "issuerAlt": null, "label": "ops", "labelAlt": null, "image": null, "imageAlt": null,
+      "type": "HOTP", "algo": "SHA256", "secret": [72, 101, 108, 108, 111, 33, -34, -83, -66, -17], "digits": 8, "counter": 4, "period": 30, "category": null },
+    { "issuerInt": "Steam", "issuerExt": "Steam", "issuerAlt": null, "label": "gabe", "labelAlt": null, "image": null, "imageAlt": null,
+      "type": "TOTP", "algo": "SHA1", "secret": [72, 101, 108, 108, 111, 33, -34, -83, -66, -17], "digits": 5, "counter": 0, "period": 30, "category": null }
+  ],
+  "tokenOrder": ["GitHub:john@example.com", "Bank:ops", "Steam:gabe"]
+}
