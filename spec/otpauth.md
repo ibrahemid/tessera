@@ -85,8 +85,14 @@ Both cores classify a text payload by the first matching rule, in order (Go `int
 
 1. Prefix `otpauth-migration://` (case-insensitive scheme) -> Google Authenticator migration parse (multi-account).
 2. Prefix `otpauth://` (case-insensitive scheme) -> single-account otpauth parse.
-3. App-export JSON: first non-whitespace byte `[` -> Raivo, `{` -> Aegis (`db` key) / 2FAS (`services`/`servicesEncrypted` key) -> existing importers.
+3. Whole-blob app export. Evaluated on the ENTIRE trimmed input, before the per-line split, in this order:
+   - 3a. First non-whitespace byte `[` or `{` -> JSON export ladder (below). Kind `export-json`.
+   - 3b. First line (after stripping a UTF-8 BOM and a trailing `\r`) matches a registered CSV header EXACTLY, byte for byte, case-sensitive -> CSV export ladder (below). Kind `export-csv`.
+   - 3c. First 4 bytes are `PK\x03\x04` -> zip container. If it holds `export.data`, it is a 1Password 1PUX export; otherwise reject as an unrecognized archive. Kind `export-binary`.
+   - 3d. First 16 bytes are ASCII `AUTHENTICATORPRO` or `AuthenticatorPro` -> encrypted Stratum / Authenticator Pro backup; reject naming the app. Kind `export-binary`.
 4. Bare base32 setup key (guardrail below) -> TOTP, defaults SHA1 / 6 digits / period 30, empty issuer and account.
+
+Rule 3d MUST stay ahead of rule 4: `AUTHENTICATORPRO` and `AuthenticatorPro` are both 16 letters that decode cleanly as base32, so a setup-key check reached first would classify an encrypted backup as a valid key.
 
 No rule matches -> `invalid`.
 
@@ -98,11 +104,82 @@ Base32 setup-key guardrail (rule 4). Prevents prose (e.g. `hello world`) from be
 
 Partial-failure semantics. Batch inputs (multiline, multi-file, multi-QR) import every item that parses. Each failure is recorded per item (source, line/file index, reason) and never aborts the batch.
 
+### JSON export ladder (rule 3a)
+Deterministic, first match wins. Each app's ENCRYPTED probe precedes its plaintext probe, so an encrypted file is never half-parsed.
+
+Leading `{` — probe top-level keys in this exact order:
+
+```
+ 1. `db`                                   -> Aegis        (db is a string -> encrypted, reject)
+ 2. `servicesEncrypted` non-empty string   -> 2FAS         encrypted, reject
+ 3. `services`                             -> 2FAS
+ 4. `encryptedData` AND `encryptionNonce`  -> Ente Auth    encrypted, reject
+ 5. `encrypted` == true                    -> Bitwarden    encrypted, reject
+ 6. `items` is an array                    -> Bitwarden; `folders` or `collections` also
+                                              present -> source "Bitwarden", else
+                                              "Bitwarden Authenticator"
+ 7. `salt` AND `content` AND no `entries`  -> Proton Authenticator encrypted, reject
+ 8. `entries` is an array                  -> Proton Authenticator
+ 9. `tokens` AND `tokenOrder`              -> FreeOTP+
+10. `Authenticators`                       -> Stratum
+11. `accounts` is an array whose first element has `vaults` -> 1Password (1PUX export.data)
+12. otherwise                              -> not a recognized export
+```
+
+Leading `[` — probe the FIRST element's keys in this order:
+
+```
+ 1. `kind`                                 -> Raivo
+ 2. `type` AND `label`                     -> andOTP
+ 3. otherwise                              -> not a recognized export
+```
+
+An empty array is Raivo. A Bitwarden Authenticator export and a Bitwarden password-manager export whose logins carry no username or password serialize to the same shape; a misclassification changes only the reported source name, never the accounts, because one walker parses both.
+
+### CSV export ladder (rule 3b)
+Registered headers (exact bytes, case-sensitive, after BOM and trailing-`\r` strip):
+
+```
+Title,URL,Username,Password,Notes,OTPAuth                          -> Apple Passwords
+Title,Url,Username,Password,OTPAuth,Favorite,Archived,Tags,Notes   -> 1Password
+```
+
+Rows are read with RFC 4180 quoting. For each row the OTP column is read with the shared OTP-value rule (below) using fallbacks issuer = `Title`, account = `Username`. A row whose OTP column is empty or whitespace is SKIPPED SILENTLY: it is a password entry with no second factor, not a failure. Only a non-empty OTP value that fails to parse is recorded as a per-item error.
+
+Apple publishes no schema for its CSV; the header comes from real exports. If Apple changes it, detection stops matching and the file falls through to the per-line rule rather than mis-parsing the columns.
+
+### Shared rules: OTP value, empty exports
+Used by every format that stores one opaque string per item (Bitwarden Authenticator, Bitwarden, Proton Authenticator, Apple Passwords CSV, 1Password CSV, 1PUX).
+
+Given a value V and fallbacks (issuerFallback, accountFallback):
+
+```
+V empty or whitespace       -> no account; skip silently.
+V starts `otpauth://` (ci)  -> otpauth parse (§ otpauth:// URI). Unknown query params are
+                               ignored, which is what makes Ente's `codeDisplay=` a no-op.
+V starts `steam://` (ci)    -> Steam account. Secret = base32 of everything after
+                               `steam://` (strip any trailing `/`). issuer = "Steam";
+                               account = accountFallback when non-empty, else
+                               issuerFallback; algorithm SHA1, digits 5, period 30.
+otherwise                   -> bare secret. base32-decode V (no length guardrail: the
+                               field is declared to be an OTP field). TOTP, SHA1, 6 digits,
+                               period 30, issuer = issuerFallback, account = accountFallback.
+                               A decode failure is a per-item error.
+```
+
+An authenticator-only shape carries its label in the item name and has no username field, which is why the Steam account falls back to the issuer rather than staying empty.
+
+Empty recognized export. A file that matches an export ladder entry, parses cleanly, and yields zero accounts is NOT a success: silent-skip makes a password-manager export with no 2FA entries indistinguishable from "nothing was passed". Both cores MUST return recognized-but-failed (Go: `ok=true` with an error; Swift: `throw ImporterError.malformed`) with:
+
+```
+<source> export has no one-time-password entries; only items with a 2FA code are imported
+```
+
 ## Supported image formats
 The app decodes images via ImageIO: PNG, JPEG, HEIC, WebP, TIFF, GIF, BMP. The CLI decodes via Go `x/image`: PNG, JPEG, WebP, TIFF, BMP. HEIC is app-only (no cgo in the security-audited Go module). Multiple QR codes in one image are all decoded; each decoded payload is classified via the text precedence above.
 
 ## Detection test table
-Canonical classification cases. Both suites port these; `kind` is one of `migration | otpauth | export-json | setup-key | invalid`.
+Canonical classification cases. Both suites port these; `kind` is one of `migration | otpauth | export-json | export-csv | export-binary | setup-key | invalid`.
 
 | input | kind | notable |
 |---|---|---|
@@ -125,3 +202,32 @@ Canonical classification cases. Both suites port these; `kind` is one of `migrat
 | `` (empty) | invalid | no non-whitespace |
 | `   \t  ` (whitespace only) | invalid | no non-whitespace |
 | `SGVsbG8gd29ybGQhISE=` | invalid | base64 not base32 (`=` mid/tail, non-`A-Z2-7`) |
+| `[{ "secret": "JBSWY3DPEHPK3PXP", "issuer": "GitHub", "label": "john@example.com", "digits": 6, "type": "TOTP", "algorithm": "SHA1", "thumbnail": "Default", "last_used": 0, "used_frequency": 0, "period": 30, "tags": [] }]` | export-json | andOTP (`[` lead, first element has `type`+`label`, no `kind`) |
+| `{ "tokens": [], "tokenOrder": [] }` | export-json | FreeOTP+ (`tokens`+`tokenOrder`) |
+| `{ "Authenticators": [], "Categories": [], "AuthenticatorCategories": [], "CustomIcons": [] }` | export-json | Stratum (PascalCase `Authenticators`) |
+| `{ "encrypted": false, "items": [] }` | export-json | Bitwarden Authenticator (no `folders`/`collections`) |
+| `{ "encrypted": false, "folders": [], "items": [] }` | export-json | Bitwarden password manager |
+| `{ "encrypted": true, "passwordProtected": true, "salt": "...", "data": "..." }` | export-json | Bitwarden encrypted -> rejected naming Bitwarden |
+| `{ "version": 1, "entries": [] }` | export-json | Proton Authenticator |
+| `{ "version": 1, "salt": "...", "content": "..." }` | export-json | Proton encrypted -> rejected naming Proton Authenticator |
+| `{ "version": 1, "kdfParams": {...}, "encryptedData": "...", "encryptionNonce": "..." }` | export-json | Ente Auth encrypted -> rejected naming Ente Auth |
+| `{ "accounts": [ { "vaults": [] } ] }` | export-json | 1PUX `export.data` |
+| `Title,URL,Username,Password,Notes,OTPAuth`<br>`Example,https://e.com,alice@example.com,hunter2,,otpauth://totp/Example:alice@example.com?secret=JBSWY3DPEHPK3PXP` | export-csv | Apple Passwords header; 1 account |
+| `Title,Url,Username,Password,OTPAuth,Favorite,Archived,Tags,Notes` (header only) | export-csv | 1Password header; no rows, so the empty-export rule applies |
+| `Title,URL,Username,Password,Notes` | invalid | not a registered header; falls through to per-line, every line invalid |
+| bytes `PK\x03\x04...` containing `export.data` | export-binary | 1PUX; the CLI parses it, the app reports that the archive must be unzipped first |
+| bytes `AUTHENTICATORPRO...` | export-binary | Stratum encrypted -> rejected naming Stratum |
+| `otpauth://totp/Example:alice@example.com?algorithm=SHA1&digits=6&issuer=Example&period=30&secret=JBSWY3DPEHPK3PXP`<br>`otpauth://steam/Steam:gabe?...`<br>`otpauth://hotp/Bank:ops?...&codeDisplay=%7B...%7D` | otpauth x3 | Ente Auth plain-text export: ordinary per-line otpauth; `codeDisplay` ignored as an unknown param |
+
+## Export formats (CLI only)
+The CLI writes other apps' import formats. The app ships no exporters. These are third-party files: the canonical-JSON rules in `vault-format.md` do NOT apply, JSON is indented two spaces with a trailing newline, and account order is vault order.
+
+- **otpauth-migration** — payload per § otpauth-migration://. Eligible accounts only: type `totp` or `hotp`, algorithm SHA1/SHA256/SHA512, digits 6 or 8, and period 30 for `totp`. Steam accounts, 7-digit accounts and non-30s periods have no representation in `OtpParameters` and are reported as skipped, never downgraded. `OtpParameters` fields are emitted in ascending field number: `secret` raw bytes always; `name` as `issuer:account` when the issuer is non-empty, else the account alone, omitted when both are empty; `issuer` omitted when empty; `algorithm`, `digits` and `type` always; `counter` only for hotp. The payload carries every `otp_parameters` submessage first, then `version = 1`, `batch_size`, `batch_index` (0-based) and `batch_id`, one signed int32 shared by every batch of a single export. Batches hold at most 10 accounts and at most 800 payload bytes, filled greedily in vault order. The URI is `otpauth-migration://offline?data=` + percent-encoded standard base64.
+- **Aegis** — `version 1`, `header {"slots":null,"params":null}`, `db.version 3`; entries carry `type`/`uuid`/`name`/`issuer`/`note`/`favorite`/`icon`/`info`/`groups`; `info.secret` unpadded base32; `info.period` for totp and steam only; `info.counter` for hotp only.
+- **2FAS** — `schemaVersion 4`, `services[].{name,secret,updatedAt,otp{link,label,account,issuer,digits,period,algorithm,tokenType,counter,source},order{position}}`. Optional keys are emitted with an explicit `null`.
+- **Bitwarden Authenticator** — `{encrypted:false, items:[{id,name,folderId,organizationId,collectionIds,notes,type:1,favorite,login:{totp}}]}`; `totp` is always a full `otpauth://` URI (`otpauth://steam/...` for Steam).
+- **Proton Authenticator** — `{version:1, entries:[{id, content:{uri, entry_type, name}, note:null}]}`; `entry_type` is `"Totp"` or `"Steam"`; Steam entries emit `steam://<base32 secret>`.
+- **andOTP** — top-level array; `period` for TOTP and STEAM only, `counter` for HOTP only; `tags: []`, `thumbnail: "Default"`, `last_used: 0`, `used_frequency: 0`.
+- **Apple Passwords CSV** — header `Title,URL,Username,Password,Notes,OTPAuth`, one row per account; `Title` = issuer, `Username` = account, `URL`/`Password`/`Notes` empty, `OTPAuth` = the emitted otpauth URI.
+
+Ids and uuids are derived from the account id (its 32 hex characters formatted as a dashed UUID) so re-exporting an unchanged vault is byte-identical.

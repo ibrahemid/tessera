@@ -1,0 +1,10 @@
+{
+  "Authenticators": [
+    { "Type": 2, "Icon": "Default", "Issuer": "GitHub", "Username": "john@example.com", "Secret": "JBSWY3DPEHPK3PXP", "Pin": null, "Algorithm": 0, "Digits": 6, "Period": 30, "Counter": 0, "CopyCount": 0, "Ranking": 0 },
+    { "Type": 1, "Icon": "Default", "Issuer": "Bank", "Username": "ops", "Secret": "JBSWY3DPEHPK3PXP", "Pin": null, "Algorithm": 1, "Digits": 8, "Period": 30, "Counter": 5, "CopyCount": 0, "Ranking": 1 },
+    { "Type": 4, "Icon": "Steam", "Issuer": "Steam", "Username": "gabe", "Secret": "JBSWY3DPEHPK3PXP", "Pin": null, "Algorithm": 0, "Digits": 5, "Period": 30, "Counter": 0, "CopyCount": 0, "Ranking": 2 }
+  ],
+  "Categories": [],
+  "AuthenticatorCategories": [],
+  "CustomIcons": []
+}

@@ -1,6 +1,6 @@
-// Package detect classifies a text payload (an otpauth URI, a Google
-// Authenticator migration URI, an app-export JSON blob, or a bare base32 setup
-// key) and parses it into the canonical account model. It performs no I/O and
+// Package detect classifies a payload (an otpauth URI, a Google Authenticator
+// migration URI, an app export in JSON, CSV or binary form, or a bare base32
+// setup key) and parses it into the canonical account model. It performs no I/O and
 // never logs secrets: failures are reported per item with a redacted display
 // form. The classification precedence is the interop contract in
 // /spec/otpauth.md ("Input detection"); the Swift InputDetect must match.
@@ -28,10 +28,16 @@ const (
 	Migration
 	// OTPAuth is a single otpauth:// URI.
 	OTPAuth
-	// ExportJSON is an app-export JSON blob (Aegis, 2FAS, or Raivo).
+	// ExportJSON is an app-export JSON blob (Aegis, 2FAS, Raivo, andOTP,
+	// FreeOTP+, Stratum, Bitwarden, Proton Authenticator, Ente Auth, 1PUX).
 	ExportJSON
 	// SetupKey is a bare base32 secret entered as a setup key.
 	SetupKey
+	// ExportCSV is an app-export CSV (Apple Passwords, 1Password).
+	ExportCSV
+	// ExportBinary is a binary app export: a 1Password .1pux archive or an
+	// encrypted Stratum backup.
+	ExportBinary
 )
 
 // String reports the spec-canonical name for a Kind.
@@ -43,6 +49,10 @@ func (k Kind) String() string {
 		return "otpauth"
 	case ExportJSON:
 		return "export-json"
+	case ExportCSV:
+		return "export-csv"
+	case ExportBinary:
+		return "export-binary"
 	case SetupKey:
 		return "setup-key"
 	default:
@@ -55,8 +65,9 @@ func (k Kind) String() string {
 const minSetupKeyLen = 16
 
 // Classify returns the Kind of a single text payload by the spec precedence:
-// migration URI, otpauth URI, app-export JSON (leading '[' or '{'), then the
-// base32 setup-key guardrail. Anything else is Invalid.
+// migration URI, otpauth URI, whole-blob app export (JSON, then a registered
+// CSV header, then the zip and Stratum binary magics), then the base32
+// setup-key guardrail. Anything else is Invalid.
 func Classify(text string) Kind {
 	t := strings.TrimSpace(text)
 	if t == "" {
@@ -72,6 +83,14 @@ func Classify(text string) Kind {
 	switch t[0] {
 	case '[', '{':
 		return ExportJSON
+	}
+	if importers.MatchCSVHeader([]byte(t)) {
+		return ExportCSV
+	}
+	// The binary magics must be checked before the setup-key guardrail: both
+	// spellings of the Stratum header are 16 letters that decode as base32.
+	if importers.IsZip([]byte(t)) || importers.IsStratumEncrypted([]byte(t)) {
+		return ExportBinary
 	}
 	if IsLikelyBase32Secret(t) {
 		return SetupKey
@@ -155,7 +174,7 @@ func redact(kind Kind, raw string) string {
 
 // ParseText classifies and parses a text payload into accounts, collecting a
 // per-item error for every line or blob that fails instead of aborting. A blob
-// whose first non-whitespace byte is '[' or '{' is parsed as a single JSON
+// that classifies as a whole-blob export (JSON, CSV or binary) is parsed as one
 // export (app exports are legitimately multiline); everything else is split on
 // line breaks and each non-empty line is classified independently.
 func ParseText(text string) ([]account.Account, []ItemError) {
@@ -163,15 +182,15 @@ func ParseText(text string) ([]account.Account, []ItemError) {
 	if trimmed == "" {
 		return nil, []ItemError{{Line: 1, Input: "", Err: fmt.Errorf("no input")}}
 	}
-	if trimmed[0] == '[' || trimmed[0] == '{' {
+	if k := Classify(trimmed); k == ExportJSON || k == ExportCSV || k == ExportBinary {
 		accts, source, ok, err := importers.Parse([]byte(text))
 		if ok {
 			if err != nil {
-				return nil, []ItemError{{Line: 1, Input: redact(ExportJSON, source), Err: err}}
+				return nil, []ItemError{{Line: 1, Input: redact(k, source), Err: err}}
 			}
 			return accts, nil
 		}
-		return nil, []ItemError{{Line: 1, Input: redact(Invalid, trimmed), Err: fmt.Errorf("unrecognized JSON export")}}
+		return nil, []ItemError{{Line: 1, Input: redact(Invalid, trimmed), Err: fmt.Errorf("unrecognized export")}}
 	}
 
 	// Wrapped-URI repair (spec § input detection): textareas and mail clients
@@ -227,10 +246,10 @@ func ParseText(text string) ([]account.Account, []ItemError) {
 				continue
 			}
 			accts = append(accts, a)
-		case ExportJSON:
+		case ExportJSON, ExportCSV, ExportBinary:
 			parsed, source, ok, err := importers.Parse([]byte(line))
 			if !ok {
-				errs = append(errs, ItemError{Line: lineNo, Input: redact(Invalid, line), Err: fmt.Errorf("unrecognized JSON export")})
+				errs = append(errs, ItemError{Line: lineNo, Input: redact(Invalid, line), Err: fmt.Errorf("unrecognized export")})
 				continue
 			}
 			if err != nil {

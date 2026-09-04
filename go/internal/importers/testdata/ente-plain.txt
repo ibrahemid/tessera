@@ -1,0 +1,3 @@
+otpauth://totp/Example:alice@example.com?algorithm=SHA1&digits=6&issuer=Example&period=30&secret=JBSWY3DPEHPK3PXP
+otpauth://steam/Steam:gabe?algorithm=SHA1&digits=5&issuer=Steam&period=30&secret=JBSWY3DPEHPK3PXP
+otpauth://hotp/Bank:ops?algorithm=SHA256&counter=5&digits=8&issuer=Bank&secret=JBSWY3DPEHPK3PXP&codeDisplay=%7B%22pinned%22%3Afalse%2C%22trashed%22%3Afalse%2C%22tags%22%3A%5B%5D%2C%22note%22%3A%22%22%7D

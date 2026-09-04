@@ -1,0 +1,165 @@
+[
+  {
+    "file": "aegis.json",
+    "source": "Aegis",
+    "accounts": [
+      { "type": "totp", "issuer": "GitHub", "account": "john@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0 },
+      { "type": "hotp", "issuer": "Bank", "account": "ops", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA256", "digits": 8, "period": 0, "counter": 5 },
+      { "type": "steam", "issuer": "Steam", "account": "gabe", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 5, "period": 30, "counter": 0 }
+    ]
+  },
+  {
+    "file": "aegis-encrypted.json",
+    "source": "Aegis",
+    "reject": "encrypted",
+    "message_contains": "Aegis"
+  },
+  {
+    "file": "2fas.json",
+    "source": "2FAS",
+    "accounts": [
+      { "type": "totp", "issuer": "GitHub", "account": "john@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0 },
+      { "type": "hotp", "issuer": "Bank", "account": "ops", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA256", "digits": 8, "period": 30, "counter": 5 },
+      { "type": "steam", "issuer": "Steam", "account": "gabe", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 5, "period": 30, "counter": 0 }
+    ]
+  },
+  {
+    "file": "2fas-encrypted.json",
+    "source": "2FAS",
+    "reject": "encrypted",
+    "message_contains": "2FAS"
+  },
+  {
+    "file": "raivo.json",
+    "source": "Raivo",
+    "accounts": [
+      { "type": "totp", "issuer": "GitHub", "account": "john@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0 },
+      { "type": "hotp", "issuer": "Bank", "account": "ops", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA256", "digits": 8, "period": 0, "counter": 5 }
+    ]
+  },
+  {
+    "file": "andotp.json",
+    "source": "andOTP",
+    "accounts": [
+      { "type": "totp", "issuer": "GitHub", "account": "john@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0 },
+      { "type": "hotp", "issuer": "Bank", "account": "ops", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA256", "digits": 8, "period": 0, "counter": 5 },
+      { "type": "steam", "issuer": "Steam", "account": "gabe", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 5, "period": 30, "counter": 0 }
+    ]
+  },
+  {
+    "file": "freeotpplus.json",
+    "source": "FreeOTP+",
+    "accounts": [
+      { "type": "totp", "issuer": "GitHub", "account": "john@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0 },
+      { "type": "hotp", "issuer": "Bank", "account": "ops", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA256", "digits": 8, "period": 30, "counter": 5 },
+      { "type": "steam", "issuer": "Steam", "account": "gabe", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 5, "period": 30, "counter": 0 }
+    ]
+  },
+  {
+    "file": "stratum.json",
+    "source": "Stratum",
+    "accounts": [
+      { "type": "totp", "issuer": "GitHub", "account": "john@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0 },
+      { "type": "hotp", "issuer": "Bank", "account": "ops", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA256", "digits": 8, "period": 30, "counter": 5 },
+      { "type": "steam", "issuer": "Steam", "account": "gabe", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 5, "period": 30, "counter": 0 }
+    ]
+  },
+  {
+    "file": "stratum-encrypted.stratum",
+    "source": "Stratum",
+    "reject": "encrypted",
+    "message_contains": "Stratum"
+  },
+  {
+    "file": "bitwarden-authenticator.json",
+    "source": "Bitwarden Authenticator",
+    "accounts": [
+      { "type": "totp", "issuer": "Example", "account": "alice@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0 },
+      { "type": "steam", "issuer": "Steam", "account": "gabe", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 5, "period": 30, "counter": 0 },
+      { "type": "totp", "issuer": "Bank", "account": "", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0 }
+    ]
+  },
+  {
+    "file": "bitwarden-password-manager.json",
+    "source": "Bitwarden",
+    "accounts": [
+      { "type": "totp", "issuer": "Example", "account": "alice@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0 },
+      { "type": "hotp", "issuer": "Bank", "account": "ops", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA256", "digits": 8, "period": 30, "counter": 5 }
+    ]
+  },
+  {
+    "file": "bitwarden-password-manager-encrypted.json",
+    "source": "Bitwarden",
+    "reject": "encrypted",
+    "message_contains": "Bitwarden"
+  },
+  {
+    "file": "proton-authenticator.json",
+    "source": "Proton Authenticator",
+    "accounts": [
+      { "type": "totp", "issuer": "Example", "account": "alice@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0 },
+      { "type": "steam", "issuer": "Steam", "account": "gabe", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 5, "period": 30, "counter": 0 },
+      { "type": "hotp", "issuer": "Bank", "account": "ops", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA256", "digits": 8, "period": 30, "counter": 5 }
+    ]
+  },
+  {
+    "file": "proton-authenticator-encrypted.json",
+    "source": "Proton Authenticator",
+    "reject": "encrypted",
+    "message_contains": "Proton Authenticator"
+  },
+  {
+    "file": "ente-plain.txt",
+    "via": "detect",
+    "accounts": [
+      { "type": "totp", "issuer": "Example", "account": "alice@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0 },
+      { "type": "steam", "issuer": "Steam", "account": "gabe", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 5, "period": 30, "counter": 0 },
+      { "type": "hotp", "issuer": "Bank", "account": "ops", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA256", "digits": 8, "period": 30, "counter": 5 }
+    ]
+  },
+  {
+    "file": "ente-encrypted.json",
+    "source": "Ente Auth",
+    "reject": "encrypted",
+    "message_contains": "Ente Auth"
+  },
+  {
+    "file": "apple-passwords.csv",
+    "source": "Apple Passwords",
+    "accounts": [
+      { "type": "totp", "issuer": "Example", "account": "alice@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0 },
+      { "type": "hotp", "issuer": "Bank", "account": "ops", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA256", "digits": 8, "period": 30, "counter": 5 }
+    ]
+  },
+  {
+    "file": "apple-passwords-no-otp.csv",
+    "source": "Apple Passwords",
+    "reject": "no-otp",
+    "message_contains": "no one-time-password entries"
+  },
+  {
+    "file": "1password.csv",
+    "source": "1Password",
+    "accounts": [
+      { "type": "totp", "issuer": "Example", "account": "alice@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0 },
+      { "type": "totp", "issuer": "Seed Only", "account": "carol@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0 }
+    ]
+  },
+  {
+    "file": "1password-export.data.json",
+    "source": "1Password",
+    "accounts": [
+      { "type": "totp", "issuer": "Example", "account": "alice@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0 },
+      { "type": "hotp", "issuer": "Bank", "account": "ops", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA256", "digits": 8, "period": 30, "counter": 5 }
+    ]
+  },
+  {
+    "file": "1password.1pux",
+    "source": "1Password",
+    "cores": ["go"],
+    "accounts": [
+      { "type": "totp", "issuer": "Example", "account": "alice@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0 },
+      { "type": "hotp", "issuer": "Bank", "account": "ops", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA256", "digits": 8, "period": 30, "counter": 5 }
+    ]
+  }
+]

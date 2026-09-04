@@ -1,0 +1,4 @@
+[
+  { "issuer": "GitHub", "account": "john@example.com", "secret": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": "6", "kind": "TOTP", "timer": "30", "counter": "0", "pinned": "false" },
+  { "issuer": "Bank", "account": "ops", "secret": "JBSWY3DPEHPK3PXP", "algorithm": "SHA256", "digits": "8", "kind": "HOTP", "timer": "0", "counter": "5", "pinned": "false" }
+]
