@@ -2,7 +2,9 @@ import Foundation
 
 // Local interop verifier: compiles TesseraCore with this entrypoint via swiftc
 // and checks the Swift core against the shared /spec vectors. Argument 1 is the
-// path to the repo's /spec directory.
+// path to the repo's /spec directory. Optional argument 2 is the path to
+// go/internal/importers/testdata, which adds the shared importer fixture table
+// — the only importer coverage available without full Xcode.
 
 var failures = 0
 func check(_ cond: Bool, _ msg: String) {
@@ -10,9 +12,10 @@ func check(_ cond: Bool, _ msg: String) {
 }
 
 guard CommandLine.arguments.count >= 2 else {
-    FileHandle.standardError.write(Data("usage: verify <spec-dir>\n".utf8)); exit(2)
+    FileHandle.standardError.write(Data("usage: verify <spec-dir> [importer-testdata-dir]\n".utf8)); exit(2)
 }
 let specDir = CommandLine.arguments[1]
+let testdataDir: String? = CommandLine.arguments.count >= 3 ? CommandLine.arguments[2] : nil
 let vectorsURL = URL(fileURLWithPath: specDir).appendingPathComponent("testvectors.json")
 let raw = try Data(contentsOf: vectorsURL)
 let V = try JSONSerialization.jsonObject(with: raw) as! [String: Any]
@@ -245,6 +248,118 @@ do {
     check(got == canon, "handle canonical serialization is byte-identical to Go")
 }
 
+// 11. Shared importer fixture table (go/internal/importers/testdata/expected.json).
+// Same fixtures, same expectations as the Go TestTestdataTable; rows whose
+// "cores" omit "swift" are skipped (the .1pux zip container is CLI-only).
+if let testdataDir {
+    let dir = URL(fileURLWithPath: testdataDir)
+    let table = try JSONSerialization.jsonObject(
+        with: Data(contentsOf: dir.appendingPathComponent("expected.json"))) as! [[String: Any]]
+    check(!table.isEmpty, "expected.json is not empty")
+    for entry in table {
+        let file = entry["file"] as! String
+        let cores = entry["cores"] as? [String] ?? ["go", "swift"]
+        if !cores.contains("swift") {
+            print("skip - \(file) (cores: \(cores.joined(separator: ",")))")
+            continue
+        }
+        do {
+            try runImporterFixture(entry, dir.appendingPathComponent(file))
+            check(true, "fixture \(file)")
+        } catch {
+            print("     \(error)")
+            check(false, "fixture \(file)")
+        }
+    }
+}
+
 print("")
 if failures == 0 { print("ALL SWIFT INTEROP CHECKS PASSED") } else { print("\(failures) CHECK(S) FAILED") }
 exit(failures == 0 ? 0 : 1)
+
+// MARK: - importer fixture table
+
+struct FixtureMismatch: Error, CustomStringConvertible {
+    let description: String
+    init(_ d: String) { description = d }
+}
+
+/// Runs one expected.json row: parses the fixture the way its "via" says, then
+/// asserts the accounts positionally or the rejection message by substring.
+func runImporterFixture(_ entry: [String: Any], _ path: URL) throws {
+    let data = try Data(contentsOf: path)
+    let via = entry["via"] as? String ?? "importers"
+    let wantSource = entry["source"] as? String
+    let reject = entry["reject"] as? String
+    let wantMessage = entry["message_contains"] as? String ?? ""
+
+    var accounts: [Account] = []
+    var source = ""
+    var thrown: Error?
+    switch via {
+    case "importers":
+        var found: (accounts: [Account], source: String)?
+        do { found = try Importers.parse(data) } catch { thrown = error }
+        if thrown == nil {
+            guard let found else {
+                throw FixtureMismatch("Importers.parse did not recognize the fixture as an export")
+            }
+            accounts = found.accounts
+            source = found.source
+        }
+    case "detect":
+        guard let text = String(data: data, encoding: .utf8) else {
+            throw FixtureMismatch("fixture is not valid UTF-8")
+        }
+        let (accs, errs) = InputDetect.parseText(text)
+        accounts = accs
+        if let first = errs.first { thrown = FixtureMismatch(first.reason) }
+    default:
+        throw FixtureMismatch("unknown via \"\(via)\"")
+    }
+
+    if let reject {
+        guard let thrown else {
+            throw FixtureMismatch("expected the export to be rejected (\(reject)), got \(accounts.count) accounts")
+        }
+        let text = "\(thrown)"
+        guard text.contains(wantMessage) else {
+            throw FixtureMismatch("error \"\(text)\" does not contain \"\(wantMessage)\"")
+        }
+        return
+    }
+    if let thrown { throw FixtureMismatch("parse: \(thrown)") }
+    if let wantSource, source != wantSource {
+        throw FixtureMismatch("source = \"\(source)\", want \"\(wantSource)\"")
+    }
+    try assertImportedAccounts(accounts, entry["accounts"] as! [[String: Any]])
+}
+
+func assertImportedAccounts(_ got: [Account], _ want: [[String: Any]]) throws {
+    guard got.count == want.count else {
+        throw FixtureMismatch("got \(got.count) accounts, want \(want.count)")
+    }
+    for (i, w) in want.enumerated() {
+        let a = got[i]
+        func fail(_ field: String, _ gotValue: Any, _ wantValue: Any) -> FixtureMismatch {
+            FixtureMismatch("account \(i): \(field) = \(gotValue), want \(wantValue)")
+        }
+        let wantType = w["type"] as! String
+        if a.type.rawValue != wantType { throw fail("type", a.type.rawValue, wantType) }
+        let wantIssuer = w["issuer"] as! String
+        if a.issuer != wantIssuer { throw fail("issuer", a.issuer, wantIssuer) }
+        let wantAccount = w["account"] as! String
+        if a.account != wantAccount { throw fail("account", a.account, wantAccount) }
+        if a.secret != (try Base32.decode(w["secret_b32"] as! String)) {
+            throw FixtureMismatch("account \(i): secret mismatch")
+        }
+        let wantAlgo = w["algorithm"] as! String
+        if a.algorithm != wantAlgo { throw fail("algorithm", a.algorithm, wantAlgo) }
+        let wantDigits = (w["digits"] as! NSNumber).intValue
+        if a.digits != wantDigits { throw fail("digits", a.digits, wantDigits) }
+        let wantPeriod = (w["period"] as! NSNumber).intValue
+        if a.period != wantPeriod { throw fail("period", a.period, wantPeriod) }
+        let wantCounter = (w["counter"] as! NSNumber).int64Value
+        if a.counter != wantCounter { throw fail("counter", a.counter, wantCounter) }
+    }
+}

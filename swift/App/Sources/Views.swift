@@ -831,7 +831,7 @@ struct AddAccountView: View {
             let n = (try? Migration.parse(text).count) ?? 0
             readout = n > 0 ? "Google Authenticator export (\(n) account\(n == 1 ? "" : "s"))"
                             : "Google Authenticator export"
-        case .exportJSON:
+        case .exportJSON, .exportCSV, .exportBinary:
             if let found = try? Importers.parse(Data(text.utf8)) {
                 let n = found.accounts.count
                 readout = "\(found.source) export (\(n) account\(n == 1 ? "" : "s"))"

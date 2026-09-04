@@ -18,7 +18,7 @@ CLI-first TOTP/2FA authenticator for macOS, plus a native SwiftUI app. Free, ope
 ## Testing
 
 - Go: `go -C go test -race ./...`, `go -C go vet ./...`, `gofmt -l go/` (empty).
-- Swift core (no Xcode): `swiftc -O swift/Sources/TesseraCore/*.swift swift/Tools/verify/main.swift -o /tmp/v && /tmp/v "$(pwd)/spec"`.
+- Swift core (no Xcode): `swiftc -O swift/Sources/TesseraCore/*.swift swift/Tools/verify/main.swift -o /tmp/v && /tmp/v "$(pwd)/spec" "$(pwd)/go/internal/importers/testdata"`.
 - Swift argon2id + full Go→Swift cross-decrypt: `cd swift && swift test` (needs full Xcode; CLT SwiftPM is broken).
 - After changing vectors: regenerate via `go -C go run ./internal/vectorgen` and `... edge > spec/canonical_edge.json`, re-pin, rerun both suites.
 

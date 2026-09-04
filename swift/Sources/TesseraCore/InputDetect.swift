@@ -10,7 +10,14 @@ public enum InputDetect {
     public enum InputKind: Sendable, Equatable {
         case migration
         case otpauth
+        /// An app-export JSON blob (Aegis, 2FAS, Raivo, andOTP, FreeOTP+,
+        /// Stratum, Bitwarden, Proton Authenticator, Ente Auth, 1PUX).
         case exportJSON
+        /// An app-export CSV (Apple Passwords, 1Password).
+        case exportCSV
+        /// A binary app export: a 1Password .1pux archive or an encrypted
+        /// Stratum backup.
+        case exportBinary
         case setupKey
         case invalid
     }
@@ -41,6 +48,11 @@ public enum InputDetect {
         if lower.hasPrefix("otpauth-migration://") { return .migration }
         if lower.hasPrefix("otpauth://") { return .otpauth }
         if let first = trimmed.first, first == "[" || first == "{" { return .exportJSON }
+        let bytes = Data(trimmed.utf8)
+        if Importers.matchCSVHeader(bytes) != nil { return .exportCSV }
+        // The binary magics must be checked before the setup-key guardrail: both
+        // spellings of the Stratum header are 16 letters that decode as base32.
+        if Importers.isZip(bytes) || Importers.isStratumEncrypted(bytes) { return .exportBinary }
         if isLikelyBase32Secret(input) { return .setupKey }
         return .invalid
     }
@@ -74,12 +86,13 @@ public enum InputDetect {
         var accounts: [Account] = []
         var errors: [ItemError] = []
 
-        // A blob whose first non-whitespace byte is '[' or '{' is one JSON export
-        // (app exports are legitimately multiline), not per-line input. Matches Go
-        // detect.ParseText so a pretty-printed Aegis/2FAS/Raivo paste imports here
-        // exactly as it does in the CLI.
+        // A blob that classifies as a whole-blob export (JSON, CSV or binary) is
+        // parsed as one export — app exports are legitimately multiline — not as
+        // per-line input. Matches Go detect.ParseText so a pretty-printed
+        // Aegis/2FAS/Raivo paste imports here exactly as it does in the CLI.
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let first = trimmed.first, first == "[" || first == "{" {
+        let blobKind = classify(trimmed)
+        if blobKind == .exportJSON || blobKind == .exportCSV || blobKind == .exportBinary {
             do {
                 if let result = try Importers.parse(Data(input.utf8)) {
                     return (result.accounts, [])
@@ -127,7 +140,7 @@ public enum InputDetect {
             case .otpauth:
                 do { accounts.append(try OTPAuth.parse(line)) }
                 catch { errors.append(item(lineNo, line, error)) }
-            case .exportJSON:
+            case .exportJSON, .exportCSV, .exportBinary:
                 do {
                     if let result = try Importers.parse(Data(line.utf8)) {
                         accounts.append(contentsOf: result.accounts)

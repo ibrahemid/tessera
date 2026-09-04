@@ -197,4 +197,66 @@ final class InputDetectTests: XCTestCase {
         XCTAssertEqual(errors.count, 1)
         XCTAssertFalse(errors[0].display.contains(typo))
     }
+
+    // MARK: - Detection table: the new export containers
+
+    func testDetectionTableExports() {
+        let cases: [(String, InputDetect.InputKind)] = [
+            (#"[{ "secret": "JBSWY3DPEHPK3PXP", "issuer": "GitHub", "label": "john@example.com", "digits": 6, "type": "TOTP", "algorithm": "SHA1", "period": 30, "tags": [] }]"#, .exportJSON),
+            (#"{ "tokens": [], "tokenOrder": [] }"#, .exportJSON),
+            (#"{ "Authenticators": [], "Categories": [] }"#, .exportJSON),
+            (#"{ "encrypted": false, "items": [] }"#, .exportJSON),
+            (#"{ "encrypted": false, "folders": [], "items": [] }"#, .exportJSON),
+            (#"{ "encrypted": true, "passwordProtected": true, "salt": "c2FsdA==", "data": "ZGF0YQ==" }"#, .exportJSON),
+            (#"{ "version": 1, "entries": [] }"#, .exportJSON),
+            (#"{ "version": 1, "salt": "c2FsdA==", "content": "Y29udGVudA==" }"#, .exportJSON),
+            (#"{ "version": 1, "encryptedData": "ZGF0YQ==", "encryptionNonce": "bm9uY2U=" }"#, .exportJSON),
+            (#"{ "accounts": [ { "vaults": [] } ] }"#, .exportJSON),
+            ("Title,URL,Username,Password,Notes,OTPAuth\nExample,https://e.com,alice@example.com,hunter2,,otpauth://totp/Example:alice@example.com?secret=JBSWY3DPEHPK3PXP", .exportCSV),
+            ("Title,Url,Username,Password,OTPAuth,Favorite,Archived,Tags,Notes", .exportCSV),
+            ("Title,URL,Username,Password,Notes", .invalid),
+            ("PK\u{03}\u{04}\u{14}\u{00}", .exportBinary),
+            ("AUTHENTICATORPRO\u{03}\u{04}", .exportBinary),
+            ("AuthenticatorPro\u{03}\u{04}", .exportBinary),
+        ]
+        for (input, want) in cases {
+            XCTAssertEqual(InputDetect.classify(input), want, "classify(\(input.prefix(48)))")
+        }
+    }
+
+    /// The Stratum magic is 16 letters that decode cleanly as base32, so the
+    /// binary rule must win over the setup-key guardrail.
+    func testStratumMagicBeatsSetupKey() {
+        XCTAssertTrue(InputDetect.isLikelyBase32Secret("AUTHENTICATORPRO"))
+        XCTAssertEqual(InputDetect.classify("AUTHENTICATORPRO"), .exportBinary)
+    }
+
+    // MARK: - byte order: binary containers are classified before any UTF-8 decode
+
+    func testNonUTF8BinaryContainersReachTheirMessages() {
+        // Both blobs carry a byte no UTF-8 decoder accepts, so a text-first path
+        // would lose these messages. AppModel.importDroppedFiles calls
+        // Importers.parse on the raw Data first for exactly this reason.
+        let invalidUTF8: [UInt8] = [0xff, 0xfe, 0x00, 0x80]
+
+        let stratum = Data(Array("AUTHENTICATORPRO".utf8) + invalidUTF8)
+        XCTAssertNil(String(data: stratum, encoding: .utf8))
+        XCTAssertThrowsError(try Importers.parse(stratum)) { error in
+            guard let e = error as? Importers.ImporterError, case .encrypted(let m) = e else {
+                XCTFail("expected .encrypted, got \(error)")
+                return
+            }
+            XCTAssertEqual(m, "Stratum backup is encrypted; in Stratum choose Settings > Backup > Export unencrypted and try again")
+        }
+
+        let pux = Data([0x50, 0x4b, 0x03, 0x04] + invalidUTF8)
+        XCTAssertNil(String(data: pux, encoding: .utf8))
+        XCTAssertThrowsError(try Importers.parse(pux)) { error in
+            guard let e = error as? Importers.ImporterError, case .malformed(let m) = e else {
+                XCTFail("expected .malformed, got \(error)")
+                return
+            }
+            XCTAssertEqual(m, "1Password .1pux archives are read by the tess CLI; in the app, unzip it and import export.data")
+        }
+    }
 }
