@@ -8,13 +8,18 @@ const appStore = "https://apps.apple.com/app/tessera-2fa-authenticator/id6788814
 
 const entries = [
   {
-    v: "Unreleased",
-    date: "not yet released",
+    v: "1.1.0",
+    date: "CLI 2026-09-05 · App Store pending review",
     items: [
+      "CLI: tess code copies the code by default and prints the seconds left; tess <handle> is a shortcut; a code with under 4 seconds left waits for the next one; --clear wipes the clipboard after a delay.",
+      "CLI: shell completion for account handles, tess add --screen reads a QR off the screen, add and import read stdin with -.",
+      "Import, app and CLI: Bitwarden, Proton Authenticator, Ente Auth, andOTP, FreeOTP+, Stratum, 1Password and Apple Passwords exports. Encrypted exports are rejected with the app's own unencrypted export path.",
+      "CLI export: --format aegis, 2fas, bitwarden, proton, andotp, apple-csv, or google-migration (QR batches any phone app scans).",
+      "CLI: tess merge --two-way syncs two vaults in a shared folder.",
+      "Fix: a malformed otpauth link no longer echoes its secret in the error.",
       "go install builds report the module version in tess --version.",
-      "This site: real terminal recording, app captures, /cli, /security, /vault-format, /changelog, /press, comparison pages.",
     ],
-    links: [[`${repo}/commits/main`, "commits on main"]],
+    links: [[`${repo}/releases/tag/v1.1.0`, "v1.1.0 release"], [`${repo}/blob/main/docs/TRANSFER.md`, "moving accounts in and out"]],
   },
   {
     v: "1.0.2",
