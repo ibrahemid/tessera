@@ -111,8 +111,8 @@ func TestCodeCopiesByDefault(t *testing.T) {
 	}
 }
 
-// TestCodeLegacyCopyFlagStillAccepted keeps older scripts working now that
-// copying is the default.
+// TestCodeLegacyCopyFlagStillAccepted pins the long spelling of -c: older
+// scripts pass --copy.
 func TestCodeLegacyCopyFlagStillAccepted(t *testing.T) {
 	path := withVault(t)
 	sealVault(t, path, []account.Account{totp("a", "ACME", "x", 1)})
@@ -142,6 +142,7 @@ func TestCodeCopyRules(t *testing.T) {
 		{"terminal copies", true, []string{"acme"}, true},
 		{"no-copy on a terminal does not", true, []string{"acme", "--no-copy"}, false},
 		{"no-copy beats -c", true, []string{"acme", "-c", "--no-copy"}, false},
+		{"json with -c copies", false, []string{"acme", "--json", "-c"}, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
