@@ -13,6 +13,7 @@ const quickStart = [
   ["tess add code.png", "from a QR image"],
   ["tess add --screen", "select a QR code on screen (macOS)"],
   ['tess import --migration "otpauth-migration://offline?data=..."', "Google Authenticator export"],
+  ["tess import aegis-export.json", "another app's export, recognized by content"],
   ["cat export.json | tess import -", "read the input from stdin, as tess add - does too"],
   ["tess", "current codes with countdown bars"],
   ["tess watch", "live view: / search, enter or c copy, q quit"],
@@ -24,6 +25,8 @@ const quickStart = [
   ["tess vault remember", "store the passphrase in the login keychain"],
   ["tess vault status", "path, file details, wrap methods, keychain state"],
   ["tess export --file backup.json", "encrypted copy of the vault"],
+  ["tess export --format aegis --out aegis.json", "the vault in another app's export format"],
+  ["tess merge --two-way ~/other.json", "reconcile two vaults, writing both"],
 ];
 
 const env = [
@@ -100,6 +103,9 @@ const completionsHtml = completionLines
       <section id="quick-start" class="scroll-mt-20">
         <h2 class="h-sub">Quick start</h2>
         <pre class="term mt-5"><code set:html={quickStartHtml} /></pre>
+        <p class="mt-4 soft">
+          <span class="mono">tess import</span> reads unencrypted exports from Aegis, 2FAS, Raivo, andOTP, FreeOTP+, Stratum, Bitwarden and Bitwarden Authenticator, Proton Authenticator, Ente Auth, Apple Passwords and 1Password, plus Google Authenticator transfer QR codes. <span class="mono">tess export --format</span> writes Aegis, 2FAS, Bitwarden Authenticator, Proton Authenticator, andOTP, Apple Passwords CSV and Google Authenticator QR codes back out.
+        </p>
         <p class="mt-4 soft">
           Accounts resolve by exact handle, then exact issuer or account name, then a unique substring. When more than one account matches, tess lists them with their handles instead of guessing.
         </p>
