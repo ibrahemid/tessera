@@ -121,15 +121,17 @@ func runCode(cmd *cobra.Command, args []string, opts *codeOptions) error {
 		return err
 	}
 	if len(idxs) > 1 {
-		return printAmbiguousCodes(cmd, s.accounts, idxs, opts.asJSON)
+		return printAmbiguousCodes(cmd, s.accounts, idxs, args[0], opts.asJSON)
 	}
 	return printOneCode(cmd, s, idxs[0], opts)
 }
 
 // printAmbiguousCodes reports every match rather than guessing which account
 // the user meant. There is no single code to copy, so this path leaves the
-// clipboard alone and exits zero: the listed codes answer the request.
-func printAmbiguousCodes(cmd *cobra.Command, accts []account.Account, idxs []int, asJSON bool) error {
+// clipboard alone. On a terminal or with --json it exits zero: the listed codes
+// answer the request. Otherwise a script expected one code on stdout, so the
+// table goes to stderr and the command exits 2.
+func printAmbiguousCodes(cmd *cobra.Command, accts []account.Account, idxs []int, query string, asJSON bool) error {
 	if asJSON {
 		matched := make([]account.Account, 0, len(idxs))
 		for _, i := range idxs {
@@ -137,6 +139,10 @@ func printAmbiguousCodes(cmd *cobra.Command, accts []account.Account, idxs []int
 		}
 		out(cmd, "%s", mustJSON(codeRows(matched, now())))
 		return nil
+	}
+	if !stdoutIsTTY() {
+		printMatchTableTo(cmd.ErrOrStderr(), accts, idxs, true)
+		return errAmbiguous(len(idxs), query)
 	}
 	printMatchTable(cmd, accts, idxs, true)
 	return nil
@@ -264,16 +270,16 @@ func runCodeAll(cmd *cobra.Command, asJSON bool) error {
 	t := now()
 	hw := handleWidth(accts)
 	for _, a := range accts {
-		tag := ui.Handle(a.Issuer+a.Account, padRight(a.Handle, hw))
+		tag := ui.Handle(a.Issuer+a.Account, padRight(displayHandle(a), hw))
 		name := ui.IssuerStyle.Render(padRight(labelText(a), 26))
 		if a.Type == account.HOTP {
-			meta := ui.SubtleStyle.Render(fmt.Sprintf("hotp #%d  (tess code %s --next)", a.Counter, a.Handle))
+			meta := ui.SubtleStyle.Render(fmt.Sprintf("hotp #%d  (tess code %s --next)", a.Counter, displayHandle(a)))
 			out(cmd, "%s  %s  %s  %s", tag, name, ui.CodeStyle.Render(padRight("------", 9)), meta)
 			continue
 		}
 		c, err := genCode(a, t)
 		if err != nil {
-			out(cmd, "%s  %s  %s", tag, name, ui.WarnStyle.Render(err.Error()))
+			out(cmd, "%s  %s  %s", tag, name, ui.WarnStyle.Render(ui.Sanitize(userMessage(err))))
 			continue
 		}
 		rem := code.Remaining(a, t)

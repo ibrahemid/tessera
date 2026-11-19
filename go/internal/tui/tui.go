@@ -211,9 +211,9 @@ func (m Model) View() string {
 	b.WriteString(title + "  " + count + "\n")
 
 	if m.searching {
-		b.WriteString(ui.AccentStyle.Render("/") + m.query + ui.SubtleStyle.Render("▌") + "\n")
+		b.WriteString(ui.AccentStyle.Render("/") + ui.Sanitize(m.query) + ui.SubtleStyle.Render("▌") + "\n")
 	} else if m.query != "" {
-		b.WriteString(ui.SubtleStyle.Render("filter: ") + m.query + "\n")
+		b.WriteString(ui.SubtleStyle.Render("filter: ") + ui.Sanitize(m.query) + "\n")
 	} else {
 		b.WriteString("\n")
 	}
@@ -252,7 +252,7 @@ func (m Model) renderRow(a account.Account, selected bool, hw int) string {
 	if selected {
 		cursor = ui.AccentStyle.Render("▸ ")
 	}
-	tag := ui.Handle(a.Issuer+a.Account, pad(a.Handle, hw))
+	tag := ui.Handle(a.Issuer+a.Account, pad(ui.Sanitize(a.Handle), hw))
 	name := ui.IssuerStyle.Render(pad(labelOf(a), 26))
 
 	c, err := code.For(a, m.now)
@@ -282,9 +282,9 @@ func (m Model) renderRow(a account.Account, selected bool, hw int) string {
 
 func labelOf(a account.Account) string {
 	if a.Issuer != "" {
-		return a.Issuer
+		return ui.Sanitize(a.Issuer)
 	}
-	return a.Account
+	return ui.Sanitize(a.Account)
 }
 
 func at(rows []account.Account, i int) (account.Account, bool) {

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ibrahemid/tessera/go/internal/procenv"
 	"github.com/spf13/cobra"
 )
 
@@ -42,6 +43,7 @@ func spawnClipClear(seconds int, codeText string) error {
 		return fmt.Errorf("write digest: %w", err)
 	}
 	child := exec.Command(exe, "__clip-clear", strconv.Itoa(seconds))
+	child.Env = procenv.Child()
 	child.Stdin, child.Stdout, child.Stderr = r, nil, nil
 	child.SysProcAttr = detachedProcAttr()
 	return child.Start()

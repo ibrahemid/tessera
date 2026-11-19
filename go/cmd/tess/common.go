@@ -1,13 +1,15 @@
 package main
 
 import (
-	"bufio"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
 	"github.com/ibrahemid/tessera/go/internal/code"
@@ -41,6 +43,16 @@ func readPassphrase(prompt string) (string, error) {
 	return promptPassphrase(prompt)
 }
 
+// openWithPassphrase checks pass against env. A wrong passphrase that came
+// from $TESSERA_PASSPHRASE is reported as that variable's, so the fix is clear.
+func openWithPassphrase(env *vault.Envelope, path, pass string) error {
+	_, err := env.Open(pass)
+	if err != nil && errors.Is(err, vault.ErrWrongPassphrase) && pass == os.Getenv("TESSERA_PASSPHRASE") {
+		return &passphraseSourceError{source: "TESSERA_PASSPHRASE", path: path, err: err}
+	}
+	return err
+}
+
 // promptPassphrase reads a passphrase from the terminal without echo, ignoring
 // $TESSERA_PASSPHRASE (env resolution is handled by the caller).
 func promptPassphrase(prompt string) (string, error) {
@@ -55,15 +67,15 @@ func promptPassphrase(prompt string) (string, error) {
 
 // confirmYN prints prompt and returns true only for an explicit y/yes.
 func confirmYN(prompt string) bool {
-	fmt.Fprint(os.Stderr, prompt)
-	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
-	s := strings.ToLower(strings.TrimSpace(line))
+	line, _ := promptLine(prompt)
+	s := strings.ToLower(line)
 	return s == "y" || s == "yes"
 }
 
 // unlockProvider supplies the side effects of passphrase resolution so the
 // ordering logic in resolvePassphrase stays pure and unit-testable.
 type unlockProvider struct {
+	path        string                              // vault path, named when a stored passphrase fails
 	envPass     string                              // $TESSERA_PASSPHRASE ("" if unset)
 	lookup      func() (string, bool, error)        // silent keychain lookup for this vault
 	store       func(pass string) error             // persist pass to the keychain
@@ -81,21 +93,29 @@ func resolvePassphrase(p unlockProvider) (string, []account.Account, error) {
 	if p.envPass != "" {
 		accts, err := p.tryOpen(p.envPass)
 		if err != nil {
+			if errors.Is(err, vault.ErrWrongPassphrase) {
+				return "", nil, &passphraseSourceError{source: "TESSERA_PASSPHRASE", path: p.path, err: err}
+			}
 			return "", nil, err
 		}
 		return p.envPass, accts, nil
 	}
 
 	stale := false // a keychain passphrase that no longer opens the vault (rekeyed)
+	var staleErr error
 	if kp, hit, err := p.lookup(); err == nil && hit {
-		if accts, oerr := p.tryOpen(kp); oerr == nil {
+		accts, oerr := p.tryOpen(kp)
+		if oerr == nil {
 			return kp, accts, nil
 		}
-		stale = true
+		stale, staleErr = true, oerr
 	}
 
 	entered, err := p.prompt("Vault passphrase: ")
 	if err != nil {
+		if stale && errors.Is(staleErr, vault.ErrWrongPassphrase) {
+			return "", nil, &passphraseSourceError{source: sourceKeychain, path: p.path, err: staleErr}
+		}
 		return "", nil, err
 	}
 	accts, err := p.tryOpen(entered)
@@ -143,9 +163,10 @@ func loadSession(path string) (*session, error) {
 	if err != nil {
 		return nil, err
 	}
-	isTTY := term.IsTerminal(int(os.Stdin.Fd()))
+	isTTY := stdinIsTTY()
 	var dek []byte
 	pass, accts, err := resolvePassphrase(unlockProvider{
+		path:    path,
 		envPass: os.Getenv("TESSERA_PASSPHRASE"),
 		lookup:  func() (string, bool, error) { return keychain.Lookup(path) },
 		store:   func(p string) error { return keychain.Store(path, p) },
@@ -293,20 +314,38 @@ func (s *session) resolveMatches(query string) ([]int, error) {
 	if len(stage) > 0 {
 		return stage, nil
 	}
+	if looksLikeSecret(query) {
+		return nil, errSecretQuery
+	}
 	return nil, fmt.Errorf("no account matches %q", query)
+}
+
+// errSecretQuery answers a query that is a setup key or an otpauth URI rather
+// than an account name, without repeating it.
+var errSecretQuery = errors.New("that looks like a secret, not an account; add it with `tess add`")
+
+// errAmbiguous reports a query that matched several accounts when the match
+// table went to stderr. Exit status 2 tells a script it named no single account.
+func errAmbiguous(n int, query string) error {
+	return &exitError{code: 2, err: fmt.Errorf("%d accounts match %q; pass an alias", n, query)}
 }
 
 // single resolves query to exactly one account index. On multiple matches it
 // prints the disambiguation table and returns an error so the command exits
-// non-zero (it cannot act without a unique target).
+// non-zero (it cannot act without a unique target). When stdout is not a
+// terminal the table goes to stderr, out of the way of a script reading stdout.
 func (s *session) single(cmd *cobra.Command, query string) (int, error) {
 	idxs, err := s.resolveMatches(query)
 	if err != nil {
 		return -1, err
 	}
 	if len(idxs) > 1 {
+		if !stdoutIsTTY() {
+			printMatchTableTo(cmd.ErrOrStderr(), s.accounts, idxs, false)
+			return -1, errAmbiguous(len(idxs), query)
+		}
 		printMatchTable(cmd, s.accounts, idxs, false)
-		return -1, fmt.Errorf("be specific: use a handle")
+		return -1, fmt.Errorf("be specific: use an alias")
 	}
 	return idxs[0], nil
 }
@@ -316,30 +355,36 @@ func (s *session) single(cmd *cobra.Command, query string) (int, error) {
 // each account's current code (used by `tess code` without --copy). The handle
 // column is never truncated: it is the string the user types.
 func printMatchTable(cmd *cobra.Command, accts []account.Account, idxs []int, withCodes bool) {
+	printMatchTableTo(cmd.OutOrStdout(), accts, idxs, withCodes)
+}
+
+// printMatchTableTo writes the match table to w.
+func printMatchTableTo(w io.Writer, accts []account.Account, idxs []int, withCodes bool) {
 	hw, iw, aw := len("handle"), len("issuer"), len("account")
 	for _, i := range idxs {
-		hw = max(hw, len(accts[i].Handle))
-		iw = max(iw, len([]rune(accts[i].Issuer)))
-		aw = max(aw, len([]rune(accts[i].Account)))
+		hw = max(hw, utf8.RuneCountInString(displayHandle(accts[i])))
+		iw = max(iw, utf8.RuneCountInString(ui.Sanitize(accts[i].Issuer)))
+		aw = max(aw, utf8.RuneCountInString(ui.Sanitize(accts[i].Account)))
 	}
 	header := fmt.Sprintf("%s  %s  %s", padRight("handle", hw), padRight("issuer", iw), "account")
 	if withCodes {
 		header = fmt.Sprintf("%s  %s  %s  %s", padRight("handle", hw), padRight("issuer", iw), padRight("account", aw), "code")
 	}
-	out(cmd, "%s", ui.SubtleStyle.Render(header))
+	fmt.Fprintln(w, ui.SubtleStyle.Render(header))
 	t := now()
 	for _, i := range idxs {
 		a := accts[i]
-		h := ui.Handle(a.Issuer+a.Account, padRight(a.Handle, hw))
+		h := ui.Handle(a.Issuer+a.Account, padRight(displayHandle(a), hw))
+		issuer, acct := ui.Sanitize(a.Issuer), ui.Sanitize(a.Account)
 		if withCodes {
 			c, err := genCode(a, t)
 			if err != nil {
 				c = "------"
 			}
-			out(cmd, "%s  %s  %s  %s", h, padRight(a.Issuer, iw), padRight(a.Account, aw), ui.CodeStyle.Render(ui.GroupCode(c)))
+			fmt.Fprintf(w, "%s  %s  %s  %s\n", h, padRight(issuer, iw), padRight(acct, aw), ui.CodeStyle.Render(ui.GroupCode(c)))
 			continue
 		}
-		out(cmd, "%s  %s  %s", h, padRight(a.Issuer, iw), a.Account)
+		fmt.Fprintf(w, "%s  %s  %s\n", h, padRight(issuer, iw), acct)
 	}
 }
 
@@ -348,11 +393,11 @@ func printMatchTable(cmd *cobra.Command, accts []account.Account, idxs []int, wi
 func setHandle(s *session, idx int, newHandle string) error {
 	h := strings.ToLower(strings.TrimSpace(newHandle))
 	if !account.ValidHandle(h) {
-		return fmt.Errorf("invalid handle %q: 1-12 chars, lowercase letter first, then letters/digits", newHandle)
+		return fmt.Errorf("invalid alias %q: 1-12 chars, lowercase letter first, then letters/digits", newHandle)
 	}
 	for i, a := range s.accounts {
 		if i != idx && a.Handle == h {
-			return fmt.Errorf("handle %q already used by %s", h, label(a))
+			return fmt.Errorf("alias %q already used by %s", h, label(a))
 		}
 	}
 	s.accounts[idx].Handle = h
@@ -365,19 +410,26 @@ func genCode(a account.Account, t time.Time) (string, error) {
 	return code.For(a, t)
 }
 
+// label is an account's display name, issuer and account, with control and
+// bidi characters escaped so vault text cannot drive the terminal.
 func label(a account.Account) string {
 	if a.Issuer != "" {
-		return a.Issuer + " (" + a.Account + ")"
+		return ui.Sanitize(a.Issuer + " (" + a.Account + ")")
 	}
-	return a.Account
+	return ui.Sanitize(a.Account)
 }
 
-// labelText is the primary display name (issuer, else account).
+// labelText is the primary display name (issuer, else account), escaped like label.
 func labelText(a account.Account) string {
 	if a.Issuer != "" {
-		return a.Issuer
+		return ui.Sanitize(a.Issuer)
 	}
-	return a.Account
+	return ui.Sanitize(a.Account)
+}
+
+// displayHandle is an account's alias, escaped for display.
+func displayHandle(a account.Account) string {
+	return ui.Sanitize(a.Handle)
 }
 
 // handleWidth returns the widest handle among accts, so the handle column can
@@ -385,9 +437,7 @@ func labelText(a account.Account) string {
 func handleWidth(accts []account.Account) int {
 	w := 0
 	for _, a := range accts {
-		if len(a.Handle) > w {
-			w = len(a.Handle)
-		}
+		w = max(w, utf8.RuneCountInString(displayHandle(a)))
 	}
 	return w
 }
@@ -414,9 +464,13 @@ var now = time.Now
 const minPassphraseLen = 8
 
 // requireNewVaultPassphrase prompts twice and confirms a match. `vault init`
-// has no current passphrase, so $TESSERA_PASSPHRASE is the scripted source.
+// has no current passphrase, so $TESSERA_PASSPHRASE is the scripted source,
+// held to the same length floor as a typed one.
 func requireNewVaultPassphrase() (string, error) {
 	if p := os.Getenv("TESSERA_PASSPHRASE"); p != "" {
+		if len(p) < minPassphraseLen {
+			return "", fmt.Errorf("$TESSERA_PASSPHRASE must be at least %d characters", minPassphraseLen)
+		}
 		return p, nil
 	}
 	return promptNewPassphrase()
@@ -434,7 +488,7 @@ func requireChangedVaultPassphrase() (string, error) {
 		}
 		return p, nil
 	}
-	if !term.IsTerminal(int(os.Stdin.Fd())) {
+	if !stdinIsTTY() {
 		return "", fmt.Errorf("set $TESSERA_NEW_PASSPHRASE or run on a terminal to change the passphrase")
 	}
 	return promptNewPassphrase()

@@ -1,13 +1,20 @@
 package main
 
 import (
+	"fmt"
+
+	"github.com/ibrahemid/tessera/go/internal/ui"
 	"github.com/spf13/cobra"
 )
 
 func newRemoveCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:               "rm <query>",
-		Short:             "Remove an account",
+	var yes bool
+	cmd := &cobra.Command{
+		Use:     "rm <query>",
+		Aliases: []string{"remove", "delete"},
+		Short:   "Remove an account",
+		Long: `Remove an account and its secret from the vault. On a terminal it asks
+first; --yes skips the question and is required when stdin is not a terminal.`,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeFirstArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -21,6 +28,14 @@ func newRemoveCmd() *cobra.Command {
 				return err
 			}
 			removed := label(s.accounts[idx])
+			if !yes {
+				if !stdinIsTTY() {
+					return fmt.Errorf("refusing to remove %s without --yes (stdin is not a terminal)", removed)
+				}
+				if !confirmYN(fmt.Sprintf("Remove %s (%s)? Its secret is deleted from the vault. [y/N] ", removed, displayHandle(s.accounts[idx]))) {
+					return nil
+				}
+			}
 			s.accounts = append(s.accounts[:idx], s.accounts[idx+1:]...)
 			if err := s.save(); err != nil {
 				return err
@@ -29,16 +44,23 @@ func newRemoveCmd() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "remove without asking")
+	return cmd
 }
 
 func newRenameCmd() *cobra.Command {
-	var issuer, acct, handle string
+	var issuer, acct, alias string
 	cmd := &cobra.Command{
 		Use:               "rename <query>",
-		Short:             "Rename an account's issuer, account label, and/or handle",
+		Short:             "Rename an account's issuer, account label, or alias",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeFirstArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			changed := cmd.Flags().Changed
+			aliasSet := changed("alias") || changed("handle")
+			if !aliasSet && !changed("issuer") && !changed("account") {
+				return fmt.Errorf("nothing to change: pass --issuer, --account or --alias")
+			}
 			s, err := openSession()
 			if err != nil {
 				return err
@@ -48,8 +70,8 @@ func newRenameCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if cmd.Flags().Changed("handle") {
-				if err := setHandle(s, idx, handle); err != nil {
+			if aliasSet {
+				if err := setHandle(s, idx, alias); err != nil {
 					return err
 				}
 			}
@@ -63,20 +85,22 @@ func newRenameCmd() *cobra.Command {
 			if err := s.save(); err != nil {
 				return err
 			}
-			out(cmd, "Renamed %s (handle %s)", label(s.accounts[idx]), s.accounts[idx].Handle)
+			out(cmd, "Renamed %s (alias %s)", label(s.accounts[idx]), displayHandle(s.accounts[idx]))
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&issuer, "issuer", "", "new issuer")
 	cmd.Flags().StringVar(&acct, "account", "", "new account label")
-	cmd.Flags().StringVar(&handle, "handle", "", "new handle (short identifier)")
+	cmd.Flags().StringVar(&alias, "alias", "", "new alias (the short name you type to reference the account)")
+	cmd.Flags().StringVar(&alias, "handle", "", "new alias")
+	_ = cmd.Flags().MarkHidden("handle")
 	return cmd
 }
 
 func newAliasCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:               "alias <account> <handle>",
-		Short:             "Set an account's handle (the short name you type to reference it)",
+		Use:               "alias <account> <alias>",
+		Short:             "Set an account's alias (the short name you type to reference it)",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeFirstArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -95,7 +119,7 @@ func newAliasCmd() *cobra.Command {
 			if err := s.save(); err != nil {
 				return err
 			}
-			out(cmd, "Set handle of %s to %s", label(s.accounts[idx]), s.accounts[idx].Handle)
+			out(cmd, "Set alias of %s to %s", label(s.accounts[idx]), displayHandle(s.accounts[idx]))
 			return nil
 		},
 	}
@@ -122,7 +146,7 @@ func newMoveCmd() *cobra.Command {
 			if err := s.save(); err != nil {
 				return err
 			}
-			out(cmd, "Moved %s to /%s", label(s.accounts[idx]), args[1])
+			out(cmd, "Moved %s to /%s", label(s.accounts[idx]), ui.Sanitize(args[1]))
 			return nil
 		},
 	}
@@ -147,6 +171,10 @@ func newTagCmd() *cobra.Command {
 			}
 			tag := args[1]
 			a := &s.accounts[idx]
+			if remove && !containsTag(a.Tags, tag) {
+				out(cmd, "%s has no tag %s", label(*a), ui.Sanitize(tag))
+				return nil
+			}
 			if remove {
 				var kept []string
 				for _, t := range a.Tags {

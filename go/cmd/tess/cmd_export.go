@@ -12,6 +12,7 @@ import (
 	"github.com/ibrahemid/tessera/go/internal/otpauth"
 	"github.com/ibrahemid/tessera/go/internal/qr"
 	"github.com/ibrahemid/tessera/go/internal/store"
+	"github.com/ibrahemid/tessera/go/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -172,7 +173,7 @@ func writeExportFiles(cmd *cobra.Command, files []exporters.File, outPath string
 		if err := os.WriteFile(outPath, files[0].Data, 0o600); err != nil {
 			return fmt.Errorf("write %q: %w", outPath, err)
 		}
-		out(cmd, "Wrote %s", outPath)
+		out(cmd, "Wrote %s", ui.Sanitize(outPath))
 		return nil
 	}
 	dir := strings.TrimSuffix(outPath, string(os.PathSeparator))
@@ -184,7 +185,7 @@ func writeExportFiles(cmd *cobra.Command, files []exporters.File, outPath string
 		if err := os.WriteFile(path, f.Data, 0o600); err != nil {
 			return fmt.Errorf("write %q: %w", path, err)
 		}
-		out(cmd, "Wrote %s", path)
+		out(cmd, "Wrote %s", ui.Sanitize(path))
 	}
 	return nil
 }
@@ -193,7 +194,7 @@ func writeExportFiles(cmd *cobra.Command, files []exporters.File, outPath string
 // stderr so it never lands in a piped export file.
 func reportSkipped(cmd *cobra.Command, skipped []exporters.Skipped) {
 	for _, s := range skipped {
-		errOut(cmd, "Skipped %s: %s", s.Label, s.Reason)
+		errOut(cmd, "Skipped %s: %s", ui.Sanitize(s.Label), ui.Sanitize(s.Reason))
 	}
 }
 
@@ -211,19 +212,15 @@ func exportQR(cmd *cobra.Command, accts []account.Account, dir string) error {
 		if err := qr.EncodePNG(otpauth.Format(a), path, 512); err != nil {
 			return err
 		}
-		out(cmd, "Wrote %s", path)
+		out(cmd, "Wrote %s", ui.Sanitize(path))
 	}
 	return nil
 }
 
 // qrFileName builds a filesystem-safe PNG name from an account, falling back to
-// an index so two similar accounts don't collide.
+// an index so two similar accounts don't collide. The name has no path
+// separator and never starts with a dot.
 func qrFileName(a account.Account, i int) string {
-	base := strings.TrimSpace(a.Issuer + "-" + a.Account)
-	base = strings.Trim(base, "-")
-	if base == "" {
-		base = fmt.Sprintf("account-%d", i+1)
-	}
 	repl := func(r rune) rune {
 		switch r {
 		case '/', '\\', ':', '*', '?', '"', '<', '>', '|', ' ':
@@ -231,7 +228,12 @@ func qrFileName(a account.Account, i int) string {
 		}
 		return r
 	}
-	return strings.Map(repl, base) + fmt.Sprintf("-%d.png", i+1)
+	base := strings.Map(repl, strings.TrimSpace(ui.Sanitize(a.Issuer+"-"+a.Account)))
+	base = strings.Trim(base, "-.")
+	if base == "" {
+		base = fmt.Sprintf("account-%d", i+1)
+	}
+	return base + fmt.Sprintf("-%d.png", i+1)
 }
 
 func exportEncrypted(cmd *cobra.Command, dst string) error {
@@ -246,6 +248,6 @@ func exportEncrypted(cmd *cobra.Command, dst string) error {
 	if err := store.Save(dst, env); err != nil {
 		return err
 	}
-	out(cmd, "Wrote encrypted vault copy to %s", dst)
+	out(cmd, "Wrote encrypted vault copy to %s", ui.Sanitize(dst))
 	return nil
 }

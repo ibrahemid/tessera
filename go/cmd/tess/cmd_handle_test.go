@@ -213,8 +213,9 @@ func TestCodeMultiMatch(t *testing.T) {
 	path := withVault(t)
 	sealVault(t, path, []account.Account{totp("a", "ACME", "one", 1), totp("b", "ACME", "two", 2)})
 
-	// Every match is listed with its code, and the command exits 0: the table
-	// answers the question, so there is nothing to disambiguate for.
+	// On a terminal every match is listed with its code, and the command exits
+	// 0: the table answers the question, so there is nothing to disambiguate for.
+	stubTTY(t, true)
 	c := newCodeCmd()
 	var buf bytes.Buffer
 	c.SetOut(&buf)

@@ -1,12 +1,14 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
 	"github.com/ibrahemid/tessera/go/internal/store"
+	"github.com/ibrahemid/tessera/go/internal/ui"
 	"github.com/ibrahemid/tessera/go/internal/vault"
 	"github.com/spf13/cobra"
 )
@@ -53,8 +55,24 @@ $TESSERA_MERGE_PASSPHRASE).`,
 				if same {
 					return fmt.Errorf("source and destination are the same vault")
 				}
+				if !store.Exists(srcPath) {
+					return fmt.Errorf("no vault at %s", srcPath)
+				}
+				// The source lock is taken AFTER the session's lock on the
+				// destination, and always in that order, so two runs pointed at
+				// each other cannot deadlock. It is held from the read through the
+				// write so no other process edits the source in between.
+				lock, err := store.Acquire(srcPath)
+				if err != nil {
+					return err
+				}
+				defer func() {
+					if rerr := lock.Release(); rerr != nil {
+						fmt.Fprintln(os.Stderr, "warning:", rerr)
+					}
+				}()
 			}
-			srcAccts, env, dek, err := openMergeSource(srcPath, s.passphrase)
+			srcAccts, env, dek, err := loadMergeSource(srcPath, s.passphrase)
 			if err != nil {
 				return err
 			}
@@ -67,7 +85,7 @@ $TESSERA_MERGE_PASSPHRASE).`,
 						return err
 					}
 				}
-				out(cmd, "Merged %s: %d added, %d updated, %d unchanged", srcPath, added, updated, skipped)
+				out(cmd, "Merged %s: %d added, %d updated, %d unchanged", ui.Sanitize(srcPath), added, updated, skipped)
 				return nil
 			}
 			return mergeTwoWay(cmd, s, srcPath, srcAccts, env, dek)
@@ -77,22 +95,10 @@ $TESSERA_MERGE_PASSPHRASE).`,
 	return cmd
 }
 
-// mergeTwoWay reconciles both vaults in one pass. The local vault is written
-// first: if that save fails the source is left untouched, so a run either
-// advances both files or neither.
+// mergeTwoWay reconciles both vaults in one pass. The caller holds both vault
+// locks. The local vault is written first: if that save fails the source is
+// left untouched, so a run either advances both files or neither.
 func mergeTwoWay(cmd *cobra.Command, s *session, srcPath string, srcAccts []account.Account, env *vault.Envelope, dek []byte) error {
-	// The source lock is taken AFTER the session's lock on the destination, and
-	// always in that order, so two runs pointed at each other cannot deadlock.
-	lock, err := store.Acquire(srcPath)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if rerr := lock.Release(); rerr != nil {
-			fmt.Fprintln(os.Stderr, "warning:", rerr)
-		}
-	}()
-
 	local := make([]account.Account, len(s.accounts))
 	copy(local, s.accounts)
 
@@ -113,7 +119,7 @@ func mergeTwoWay(cmd *cobra.Command, s *session, srcPath string, srcAccts []acco
 		}
 	}
 	out(cmd, "Merged %s: +%d ~%d here, +%d ~%d there, %d unchanged",
-		srcPath, hereAdded, hereUpdated, thereAdded, thereUpdated, skipped)
+		ui.Sanitize(srcPath), hereAdded, hereUpdated, thereAdded, thereUpdated, skipped)
 	return nil
 }
 
@@ -167,6 +173,9 @@ func zeroBytes(b []byte) {
 	}
 }
 
+// loadMergeSource is openMergeSource, replaceable in tests.
+var loadMergeSource = openMergeSource
+
 // openMergeSource loads and decrypts the source vault, keeping the envelope and
 // the unwrapped DEK so a two-way merge can write it back without deriving the
 // key again. It tries the current vault's passphrase first (the common case: a
@@ -174,6 +183,9 @@ func zeroBytes(b []byte) {
 // interactive prompt.
 func openMergeSource(path, currentPass string) ([]account.Account, *vault.Envelope, []byte, error) {
 	env, err := store.Load(path)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, nil, nil, fmt.Errorf("no vault at %s", path)
+	}
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -194,6 +206,9 @@ func openMergeSource(path, currentPass string) ([]account.Account, *vault.Envelo
 	}
 	if p := os.Getenv("TESSERA_MERGE_PASSPHRASE"); p != "" {
 		accts, dek, oerr := open(p)
+		if errors.Is(oerr, vault.ErrWrongPassphrase) {
+			oerr = &passphraseSourceError{source: "TESSERA_MERGE_PASSPHRASE", path: path, err: oerr}
+		}
 		return accts, env, dek, oerr
 	}
 	pass, err := promptPassphrase("Source vault passphrase: ")

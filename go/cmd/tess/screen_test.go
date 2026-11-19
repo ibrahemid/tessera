@@ -111,11 +111,15 @@ func TestAddStdinReportsUnparsableInput(t *testing.T) {
 	sealVault(t, path, []account.Account{})
 	stubStdin(t, "not an otpauth uri\n")
 
-	out, err := runAdd(t, "-")
-	if err == nil {
+	c := newAddCmd()
+	var stderr bytes.Buffer
+	c.SetOut(&bytes.Buffer{})
+	c.SetErr(&stderr)
+	c.SetArgs([]string{"-"})
+	if err := c.Execute(); err == nil {
 		t.Fatal("unparsable stdin must not exit zero")
 	}
-	if !strings.Contains(out, "stdin") {
-		t.Errorf("the problem should be attributed to stdin, got %q", out)
+	if !strings.Contains(stderr.String(), "stdin line 1") {
+		t.Errorf("the problem should be attributed to stdin on stderr, got %q", stderr.String())
 	}
 }

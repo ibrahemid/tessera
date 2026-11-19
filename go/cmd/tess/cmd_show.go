@@ -7,6 +7,7 @@ import (
 	"github.com/ibrahemid/tessera/go/internal/account"
 	"github.com/ibrahemid/tessera/go/internal/base32x"
 	"github.com/ibrahemid/tessera/go/internal/otpauth"
+	"github.com/ibrahemid/tessera/go/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -37,7 +38,7 @@ func newShowCmd() *cobra.Command {
 			}
 			a := s.accounts[idx]
 			for _, row := range showRows(a) {
-				out(cmd, "%-10s %s", row[0], row[1])
+				out(cmd, "%-10s %s", row[0], ui.Sanitize(row[1]))
 			}
 			if withSecret {
 				out(cmd, "%-10s %s", "secret", base32x.EncodeNoPad(a.Secret))

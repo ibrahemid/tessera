@@ -68,10 +68,10 @@ func completeHandles(prefix string) ([]string, cobra.ShellCompDirective) {
 			continue
 		}
 		if l := label(a); l != "" {
-			matches = append(matches, a.Handle+"\t"+l)
+			matches = append(matches, displayHandle(a)+"\t"+l)
 			continue
 		}
-		matches = append(matches, a.Handle)
+		matches = append(matches, displayHandle(a))
 	}
 	return matches, cobra.ShellCompDirectiveNoFileComp
 }

@@ -191,9 +191,10 @@ func TestAddCommandListsFailuresAndStillAdds(t *testing.T) {
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	var buf bytes.Buffer
+	var buf, errBuf bytes.Buffer
 	c := newAddCmd()
 	c.SetOut(&buf)
+	c.SetErr(&errBuf)
 	c.SetArgs([]string{path})
 	if err := c.Execute(); err != nil {
 		t.Fatalf("add: %v", err)
@@ -202,8 +203,8 @@ func TestAddCommandListsFailuresAndStillAdds(t *testing.T) {
 	if !strings.Contains(got, "Added GitHub") {
 		t.Errorf("expected the good account to be added:\n%s", got)
 	}
-	if !strings.Contains(got, "Could not import 1 item(s)") || !strings.Contains(got, "line 2") {
-		t.Errorf("expected the failed line to be listed:\n%s", got)
+	if problems := errBuf.String(); !strings.Contains(problems, "Could not import 1 item:") || !strings.Contains(problems, "line 2") {
+		t.Errorf("expected the failed line to be listed on stderr:\n%s", problems)
 	}
 
 	s, err := openSession()

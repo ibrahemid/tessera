@@ -10,6 +10,7 @@ import (
 	"github.com/ibrahemid/tessera/go/internal/account"
 	"github.com/ibrahemid/tessera/go/internal/keychain"
 	"github.com/ibrahemid/tessera/go/internal/store"
+	"github.com/ibrahemid/tessera/go/internal/ui"
 	"github.com/ibrahemid/tessera/go/internal/vault"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -120,7 +121,7 @@ prompting. The passphrase is verified against the vault before it is stored.`,
 			if err != nil {
 				return err
 			}
-			if _, err := env.Open(pass); err != nil {
+			if err := openWithPassphrase(env, path, pass); err != nil {
 				return err
 			}
 			if err := keychain.Store(path, pass); err != nil {
@@ -168,9 +169,9 @@ keychain entry exists. Nothing is decrypted and the passphrase is never shown.`,
 			} else {
 				out(cmd, "File:     %d bytes, modified %s", info.Size(), info.ModTime().Format("2006-01-02 15:04"))
 				if env, err := store.Load(path); err != nil {
-					out(cmd, "Wraps:    unreadable (%v)", err)
+					out(cmd, "Wraps:    unreadable (%s)", ui.Sanitize(userMessage(err)))
 				} else {
-					out(cmd, "Wraps:    %s", strings.Join(env.WrapTypes(), ", "))
+					out(cmd, "Wraps:    %s", ui.Sanitize(strings.Join(env.WrapTypes(), ", ")))
 				}
 			}
 			if !keychain.Supported() {
@@ -180,7 +181,7 @@ keychain entry exists. Nothing is decrypted and the passphrase is never shown.`,
 			has, err := keychain.Has(path)
 			switch {
 			case err != nil:
-				out(cmd, "Keychain: unknown (%v)", err)
+				out(cmd, "Keychain: unknown (%s)", ui.Sanitize(userMessage(err)))
 			case has:
 				out(cmd, "Keychain: entry present")
 			default:
@@ -212,7 +213,7 @@ $TESSERA_NEW_PASSPHRASE or entered twice on a terminal.`,
 				if err != nil {
 					return err
 				}
-				if _, err := env.Open(old); err != nil {
+				if err := openWithPassphrase(env, path, old); err != nil {
 					return err
 				}
 				newPass, err := requireChangedVaultPassphrase()

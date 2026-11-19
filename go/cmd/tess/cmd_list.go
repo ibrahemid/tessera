@@ -40,6 +40,10 @@ func newListCmd() *cobra.Command {
 				out(cmd, "%s", mustJSON(rows))
 				return nil
 			}
+			if len(s.accounts) == 0 {
+				out(cmd, "%s", ui.SubtleStyle.Render("No accounts. Add one with `tess add`."))
+				return nil
+			}
 			if len(accts) == 0 {
 				out(cmd, "%s", ui.SubtleStyle.Render("No accounts."))
 				return nil
@@ -53,11 +57,12 @@ func newListCmd() *cobra.Command {
 				if len(a.Tags) > 0 {
 					meta += " #" + strings.Join(a.Tags, " #")
 				}
+				meta = ui.Sanitize(meta)
 				pin := "  "
 				if a.Pinned {
 					pin = ui.AccentStyle.Render("★ ")
 				}
-				out(cmd, "%s%s  %s  %s", pin, ui.Handle(a.Issuer+a.Account, padRight(a.Handle, hw)),
+				out(cmd, "%s%s  %s  %s", pin, ui.Handle(a.Issuer+a.Account, padRight(displayHandle(a), hw)),
 					ui.IssuerStyle.Render(padRight(label(a), 34)), ui.SubtleStyle.Render(meta))
 			}
 			return nil
