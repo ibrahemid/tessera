@@ -13,7 +13,7 @@ binCode = (HMAC[offset]&0x7f)<<24 | (HMAC[offset+1]&0xff)<<16
         | (HMAC[offset+2]&0xff)<<8 | (HMAC[offset+3]&0xff)
 code    = binCode mod 10^digits        // zero-padded
 ```
-Counter persisted; incremented on copy/view (CLI flag controls).
+Counter persisted; incremented on copy/view (CLI flag controls). The stored counter is in `0 ..= 2^63 - 2`: a parser MUST reject a larger value, and an implementation MUST refuse to advance a counter that is already at the maximum instead of overflowing.
 
 ## Steam Guard
 RFC 6238 base (HMAC-SHA1, period 30, T0 0). Differences:
@@ -26,6 +26,19 @@ Alphabet `A-Z2-7`, case-insensitive (uppercase-normalize), `=` padding (strip th
 
 Decoding is lenient about how a key is written and strict about what it means. After stripping, both cores MUST reject: empty input; a length of 1, 3 or 6 (mod 8), which no byte count can produce; and any input whose decoded bytes do not re-encode (unpadded) to the stripped, uppercased input, i.e. non-zero bits past the last whole byte (`MZ` decodes the same byte as `MY` and is rejected; `MZXW7` re-encodes to `MZXW6` and is rejected). Accepting these would store a secret other than the one the user was given, and it would generate wrong codes forever.
 
+## Text fields (issuer, account, folder, tags, note)
+
+Names arrive from QR codes, links and other apps' exports, and are later printed in terminals and lists. Every boundary that accepts one (otpauth and migration parsing, every importer, manual entry, CLI flags, rename and edit) MUST clean it the same way before the account is stored, so both cores store identical bytes:
+
+1. Remove these code points: U+0000 to U+001F, U+007F, U+0080 to U+009F (C0, DEL, C1), U+202A to U+202E and U+2066 to U+2069 (bidirectional embedding, override and isolate controls), U+FEFF.
+2. Trim leading and trailing Unicode white space.
+
+`note` follows the same rule with two exceptions: U+000A (line feed) and U+0009 (tab) are kept, and `\r\n` or a lone `\r` becomes `\n` before step 1.
+
+Left-to-right and right-to-left marks (U+200E, U+200F, U+061C) and zero-width joiners (U+200C, U+200D) are kept: Arabic, Hebrew, Persian and Indic names need them.
+
+Cleaning applies to new input only. A vault may already hold names with these characters, so every surface that prints a name MUST also escape them at display time (the CLI and TUI render a removed-class code point as a visible escape such as `\x1b`). `--json` output relies on JSON string escaping.
+
 ## otpauth:// URI (Key Uri Format)
 `otpauth://TYPE/LABEL?PARAMS`, TYPE = `totp|hotp|steam` (`steam` non-standard, see below). LABEL = `issuer:account`, percent-encoded, `issuer:` prefix optional. Params:
 
@@ -37,6 +50,11 @@ Decoding is lenient about how a key is written and strict about what it means. A
 | `digits` | no | `6` |
 | `period` | no (totp) | `30` |
 | `counter` | yes (hotp) | — |
+
+Strictness (both cores MUST match):
+- The scheme is matched case-insensitively (`OTPAUTH://` is an otpauth URI).
+- Invalid percent-encoding in the label or a query value (`Ac%ZZme`) rejects the URI.
+- `counter` for hotp is a base-10 integer in the range given under § HOTP.
 
 Steam in otpauth (both directions MUST match):
 - Parse: type `steam`, or the heuristic `otpauth://totp/...` with issuer `Steam` (case-insensitive), yields a Steam account. Steam digits default to `5`; a `digits` param other than `5` is rejected. Non-integer `digits`/`period` are rejected for all types.
@@ -79,6 +97,14 @@ message MigrationPayload {
 }
 ```
 `secret` is RAW bytes (NOT base32). Multi-QR exports share `batch_id`, indexed `batch_index` of `batch_size`; merge before completing import. Map `ALGORITHM_MD5` -> reject with a clear error (not supported by RFC TOTP clients).
+
+Strictness (both cores MUST match; the Go core is the reference):
+- The scheme and the host `offline` are matched case-insensitively.
+- An enum value this spec does not list (`algorithm`, `digits`, `type`) rejects the entry; it is never mapped to a default. `*_UNSPECIFIED` (0) maps to SHA1, six digits and TOTP respectively.
+- `name` and `issuer` go through § Text fields. A `name` of the form `issuer:account` is split on its first `:` when `issuer` is empty or equal to that prefix.
+- A TOTP entry whose issuer is `Steam` (case-insensitive) becomes a Steam account. An HOTP entry never does.
+- `counter` follows the range under § HOTP; a negative or larger value rejects the entry.
+- Protobuf decoding is strict: a field with the wrong wire type, a varint longer than 10 bytes or whose tenth byte exceeds 1, and a length that runs past the end of the buffer each reject the payload. Lengths are compared as unsigned 64-bit values before any narrowing.
 
 ## Input detection
 Both cores classify a text payload by the first matching rule, in order (Go `internal/detect`, Swift `InputDetect`, byte-identical):
@@ -177,6 +203,10 @@ Empty recognized export. A file that matches an export ladder entry, parses clea
 
 ## Supported image formats
 The app decodes images via ImageIO: PNG, JPEG, HEIC, WebP, TIFF, GIF, BMP. The CLI decodes via Go `x/image`: PNG, JPEG, WebP, TIFF, BMP. HEIC is app-only (no cgo in the security-audited Go module). Multiple QR codes in one image are all decoded; each decoded payload is classified via the text precedence above.
+
+Input limits (both cores MUST enforce them before decoding, so a small file cannot demand unbounded memory):
+- An image is rejected when its declared width times height exceeds 40,000,000 pixels, or its file is larger than 32 MiB. The dimensions are read from the header (`image.DecodeConfig`, `CGImageSource` properties) before any pixel buffer is allocated.
+- A text, JSON, CSV or archive input larger than 64 MiB is rejected. The same cap applies to `export.data` inside a 1PUX archive.
 
 ## Detection test table
 Canonical classification cases. Both suites port these; `kind` is one of `migration | otpauth | export-json | export-csv | export-binary | setup-key | invalid`.
