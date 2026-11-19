@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -101,5 +102,23 @@ func TestImportNamesTheOperatingSystemReason(t *testing.T) {
 	b = collectImport([]string{filepath.Join(t.TempDir(), "missing.png")}, nil, nil, nil, nil)
 	if len(b.problems) != 1 || b.problems[0].reason != "no such file or directory" {
 		t.Fatalf("want the OS reason for an image, got %+v", b.problems)
+	}
+}
+
+func TestReadProblemMapsPathErrorsToFixedWording(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"missing", &os.PathError{Op: "open", Path: "x", Err: fs.ErrNotExist}, "no such file or directory"},
+		{"denied", &os.PathError{Op: "open", Path: "x", Err: fs.ErrPermission}, "permission denied"},
+		{"other", &os.PathError{Op: "open", Path: "x", Err: errors.New("device busy")}, "device busy"},
+		{"unknown", errors.New("boom"), "could not read input"},
+	}
+	for _, c := range cases {
+		if got := readProblem(c.err); got != c.want {
+			t.Errorf("%s: readProblem = %q, want %q", c.name, got, c.want)
+		}
 	}
 }

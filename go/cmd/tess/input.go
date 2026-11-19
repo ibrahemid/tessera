@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"strings"
 
@@ -74,12 +75,17 @@ func readFileCapped(path string) ([]byte, error) {
 }
 
 // readProblem is the reason a file or stdin could not be read, as listed in an
-// import report: the operating system's reason, or the size limit.
+// import report: a fixed reason for a missing or unreadable file, the operating system's
+// reason otherwise, or the size limit.
 func readProblem(err error) string {
 	var pathErr *os.PathError
 	switch {
 	case errors.Is(err, errInputTooLarge):
 		return errInputTooLarge.Error()
+	case errors.Is(err, fs.ErrNotExist):
+		return "no such file or directory"
+	case errors.Is(err, fs.ErrPermission):
+		return "permission denied"
 	case errors.As(err, &pathErr):
 		return pathErr.Err.Error()
 	}

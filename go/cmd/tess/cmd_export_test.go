@@ -84,9 +84,7 @@ func TestExportFormatWritesFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat: %v", err)
 	}
-	if info.Mode().Perm() != 0o600 {
-		t.Errorf("export file mode = %v, want 0600", info.Mode().Perm())
-	}
+	assertMode(t, "export file", info, 0o600)
 }
 
 // TestExportFormatWritesDirectory covers the multi-file format: a directory is
@@ -118,17 +116,13 @@ func TestExportFormatWritesDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat dir: %v", err)
 	}
-	if info.Mode().Perm() != 0o700 {
-		t.Errorf("export directory mode = %v, want 0700", info.Mode().Perm())
-	}
+	assertMode(t, "export directory", info, 0o700)
 	for _, e := range entries {
 		fi, err := os.Stat(filepath.Join(dir, e.Name()))
 		if err != nil {
 			t.Fatalf("stat %s: %v", e.Name(), err)
 		}
-		if fi.Mode().Perm() != 0o600 {
-			t.Errorf("%s mode = %v, want 0600", e.Name(), fi.Mode().Perm())
-		}
+		assertMode(t, e.Name(), fi, 0o600)
 	}
 }
 
@@ -150,17 +144,13 @@ func TestExportFormatSingleBatchStillWritesADirectory(t *testing.T) {
 	if !info.IsDir() {
 		t.Fatalf("%q is not a directory", dir)
 	}
-	if info.Mode().Perm() != 0o700 {
-		t.Errorf("export directory mode = %v, want 0700", info.Mode().Perm())
-	}
+	assertMode(t, "export directory", info, 0o700)
 	file := filepath.Join(dir, "google-migration-1-of-1.png")
 	fi, err := os.Stat(file)
 	if err != nil {
 		t.Fatalf("stat %q: %v", file, err)
 	}
-	if fi.Mode().Perm() != 0o600 {
-		t.Errorf("%s mode = %v, want 0600", fi.Name(), fi.Mode().Perm())
-	}
+	assertMode(t, fi.Name(), fi, 0o600)
 }
 
 // TestExportFormatRejectsIllegalCombinations: every rejected run must write

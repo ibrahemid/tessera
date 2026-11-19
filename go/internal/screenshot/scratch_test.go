@@ -25,7 +25,7 @@ func (f fakeInfo) Sys() any           { return f.owner }
 
 func TestRuntimeDir(t *testing.T) {
 	const uid = 1000
-	const dir = "/run/user/1000"
+	dir := filepath.Join(t.TempDir(), "run", "user", "1000")
 	ownerOf := func(fi fs.FileInfo) (int, bool) {
 		owner, ok := fi.Sys().(int)
 		return owner, ok && owner >= 0
