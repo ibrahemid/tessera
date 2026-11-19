@@ -140,11 +140,20 @@ func TestAppOnlyVaultError(t *testing.T) {
 }
 
 func TestBase64URLSecretRejected(t *testing.T) {
-	// A b64-url value with '-'/'_' must fail std-base64 []byte decoding.
-	bad := `{"version":1,"aead":"xchacha20poly1305","wraps":[],"payload":{"nonce":"AA-_","ct":"AA"}}`
+	env, _ := Seal(accounts(), "pw")
+	env.Payload.Nonce = bytes.Repeat([]byte{0xfb, 0xff, 0xbf}, 8)
+	data, err := env.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	urlNonce := strings.Repeat("-_-_", 8)
+	bad := strings.Replace(string(data), strings.Repeat("+/+/", 8), urlNonce, 1)
+	if bad == string(data) {
+		t.Fatal("payload nonce not found in the envelope")
+	}
 	var e Envelope
-	if err := json.Unmarshal([]byte(bad), &e); err == nil {
-		t.Error("expected base64url to be rejected by std-base64 decoder")
+	if err := json.Unmarshal([]byte(bad), &e); !errors.Is(err, ErrCorrupt) {
+		t.Errorf("expected base64url to be rejected as corrupt, got %v", err)
 	}
 }
 
@@ -169,6 +178,9 @@ func TestInsaneArgon2ParamsRejected(t *testing.T) {
 		{"memory below floor", Argon2Params{V: 1, M: 1, T: 3, P: 4}},
 		{"memory below 8*p", Argon2Params{V: 1, M: 16, T: 3, P: 8}},
 		{"iterations absurd", Argon2Params{V: 1, M: 131072, T: 1 << 20, P: 4}},
+		{"parallelism 17", Argon2Params{V: 1, M: 131072, T: 3, P: 17}},
+		{"work above m*t bound", Argon2Params{V: 1, M: 1048576, T: 5, P: 4}},
+		{"work above m*t bound at max t for default m", Argon2Params{V: 1, M: 131072, T: 33, P: 4}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -207,25 +219,34 @@ func TestUnknownKDFSkipped(t *testing.T) {
 func TestZeroWrapEnvelopeRejected(t *testing.T) {
 	env, _ := Seal(accounts(), "pw")
 	env.Wraps = nil
-	data, err := env.Marshal()
-	if err != nil {
-		t.Fatal(err)
+	if _, err := env.Marshal(); !errors.Is(err, ErrNoWraps) {
+		t.Fatalf("Marshal of a zero-wrap envelope: expected ErrNoWraps, got %v", err)
 	}
-	if _, err := Unmarshal(data); !errors.Is(err, ErrNoWraps) {
+	data := `{"version":1,"aead":"xchacha20poly1305","wraps":[],"payload":{"nonce":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","ct":"AAAAAAAAAAAAAAAAAAAAAA=="}}`
+	if _, err := Unmarshal([]byte(data)); !errors.Is(err, ErrNoWraps) {
 		t.Fatalf("expected ErrNoWraps, got %v", err)
 	}
 }
 
 // TestStaleParamVersionResealed covers spec/vault-format.md § passphrase wrap:
-// a wrap written under an older params.v is re-wrapped at the current default
-// on the next successful unlock, payload untouched.
+// a wrap whose m, t or p is below the default is re-wrapped at the default on
+// the next successful unlock, payload untouched.
 func TestStaleParamVersionResealed(t *testing.T) {
 	env, _ := Seal(accounts(), "pw")
+	dek, err := env.UnwrapDEK("pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := DefaultArgon2
+	stale.T = 1
+	salt := bytes.Repeat([]byte{7}, saltLen)
+	b, err := seal(derivePassphraseKey("pw", salt, stale), dek)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env.Wraps[0] = wrap{Type: passphraseType, KDF: kdfName, Params: &stale, Salt: salt, Nonce: b.Nonce, CT: b.CT}
 	oldPayload := append([]byte(nil), env.Payload.CT...)
 	oldSalt := append([]byte(nil), env.Wraps[0].Salt...)
-	stale := *env.Wraps[0].Params
-	stale.V = 0
-	env.Wraps[0].Params = &stale
 
 	if env.NeedsPersist() {
 		t.Fatal("a freshly sealed envelope should not need persisting")
@@ -235,7 +256,10 @@ func TestStaleParamVersionResealed(t *testing.T) {
 		t.Fatalf("open with stale params: %v", err)
 	}
 	if !env.NeedsPersist() {
-		t.Fatal("a stale params.v wrap should be flagged for persistence")
+		t.Fatal("a wrap below the default cost should be flagged for persistence")
+	}
+	if env.Wraps[0].Params.T != DefaultArgon2.T {
+		t.Errorf("wrap t not upgraded: %+v", *env.Wraps[0].Params)
 	}
 	if env.Wraps[0].Params.V != DefaultArgon2.V || env.Wraps[0].Params.M != DefaultArgon2.M {
 		t.Errorf("wrap not upgraded to defaults: %+v", *env.Wraps[0].Params)
@@ -262,6 +286,20 @@ func TestCurrentParamVersionNotResealed(t *testing.T) {
 	}
 	if !bytes.Equal(env.Wraps[0].Salt, salt) {
 		t.Error("salt changed without a params.v bump")
+	}
+}
+
+func TestOldParamVersionAtDefaultCostNotResealed(t *testing.T) {
+	env, _ := Seal(accounts(), "pw")
+	old := *env.Wraps[0].Params
+	old.V = 0
+	env.Wraps[0].Params = &old
+	salt := append([]byte(nil), env.Wraps[0].Salt...)
+	if _, err := env.Open("pw"); err != nil {
+		t.Fatal(err)
+	}
+	if env.NeedsPersist() || !bytes.Equal(env.Wraps[0].Salt, salt) {
+		t.Error("params.v alone must not trigger an upgrade")
 	}
 }
 

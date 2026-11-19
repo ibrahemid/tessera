@@ -16,21 +16,26 @@ import (
 )
 
 const (
-	currentVersion = 1
-	aeadName       = "xchacha20poly1305"
-	kdfName        = "argon2id"
-	dekLen         = 32
-	saltLen        = 16
+	aeadName              = "xchacha20poly1305"
+	kdfName               = "argon2id"
+	passphraseType        = "passphrase"
+	secureEnclaveType     = "secure-enclave"
+	dekLen                = 32
+	saltLen               = 16
+	nonceLen              = chacha20poly1305.NonceSizeX
+	maxWraps              = 16
+	maxPassphraseAttempts = 4
 )
 
 // Bounds on the argon2id costs read from a vault file. The file is untrusted
 // input until the DEK is unwrapped, so costs that would panic x/crypto/argon2
-// (t=0, p=0) or exhaust the machine (multi-GiB m, unbounded t) are rejected
+// (t=0, p=0) or exhaust the machine (multi-GiB m, unbounded m*t) are rejected
 // before any derivation runs.
 const (
-	minArgon2M uint32 = 8       // KiB; argon2 needs m >= 8*p
-	maxArgon2M uint32 = 1 << 20 // KiB = 1 GiB
-	maxArgon2T uint32 = 1 << 16
+	minArgon2M    uint32 = 8       // KiB; argon2 needs m >= 8*p
+	maxArgon2M    uint32 = 1 << 20 // KiB = 1 GiB
+	maxArgon2P    uint8  = 16
+	maxArgon2Work uint64 = 4194304
 )
 
 // DefaultArgon2 are the pinned argon2id parameters (128 MiB, t=3, p=4).
@@ -45,6 +50,7 @@ var (
 	ErrWrongPassphrase    = errors.New("vault: wrong passphrase or corrupt vault")
 	ErrCorrupt            = errors.New("vault: corrupt or tampered vault")
 	ErrNoWraps            = errors.New("vault: envelope has no wraps (spec/vault-format.md requires at least one)")
+	ErrTooManyWraps       = errors.New("vault: envelope has more than 16 wraps")
 )
 
 // Argon2Params are the versioned argon2id cost parameters. M is memory in KiB.
@@ -58,52 +64,66 @@ type Argon2Params struct {
 // validate rejects costs a vault file must never carry.
 func (p Argon2Params) validate() error {
 	switch {
-	case p.T < 1 || p.T > maxArgon2T:
-		return fmt.Errorf("%w: argon2 t=%d out of range", ErrCorrupt, p.T)
-	case p.P < 1:
-		return fmt.Errorf("%w: argon2 p=%d out of range", ErrCorrupt, p.P)
+	case p.T < 1:
+		return corruptf("argon2 t=%d out of range", p.T)
+	case p.P < 1 || p.P > maxArgon2P:
+		return corruptf("argon2 p=%d out of range", p.P)
 	case p.M < minArgon2M || p.M > maxArgon2M:
-		return fmt.Errorf("%w: argon2 m=%d KiB out of range", ErrCorrupt, p.M)
+		return corruptf("argon2 m=%d KiB out of range", p.M)
 	case p.M < 8*uint32(p.P):
-		return fmt.Errorf("%w: argon2 m=%d KiB below 8*p (p=%d)", ErrCorrupt, p.M, p.P)
+		return corruptf("argon2 m=%d KiB below 8*p (p=%d)", p.M, p.P)
+	case uint64(p.M)*uint64(p.T) > maxArgon2Work:
+		return corruptf("argon2 m*t=%d exceeds %d", uint64(p.M)*uint64(p.T), maxArgon2Work)
 	}
 	return nil
 }
 
+func (p Argon2Params) belowDefault() bool {
+	return p.M < DefaultArgon2.M || p.T < DefaultArgon2.T || p.P < DefaultArgon2.P
+}
+
 // box is an XChaCha20-Poly1305 sealed blob (ct includes the 16-byte tag).
 type box struct {
-	Nonce []byte `json:"nonce"`
-	CT    []byte `json:"ct"`
+	Nonce []byte
+	CT    []byte
 }
 
 // wrap encrypts the DEK under one unlock method.
 type wrap struct {
-	Type   string        `json:"type"`
-	KDF    string        `json:"kdf,omitempty"`
-	Params *Argon2Params `json:"params,omitempty"`
-	Salt   []byte        `json:"salt,omitempty"`
-	SEKey  []byte        `json:"se_key,omitempty"`
-	Nonce  []byte        `json:"nonce"`
-	CT     []byte        `json:"ct"`
+	Type   string
+	KDF    string
+	Params *Argon2Params
+	Salt   []byte
+	SEKey  []byte
+	Nonce  []byte
+	CT     []byte
+
+	raw       json.RawMessage
+	paramsErr error
 }
 
 // Envelope is the on-disk vault structure.
 type Envelope struct {
-	Version int    `json:"version"`
-	AEAD    string `json:"aead"`
-	Wraps   []wrap `json:"wraps"`
-	Payload box    `json:"payload"`
+	Version int
+	AEAD    string
+	Wraps   []wrap
+	Payload box
 
 	// resealed records that a successful unwrap upgraded a passphrase wrap whose
-	// params.v was below the current default (spec/vault-format.md § passphrase
+	// cost was below the current default (spec/vault-format.md § passphrase
 	// wrap). The upgrade lives in memory until the caller writes the envelope.
 	resealed bool
+	extra    map[string]json.RawMessage
 }
 
 // NeedsPersist reports whether an in-memory wrap upgrade is waiting to be
 // written to disk. A read-only vault simply never writes it; the next writable
 // unlock redoes the upgrade.
 func (e *Envelope) NeedsPersist() bool { return e.resealed }
+
+func corruptf(format string, args ...any) error {
+	return fmt.Errorf("%w: %s", ErrCorrupt, fmt.Sprintf(format, args...))
+}
 
 func randBytes(n int) ([]byte, error) {
 	b := make([]byte, n)
@@ -145,12 +165,26 @@ func derivePassphraseKey(passphrase string, salt []byte, p Argon2Params) []byte 
 	return argon2.IDKey([]byte(passphrase), salt, p.T, p.M, p.P, dekLen)
 }
 
-// Seal creates a new envelope containing accounts, protected by a passphrase wrap.
-func Seal(accounts []account.Account, passphrase string) (*Envelope, error) {
+func validateAccounts(accounts []account.Account) error {
 	for _, a := range accounts {
 		if err := a.Validate(); err != nil {
-			return nil, err
+			return err
 		}
+	}
+	return nil
+}
+
+func checkVersion(v int) error {
+	if v != 1 && v != 2 {
+		return ErrUnsupportedVersion
+	}
+	return nil
+}
+
+// Seal creates a new envelope containing accounts, protected by a passphrase wrap.
+func Seal(accounts []account.Account, passphrase string) (*Envelope, error) {
+	if err := validateAccounts(accounts); err != nil {
+		return nil, err
 	}
 	dek, err := randBytes(dekLen)
 	if err != nil {
@@ -169,7 +203,7 @@ func Seal(accounts []account.Account, passphrase string) (*Envelope, error) {
 		return nil, err
 	}
 	return &Envelope{
-		Version: currentVersion,
+		Version: account.FormatVersion(accounts),
 		AEAD:    aeadName,
 		Wraps:   []wrap{pw},
 		Payload: payload,
@@ -188,7 +222,7 @@ func newPassphraseWrap(dek []byte, passphrase string) (wrap, error) {
 		return wrap{}, err
 	}
 	return wrap{
-		Type: "passphrase", KDF: kdfName, Params: &params,
+		Type: passphraseType, KDF: kdfName, Params: &params,
 		Salt: salt, Nonce: b.Nonce, CT: b.CT,
 	}, nil
 }
@@ -206,7 +240,12 @@ func (e *Envelope) Open(passphrase string) ([]account.Account, error) {
 // Encryption Key. Callers that perform several payload operations in one run
 // hold on to the DEK instead of paying for argon2id again.
 func (e *Envelope) UnwrapDEK(passphrase string) ([]byte, error) {
-	return e.unwrapWithPassphrase(passphrase)
+	dek, i, err := e.unwrapWithPassphrase(passphrase)
+	if err != nil {
+		return nil, err
+	}
+	e.upgradeWrap(i, dek, passphrase)
+	return dek, nil
 }
 
 // OpenWithDEK decrypts the payload with an already-unwrapped DEK.
@@ -218,69 +257,78 @@ func (e *Envelope) OpenWithDEK(dek []byte) ([]account.Account, error) {
 	return account.ParseCanonicalJSON(plain)
 }
 
-func (e *Envelope) unwrapWithPassphrase(passphrase string) ([]byte, error) {
-	if e.Version != currentVersion {
-		return nil, ErrUnsupportedVersion
+func (w *wrap) passphraseCheck() error {
+	switch {
+	case w.KDF != kdfName:
+		return corruptf("unsupported passphrase kdf %q", w.KDF)
+	case len(w.Salt) != saltLen:
+		return corruptf("passphrase salt is %d bytes, want %d", len(w.Salt), saltLen)
+	case w.paramsErr != nil:
+		return w.paramsErr
+	case w.Params == nil:
+		return corruptf("passphrase wrap has no argon2 params")
+	}
+	if err := w.Params.validate(); err != nil {
+		return err
+	}
+	if len(w.Nonce) != nonceLen {
+		return corruptf("wrap nonce is %d bytes, want %d", len(w.Nonce), nonceLen)
+	}
+	return nil
+}
+
+func (e *Envelope) unwrapWithPassphrase(passphrase string) ([]byte, int, error) {
+	if err := checkVersion(e.Version); err != nil {
+		return nil, -1, err
 	}
 	if e.AEAD != aeadName {
-		return nil, ErrUnsupportedAEAD
+		return nil, -1, ErrUnsupportedAEAD
 	}
-	found := false     // at least one wrap claims type "passphrase"
-	attempted := false // at least one of them was well-formed enough to derive against
-	var paramErr error
+	found := false
+	attempts := 0
+	var checkErr error
 	for i := range e.Wraps {
-		w := e.Wraps[i]
-		if w.Type != "passphrase" {
+		w := &e.Wraps[i]
+		if w.Type != passphraseType {
 			continue
 		}
 		found = true
-		// An unknown kdf is not argon2id; deriving with argon2id anyway would
-		// silently produce the wrong key instead of naming the real problem.
-		if w.KDF != kdfName {
-			if paramErr == nil {
-				paramErr = fmt.Errorf("%w: unsupported passphrase kdf %q", ErrCorrupt, w.KDF)
+		if err := w.passphraseCheck(); err != nil {
+			if checkErr == nil {
+				checkErr = err
 			}
 			continue
 		}
-		if w.Params == nil || len(w.Salt) != saltLen {
-			continue
+		if attempts == maxPassphraseAttempts {
+			break
 		}
-		if err := w.Params.validate(); err != nil {
-			if paramErr == nil {
-				paramErr = err
-			}
-			continue
-		}
-		attempted = true
+		attempts++
 		key := derivePassphraseKey(passphrase, w.Salt, *w.Params)
 		dek, err := open(key, box{Nonce: w.Nonce, CT: w.CT})
 		if err != nil {
 			continue
 		}
-		e.upgradeWrap(i, dek, passphrase)
-		return dek, nil
+		return dek, i, nil
 	}
 	if !found {
 		for _, w := range e.Wraps {
-			if w.Type == "secure-enclave" {
-				return nil, ErrAppOnlyVault
+			if w.Type == secureEnclaveType {
+				return nil, -1, ErrAppOnlyVault
 			}
 		}
-		return nil, ErrNoPassphraseWrap
+		return nil, -1, ErrNoPassphraseWrap
 	}
-	// A malformed wrap only explains the failure when no usable wrap was tried;
-	// otherwise the passphrase itself is what did not work.
-	if !attempted && paramErr != nil {
-		return nil, paramErr
+	if attempts == 0 && checkErr != nil {
+		return nil, -1, checkErr
 	}
-	return nil, ErrWrongPassphrase
+	return nil, -1, ErrWrongPassphrase
 }
 
 // upgradeWrap re-wraps the DEK at the current default cost when the wrap that
-// just opened carries an older params.v (spec/vault-format.md § passphrase
-// wrap). The payload is untouched; the caller persists on its next write.
+// just opened has m, t or p below it (spec/vault-format.md § passphrase wrap).
+// The payload is untouched; the caller persists on its next write.
 func (e *Envelope) upgradeWrap(i int, dek []byte, passphrase string) {
-	if e.Wraps[i].Params == nil || e.Wraps[i].Params.V >= DefaultArgon2.V {
+	if e.Wraps[i].Params == nil || !e.Wraps[i].Params.belowDefault() {
 		return
 	}
 	nw, err := newPassphraseWrap(dek, passphrase)
@@ -291,38 +339,17 @@ func (e *Envelope) upgradeWrap(i int, dek []byte, passphrase string) {
 	e.resealed = true
 }
 
-// ChangePassphrase re-wraps the existing DEK under a new passphrase, leaving the
-// payload untouched. Other wrap types (e.g. secure-enclave) are preserved.
+// ChangePassphrase rotates the DEK under a new passphrase (see RotatePassphrase).
 func (e *Envelope) ChangePassphrase(old, new string) error {
-	dek, err := e.unwrapWithPassphrase(old)
-	if err != nil {
-		return err
-	}
-	nw, err := newPassphraseWrap(dek, new)
-	if err != nil {
-		return err
-	}
-	out := nw.appendPreserving(e.Wraps)
-	e.Wraps = out
-	return nil
-}
-
-func (w wrap) appendPreserving(existing []wrap) []wrap {
-	out := make([]wrap, 0, len(existing)+1)
-	for _, e := range existing {
-		if e.Type == "passphrase" {
-			continue
-		}
-		out = append(out, e)
-	}
-	return append(out, w)
+	_, err := e.RotatePassphrase(old, new)
+	return err
 }
 
 // UpdateAccounts re-seals the payload with the new account list, reusing the
 // existing DEK (unwrapped via passphrase) so all wraps, including a Mac
 // secure-enclave wrap, are preserved.
 func (e *Envelope) UpdateAccounts(passphrase string, accounts []account.Account) error {
-	dek, err := e.unwrapWithPassphrase(passphrase)
+	dek, err := e.UnwrapDEK(passphrase)
 	if err != nil {
 		return err
 	}
@@ -333,10 +360,8 @@ func (e *Envelope) UpdateAccounts(passphrase string, accounts []account.Account)
 // command that mutates the vault derives argon2id once per run rather than once
 // per write. Wraps are untouched.
 func (e *Envelope) UpdateAccountsWithDEK(dek []byte, accounts []account.Account) error {
-	for _, a := range accounts {
-		if err := a.Validate(); err != nil {
-			return err
-		}
+	if err := validateAccounts(accounts); err != nil {
+		return err
 	}
 	plain, err := account.CanonicalJSON(accounts)
 	if err != nil {
@@ -347,6 +372,7 @@ func (e *Envelope) UpdateAccountsWithDEK(dek []byte, accounts []account.Account)
 		return err
 	}
 	e.Payload = b
+	e.Version = account.FormatVersion(accounts)
 	return nil
 }
 
@@ -358,29 +384,4 @@ func (e *Envelope) WrapTypes() []string {
 		types = append(types, w.Type)
 	}
 	return types
-}
-
-// Marshal serializes the envelope to JSON bytes for storage.
-func (e *Envelope) Marshal() ([]byte, error) {
-	return json.MarshalIndent(e, "", "  ")
-}
-
-// Unmarshal parses an envelope from JSON bytes.
-func Unmarshal(data []byte) (*Envelope, error) {
-	var e Envelope
-	if err := json.Unmarshal(data, &e); err != nil {
-		return nil, fmt.Errorf("vault: parse envelope: %w", err)
-	}
-	if e.Version != currentVersion {
-		return nil, ErrUnsupportedVersion
-	}
-	if e.AEAD != aeadName {
-		return nil, ErrUnsupportedAEAD
-	}
-	// spec/vault-format.md: wraps MUST be non-empty on disk; a zero-wrap file is
-	// permanently unopenable, so reject it at the door instead of at unlock.
-	if len(e.Wraps) == 0 {
-		return nil, ErrNoWraps
-	}
-	return &e, nil
 }
