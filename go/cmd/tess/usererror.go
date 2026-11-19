@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"runtime"
 	"strconv"
+	"strings"
 
 	"github.com/ibrahemid/tessera/go/internal/base32x"
 	"github.com/ibrahemid/tessera/go/internal/store"
 	"github.com/ibrahemid/tessera/go/internal/ui"
+	"github.com/ibrahemid/tessera/go/internal/vault"
 )
 
 // exitError carries a process exit status other than the default 1.
@@ -41,6 +44,41 @@ func (e *passphraseSourceError) Error() string {
 
 func (e *passphraseSourceError) Unwrap() error { return e.err }
 
+type restorableError struct {
+	path string
+	err  error
+}
+
+func (e *restorableError) Error() string { return e.err.Error() }
+func (e *restorableError) Unwrap() error { return e.err }
+
+func withRestoreHint(path string, err error) error {
+	if err == nil || !(errors.Is(err, vault.ErrWrongPassphrase) || errors.Is(err, vault.ErrCorrupt)) || !store.HasBackup(path) {
+		return err
+	}
+	return &restorableError{path: path, err: err}
+}
+
+func restoreCommand(path string) string {
+	cmd := "tess vault restore --bak"
+	if def, err := store.Resolve(""); err == nil && def == path {
+		return cmd
+	}
+	return cmd + " --vault " + quoteArg(path)
+}
+
+var shellSafe = regexp.MustCompile(`^[A-Za-z0-9_./:@%+=,~-]+$`)
+
+func quoteArg(s string) string {
+	switch {
+	case shellSafe.MatchString(s):
+		return s
+	case runtime.GOOS == "windows":
+		return `"` + s + `"`
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
 var (
 	packagePrefix  = regexp.MustCompile(`(^|: )(store|vault|otpauth|migration|base32x|secretstore|qr|account|importers|exporters|detect|procenv|code|otp|screenshot|clipboard|dbusx): `)
 	issuerMismatch = regexp.MustCompile(`issuer mismatch \(label ("(?:[^"\\]|\\.)*"), param ("(?:[^"\\]|\\.)*")\)`)
@@ -49,8 +87,18 @@ var (
 // userMessage turns an error from any layer into the sentence tess prints: the
 // internal package prefixes are dropped, and the errors a user can fix say how.
 func userMessage(err error) string {
+	var restorable *restorableError
+	var withBak *store.BackupAvailableError
 	var source *passphraseSourceError
 	switch {
+	case errors.As(err, &restorable):
+		lead := "The vault as it was before the last write"
+		if errors.Is(restorable.err, vault.ErrWrongPassphrase) {
+			lead = "If the passphrase is right, the vault file is damaged. The vault as it was before the last write"
+		}
+		return fmt.Sprintf("%s. %s is at %s; restore it with `%s`.", userMessage(restorable.err), lead, store.BackupPath(restorable.path), restoreCommand(restorable.path))
+	case errors.As(err, &withBak):
+		return fmt.Sprintf("cannot read the vault at %s (%s). The vault as it was before the last write is at %s; restore it with `%s`.", withBak.Path, userMessage(withBak.Err), withBak.Backup, restoreCommand(withBak.Path))
 	case errors.As(err, &source):
 		return source.Error()
 	case errors.Is(err, store.ErrNotFound):

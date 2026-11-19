@@ -49,10 +49,14 @@ func readPassphrase(prompt string) (string, error) {
 // from $TESSERA_PASSPHRASE is reported as that variable's, so the fix is clear.
 func openWithPassphrase(env *vault.Envelope, path, pass string) error {
 	_, err := env.Open(pass)
+	return unlockFailure(path, pass, err)
+}
+
+func unlockFailure(path, pass string, err error) error {
 	if err != nil && errors.Is(err, vault.ErrWrongPassphrase) && pass == os.Getenv("TESSERA_PASSPHRASE") {
-		return &passphraseSourceError{source: "TESSERA_PASSPHRASE", path: path, err: err}
+		err = &passphraseSourceError{source: "TESSERA_PASSPHRASE", path: path, err: err}
 	}
-	return err
+	return withRestoreHint(path, err)
 }
 
 // promptPassphrase reads a passphrase from the terminal without echo, ignoring
@@ -281,7 +285,7 @@ func unlockSession(path string, p unlockProvider) (*session, error) {
 	}
 	pass, accts, err := resolvePassphrase(p)
 	if err != nil {
-		return nil, err
+		return nil, withRestoreHint(path, err)
 	}
 	s := &session{path: path, env: env, passphrase: pass, dek: dek, accounts: accts}
 	// Migration: accounts written before handles existed gain one deterministically
@@ -291,7 +295,7 @@ func unlockSession(path string, p unlockProvider) (*session, error) {
 	// them from the same deterministic inputs.
 	if account.AssignHandles(s.accounts) || env.NeedsPersist() {
 		if err := env.UpdateAccountsWithDEK(dek, s.accounts); err == nil {
-			_ = store.Save(path, env)
+			_, _ = saveVault(warnOut, path, env, false)
 		}
 	}
 	return s, nil
@@ -359,7 +363,8 @@ func (s *session) save() error {
 	if err := s.env.UpdateAccountsWithDEK(s.dek, s.accounts); err != nil {
 		return err
 	}
-	return store.Save(s.path, s.env)
+	_, err := saveVault(warnOut, s.path, s.env, false)
+	return err
 }
 
 // indexByID returns the position of the account with the given id, or -1.

@@ -25,6 +25,9 @@ func newVaultCmd() *cobra.Command {
 	cmd.AddCommand(
 		newVaultInitCmd(),
 		newVaultPasswdCmd(),
+		newVaultRekeyCmd(),
+		newVaultBackupCmd(),
+		newVaultRestoreCmd(),
 		newVaultResetCmd(),
 		newVaultRememberCmd(),
 		newVaultForgetCmd(),
@@ -53,7 +56,7 @@ func newVaultInitCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := store.Save(path, env); err != nil {
+			if _, err := saveVault(cmd.ErrOrStderr(), path, env, false); err != nil {
 				return err
 			}
 			out(cmd, "Created vault at %s", path)
@@ -210,35 +213,47 @@ func newVaultForgetCmd() *cobra.Command {
 }
 
 func newVaultStatusCmd() *cobra.Command {
-	return &cobra.Command{
+	var asJSON bool
+	cmd := &cobra.Command{
 		Use:   "status",
-		Short: "Show the vault path, file details, and wrap methods",
+		Short: "Show the vault path, file details, and unlock methods",
 		Long: `Report the resolved vault path, whether the file exists, its size and
-modification time, the wrap methods in the envelope header, and whether the
-system secret store holds the passphrase. Nothing is decrypted and the
+modification time, the format version, the unlock methods in the envelope
+header and the argon2id cost of each passphrase unlock, whether <vault>.bak
+exists, the $TESSERA_BACKUP_DIR folder and the date of its newest backup, and
+which system secret store holds the passphrase. Nothing is decrypted and the
 passphrase is never shown.`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path, err := store.Resolve(vaultPath)
 			if err != nil {
 				return err
 			}
-			out(cmd, "Path:     %s", path)
-			if info, err := os.Stat(path); err != nil {
-				out(cmd, "File:     not found")
-			} else {
-				out(cmd, "File:     %d bytes, modified %s", info.Size(), info.ModTime().Format("2006-01-02 15:04"))
-				if env, err := store.Load(path); err != nil {
-					out(cmd, "Wraps:    unreadable (%s)", ui.Sanitize(userMessage(err)))
-				} else {
-					out(cmd, "Wraps:    %s", ui.Sanitize(strings.Join(env.WrapTypes(), ", ")))
-				}
-			}
+			st := readVaultStatus(path)
 			ctx, cancel := context.WithTimeout(cmd.Context(), storeProbeTimeout)
 			defer cancel()
+			if asJSON {
+				st.RememberedIn, st.LockedIn = []string{}, []string{}
+				for _, p := range secretstore.Locate(ctx, path) {
+					switch {
+					case p.Present:
+						st.RememberedIn = append(st.RememberedIn, p.Backend.Name())
+					case p.Locked:
+						st.LockedIn = append(st.LockedIn, p.Backend.Name())
+					}
+				}
+				out(cmd, "%s", mustJSON(st))
+				return nil
+			}
+			for _, line := range st.lines() {
+				out(cmd, "%s", line)
+			}
 			out(cmd, "%s", secretStatusLine(ctx, path, isKeychainWording))
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&asJSON, "json", false, "output JSON")
+	return cmd
 }
 
 // secretStatusLine reports what the secret stores hold for path. The keychain
@@ -304,45 +319,4 @@ func unavailableReasons(err error) string {
 		reasons = []string{"no secret store on this system"}
 	}
 	return strings.Join(reasons, "; ") + "; set TESSERA_PASSPHRASE for scripts"
-}
-
-func newVaultPasswdCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "passwd",
-		Short: "Change the vault passphrase",
-		Long: `Change the vault passphrase. The current passphrase is read from
-$TESSERA_PASSPHRASE or prompted for; the replacement is read from
-$TESSERA_NEW_PASSPHRASE or entered twice on a terminal.`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			path, err := store.Resolve(vaultPath)
-			if err != nil {
-				return err
-			}
-			return store.WithLock(path, func() error {
-				env, err := store.Load(path)
-				if err != nil {
-					return err
-				}
-				old, err := readPassphrase("Current passphrase: ")
-				if err != nil {
-					return err
-				}
-				if err := openWithPassphrase(env, path, old); err != nil {
-					return err
-				}
-				newPass, err := requireChangedVaultPassphrase()
-				if err != nil {
-					return err
-				}
-				if err := env.ChangePassphrase(old, newPass); err != nil {
-					return err
-				}
-				if err := store.Save(path, env); err != nil {
-					return err
-				}
-				out(cmd, "Passphrase changed")
-				return nil
-			})
-		},
-	}
 }

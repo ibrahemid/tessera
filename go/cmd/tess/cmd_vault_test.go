@@ -161,6 +161,7 @@ func TestVaultRememberForget(t *testing.T) {
 // runPasswd executes `vault passwd` and returns its error.
 func runPasswd(t *testing.T) error {
 	t.Helper()
+	swapStores(t, secretService())
 	c := newVaultPasswdCmd()
 	c.SetOut(io.Discard)
 	return c.Execute()
