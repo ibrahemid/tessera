@@ -70,7 +70,7 @@ struct FieldBox<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
         content
-            .textFieldStyle(.plain).font(Typo.label(13))
+            .textFieldStyle(.plain).font(Typo.label(13)).foregroundStyle(Palette.textPrimary)
             .padding(.horizontal, 11).padding(.vertical, 9)
             .background(Palette.surfaceHi, in: RoundedRectangle(cornerRadius: 9))
             .overlay(RoundedRectangle(cornerRadius: 9).stroke(Palette.border, lineWidth: 1))
