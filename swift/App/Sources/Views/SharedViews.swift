@@ -87,7 +87,7 @@ struct ActionButton: View {
     var body: some View {
         Button(title, action: action)
             .buttonStyle(.borderedProminent)
-            .tint(Palette.accent)
+            .tint(Palette.accentFill)
             .keyboardShortcut(.defaultAction)
             .disabled(!enabled)
     }
@@ -102,7 +102,7 @@ struct PrimaryButton: View {
         Button(action: action) {
             Text(title).font(Typo.label(13, .semibold)).foregroundStyle(Palette.onAccent)
                 .frame(maxWidth: .infinity).padding(.vertical, 9)
-                .background(Palette.accent, in: RoundedRectangle(cornerRadius: 9))
+                .background(Palette.accentFill, in: RoundedRectangle(cornerRadius: 9))
         }
         .buttonStyle(.plain)
         .opacity(enabled ? 1 : 0.45)   // dim the whole control; never blend the fill toward the bg
@@ -120,7 +120,7 @@ struct VaultActionButton: View {
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(Typo.label(13)).foregroundStyle(Palette.accent)
+                Text(title).font(Typo.label(13)).foregroundStyle(Palette.accentInk)
                 Text(subtitle).font(Typo.label(11)).foregroundStyle(Palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -140,7 +140,7 @@ struct FilterPill: View {
         Button(action: action) {
             Text(title)
                 .font(Typo.label(12.5, .medium))
-                .foregroundStyle(selected ? Palette.accent : Palette.textSecondary)
+                .foregroundStyle(selected ? Palette.accentInk : Palette.textSecondary)
                 .padding(.horizontal, 12).padding(.vertical, 5)
                 .background(selected ? Palette.accentWash : Color.clear,
                             in: RoundedRectangle(cornerRadius: 7))
@@ -155,7 +155,7 @@ struct SectionLabel: View {
     init(_ text: String) { self.text = text }
     var body: some View {
         HStack {
-            Text(text.uppercased()).font(Typo.label(10, .semibold)).tracking(0.6).foregroundStyle(Palette.textFaint)
+            Text(text.uppercased()).font(Typo.label(10, .semibold)).tracking(0.6).foregroundStyle(Palette.textSecondary)
             Spacer()
         }.padding(.horizontal, 4).padding(.top, 2)
     }
@@ -173,7 +173,18 @@ struct StatusLine: View {
     let text: String
     init(_ text: String) { self.text = text }
     var body: some View {
-        Label(text, systemImage: "checkmark.circle.fill").font(Typo.label(11)).foregroundStyle(Palette.accent)
+        Label(text, systemImage: "checkmark.circle.fill").font(Typo.label(11)).foregroundStyle(Palette.accentInk)
+    }
+}
+
+struct NoticeLine: View {
+    let notice: AppModel.Notice
+    init(_ notice: AppModel.Notice) { self.notice = notice }
+    var body: some View {
+        switch notice {
+        case .info(let text): StatusLine(text)
+        case .failure(let text): ErrorLine(text)
+        }
     }
 }
 
@@ -187,7 +198,7 @@ struct EmptyState: View {
             Text("Add your first account from an otpauth link or a QR code on screen.")
                 .multilineTextAlignment(.center).font(Typo.label(12)).foregroundStyle(Palette.textSecondary).frame(maxWidth: 320)
             Button(action: add) {
-                Label("Add account", systemImage: "plus").font(Typo.label(12, .semibold)).foregroundStyle(Palette.accent)
+                Label("Add account", systemImage: "plus").font(Typo.label(12, .semibold)).foregroundStyle(Palette.accentInk)
             }.buttonStyle(.plain).padding(.top, 2)
             if let openExisting {
                 Button(action: openExisting) {

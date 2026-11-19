@@ -44,7 +44,7 @@ extension AppModel {
             vaultUnreachable = true; isOpening = false; return
         case .createContainer:
             do { try await createFreshVault(); errorMessage = nil; isLocked = false }
-            catch { errorMessage = friendly(error) }
+            catch { errorMessage = UserMessage.textUnlessCancelled(for: error, context: .unlock) }
             lastVaultModified = store.modifiedAt
             isOpening = false; return
         case .loadExisting:
@@ -57,7 +57,7 @@ extension AppModel {
         do { env = try store.load() }
         catch {
             if store.isExternal { vaultUnreachable = true; isOpening = false; return }
-            errorMessage = friendly(error); isOpening = false; return
+            errorMessage = UserMessage.textUnlessCancelled(for: error, context: .unlock); isOpening = false; return
         }
 
         // No wrap this device can satisfy silently. Route via the pure decision:
@@ -98,7 +98,7 @@ extension AppModel {
     private func routeOpenFailure(_ error: Error, env: Envelope) {
         if case UnlockFailure.secureEnclave(let underlying) = error {
             if isRetryableAuth(underlying) {
-                errorMessage = friendly(underlying)
+                errorMessage = UserMessage.textUnlessCancelled(for: underlying, context: .unlock)
                 return
             }
             errorMessage = nil
@@ -117,7 +117,7 @@ extension AppModel {
             errorMessage = nil
             return
         }
-        errorMessage = friendly(error)
+        errorMessage = UserMessage.textUnlessCancelled(for: error, context: .unlock)
     }
 
     /// Point Tessera at an existing vault file (typically one created by the tess
@@ -127,7 +127,8 @@ extension AppModel {
     /// - Parameter guardSwitch: when true (the Settings switch), a valid pick is
     ///   confirmed in a dialog before the app repoints at it — the guard against
     ///   mistaking a backup for the live vault. Onboarding and relocate pass false.
-    func openExistingVault(guardSwitch: Bool = false) {
+    @discardableResult
+    func openExistingVault(guardSwitch: Bool = false) -> String? {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.json]
         panel.allowsOtherFileTypes = true
@@ -135,18 +136,17 @@ extension AppModel {
         panel.message = "Choose a vault created by the tess CLI (usually vault.json)."
         let hint = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/share/tessera")
         if FileManager.default.fileExists(atPath: hint.path) { panel.directoryURL = hint }
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
         // Reject anything that isn't a Tessera vault before touching the bookmark,
         // so a stray file never becomes the configured vault.
         guard let data = try? Data(contentsOf: url), (try? Envelope.decode(data)) != nil else {
-            errorMessage = "That file isn't a Tessera vault."; return
+            return "That file isn't a Tessera vault."
         }
-        if guardSwitch, !confirmVaultSwitch(to: url) { return }
-        guard store.setExternal(url) else {
-            errorMessage = "Couldn't open that vault"; return
-        }
+        if guardSwitch, !confirmVaultSwitch(to: url) { return nil }
+        guard store.setExternal(url) else { return "Couldn't open that vault." }
         pendingSwitchMessage = "Now using \(homeRelative(url))"
         reopenFromStore()
+        return nil
     }
 
     /// Modal confirmation naming the file before the app repoints at it. Returns
@@ -171,7 +171,7 @@ extension AppModel {
     /// changed (external ↔ built-in).
     private func reopenFromStore() {
         accounts = []; dek = nil; appKey = nil; envelope = nil
-        isLocked = true; errorMessage = nil; status = nil
+        isLocked = true; errorMessage = nil; notice = nil
         vaultUnreachable = false; needsReset = false; needsPassphrase = false; needsRecovery = false
         passphraseIsRecovery = false
         vaultExists = store.exists
@@ -223,7 +223,7 @@ extension AppModel {
             migrateHandles()
             emitSwitchStatusIfPending()
         } catch {
-            errorMessage = friendly(error)
+            errorMessage = UserMessage.textUnlessCancelled(for: error, context: .unlock)
         }
     }
 
@@ -232,7 +232,7 @@ extension AppModel {
     private func emitSwitchStatusIfPending() {
         guard let m = pendingSwitchMessage else { return }
         pendingSwitchMessage = nil
-        status = m
+        notice = .info(m)
     }
 
     /// A vault URL rendered relative to the user's home directory.
@@ -306,7 +306,7 @@ extension AppModel {
         envelope = nil
         isLocked = true
         errorMessage = nil
-        status = nil
+        notice = nil
         importReport = nil
         codeCache.removeAll()
     }

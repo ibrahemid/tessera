@@ -28,6 +28,7 @@
 		83B2775669EA80AE095CDD24 /* VaultStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6824C6C919ABC8568702C44A /* VaultStore.swift */; };
 		8510738FD0484635E6E322C2 /* AppModel+Backup.swift in Sources */ = {isa = PBXBuildFile; fileRef = F665076AEB11A9EF3F28DEFF /* AppModel+Backup.swift */; };
 		8A5153B726FDD6B2F77525E2 /* QRImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB20145D16705BFB72841740 /* QRImage.swift */; };
+		95A1C067E39232FD48D0D78F /* UserMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88FB2B7EC9160708EBF1C4CC /* UserMessage.swift */; };
 		973315627DB4D1D418DCCBEA /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6145A9F28061D3114DB6CAC /* AppModel.swift */; };
 		A27CCE6A88DE54C5CBFE9201 /* AppModel+Unlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEBFCF30FF5CCCA656D8BDEB /* AppModel+Unlock.swift */; };
 		A79E463B758BEA40E7A789C0 /* AppModel+Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0E3E5686F4545C2B90EE18A /* AppModel+Settings.swift */; };
@@ -69,6 +70,7 @@
 		742D6CF20A0CA607B92A5058 /* Screenshots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screenshots.swift; sourceTree = "<group>"; };
 		7C5C15A56155276976D651EC /* TesseraUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TesseraUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		833B89996F0CBADE6830DD6F /* AppModel+Import.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel+Import.swift"; sourceTree = "<group>"; };
+		88FB2B7EC9160708EBF1C4CC /* UserMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserMessage.swift; sourceTree = "<group>"; };
 		9687B76915F5E33A0E66BBAD /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		9D1CFF602BB3F3C39BF84E5A /* LoginItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginItem.swift; sourceTree = "<group>"; };
 		AB20145D16705BFB72841740 /* QRImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRImage.swift; sourceTree = "<group>"; };
@@ -109,6 +111,7 @@
 				833B89996F0CBADE6830DD6F /* AppModel+Import.swift */,
 				B0E3E5686F4545C2B90EE18A /* AppModel+Settings.swift */,
 				DEBFCF30FF5CCCA656D8BDEB /* AppModel+Unlock.swift */,
+				88FB2B7EC9160708EBF1C4CC /* UserMessage.swift */,
 			);
 			path = Model;
 			sourceTree = "<group>";
@@ -327,6 +330,7 @@
 				69185F9A9441F58A667F6D00 /* TesseraApp.swift in Sources */,
 				3DDEFD1AC96FCA97FBB820FA /* Ticker.swift in Sources */,
 				ED8A9B044637ED7679FB2EC8 /* UnlockViews.swift in Sources */,
+				95A1C067E39232FD48D0D78F /* UserMessage.swift in Sources */,
 				83B2775669EA80AE095CDD24 /* VaultStore.swift in Sources */,
 				F275B0365E376CC52CD5573E /* VaultView.swift in Sources */,
 			);

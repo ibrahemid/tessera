@@ -31,11 +31,10 @@ extension AppModel {
             try store.save(updated)
             self.envelope = updated
             self.lastVaultModified = store.modifiedAt
-            errorMessage = nil
-            status = "Recovery passphrase saved"
+            notice = .info("Recovery passphrase saved")
             return nil
         } catch {
-            return friendly(error) ?? "Couldn't save the recovery passphrase."
+            return UserMessage.textUnlessCancelled(for: error, context: .settings) ?? "Couldn't save the recovery passphrase."
         }
     }
 
@@ -44,13 +43,9 @@ extension AppModel {
     /// Toggle whether opening the vault requires Touch ID. Rewraps the DEK under a
     /// Secure Enclave key with or without the biometric flag (turning it on
     /// prompts once to confirm). Falls back to the Keychain item on SE-less Macs.
-    func setRequireBiometrics(_ on: Bool) {
-        Task { await applyRequireBiometrics(on) }
-    }
-
-    private func applyRequireBiometrics(_ on: Bool) async {
+    func setRequireBiometrics(_ on: Bool) async -> String? {
         guard let env = envelope, let dek = dek else {
-            errorMessage = "\(VaultError.wrongPassphrase)"; return
+            return UserMessage.text(for: VaultError.wrongPassphrase, context: .settings)
         }
         do {
             if SecureEnclaveWrap.isAvailable {
@@ -76,9 +71,9 @@ extension AppModel {
             }
             requireBiometrics = on
             UserDefaults.standard.set(on, forKey: AppModel.biometricsPrefKey)
-            errorMessage = nil
+            return nil
         } catch {
-            errorMessage = friendly(error)
+            return UserMessage.textUnlessCancelled(for: error, context: .settings)
         }
     }
 

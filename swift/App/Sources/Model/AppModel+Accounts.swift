@@ -13,13 +13,14 @@ extension AppModel {
 
     /// Add one account from manually typed fields (the "setup key" path). The
     /// secret is base32 as shown by the service. Validates and rejects duplicates.
+    @discardableResult
     func addManual(type: OTPType, issuer: String, account: String, secretBase32: String,
-                   algorithm: String, digits: Int, period: Int, counter: Int64) {
-        run {
+                   algorithm: String, digits: Int, period: Int, counter: Int64) -> Bool {
+        do {
             // Strict decode (spec base32 rules); accepts case, spaces, dashes.
             let secret: Data
             do { secret = try Base32.decode(secretBase32) }
-            catch { throw AccountError.invalid("not a valid setup key (base32)") }
+            catch { throw AccountEntryError.invalidSetupKey }
             var a = Account(id: "", type: type,
                             issuer: issuer.trimmingCharacters(in: .whitespaces),
                             account: account.trimmingCharacters(in: .whitespaces),
@@ -28,30 +29,29 @@ extension AppModel {
             a = stamped(a)
             try a.validate()
             let key = dedupeKey(a)
-            if accounts.contains(where: { dedupeKey($0) == key }) {
-                throw AccountError.invalid("this account is already in your vault")
-            }
+            if accounts.contains(where: { dedupeKey($0) == key }) { throw AccountEntryError.duplicate }
             try persist(accounts + [a])
-            status = "Added \(a.displayName)"   // same feedback as link / scan import
+            errorMessage = nil
+            notice = .info("Added \(a.displayName)")   // same feedback as link / scan import
+            return true
+        } catch {
+            errorMessage = UserMessage.textUnlessCancelled(for: error, context: .add)
+            return false
         }
     }
 
     /// Remove accounts that duplicate another (same type, issuer, account, secret),
-    /// keeping the first. Returns the number removed, or nil when the write
-    /// failed — the error is on `errorMessage` and there is nothing to report.
-    @discardableResult
-    func removeDuplicates() -> Int? {
+    /// keeping the first. Returns the number removed.
+    func removeDuplicates() throws -> Int {
+        var seen = Set<String>(), next: [Account] = []
         var removed = 0
-        run {
-            var seen = Set<String>(), next: [Account] = []
-            for a in accounts {
-                let k = dedupeKey(a)
-                if seen.contains(k) { removed += 1; continue }
-                seen.insert(k); next.append(a)
-            }
-            if removed > 0 { try persist(next) }
+        for a in accounts {
+            let k = dedupeKey(a)
+            if seen.contains(k) { removed += 1; continue }
+            seen.insert(k); next.append(a)
         }
-        return errorMessage == nil ? removed : nil
+        if removed > 0 { try persist(next) }
+        return removed
     }
 
     /// Persisted manual reordering of the account list (the payload array order).
@@ -82,14 +82,14 @@ extension AppModel {
     /// Lists exist exactly as long as an account references them.
     func setFolder(_ account: Account, to folder: String) {
         let name = folder.trimmingCharacters(in: .whitespaces)
-        mutate { accts in
+        let saved = mutate { accts in
             if let i = accts.firstIndex(where: { $0.id == account.id }) {
                 accts[i].folder = name
                 accts[i].updatedAt = Int64(Date().timeIntervalSince1970)
             }
         }
-        guard errorMessage == nil else { return }   // the change didn't persist; no success feedback
-        status = name.isEmpty ? "Removed from list" : "Added to \(name)"
+        guard saved else { return }
+        notice = .info(name.isEmpty ? "Removed from list" : "Added to \(name)")
     }
 
     /// Set an account's handle (alias) from the edit view. Applies the same
@@ -105,16 +105,12 @@ extension AppModel {
         if let other = accounts.first(where: { $0.id != account.id && $0.handle == h }) {
             return "\(h) is already used by \(other.displayName)."
         }
-        var failure: String?
-        run {
-            var next = accounts
-            guard let i = next.firstIndex(where: { $0.id == account.id }) else { return }
-            next[i].handle = h
-            next[i].updatedAt = Int64(Date().timeIntervalSince1970)
-            try persist(next)
-        }
-        if let msg = errorMessage { failure = msg; errorMessage = nil }
-        return failure
+        var next = accounts
+        guard let i = next.firstIndex(where: { $0.id == account.id }) else { return nil }
+        next[i].handle = h
+        next[i].updatedAt = Int64(Date().timeIntervalSince1970)
+        do { try persist(next) } catch { return UserMessage.textUnlessCancelled(for: error, context: .save) }
+        return nil
     }
 
     /// Apply the edit sheet's fields (issuer, account label, handle, folder) in a
@@ -137,35 +133,31 @@ extension AppModel {
             return "\(h) is already used by \(other.displayName)."
         }
         let fold = rawFolder.trimmingCharacters(in: .whitespaces)
-        var failure: String?
-        run {
-            var next = accounts
-            guard let i = next.firstIndex(where: { $0.id == account.id }) else { return }
-            next[i].issuer = iss
-            next[i].account = acct
-            next[i].handle = h
-            next[i].folder = fold
-            next[i].updatedAt = Int64(Date().timeIntervalSince1970)
-            try persist(next)
-        }
-        if let msg = errorMessage { failure = msg; errorMessage = nil }
-        return failure
+        var next = accounts
+        guard let i = next.firstIndex(where: { $0.id == account.id }) else { return nil }
+        next[i].issuer = iss
+        next[i].account = acct
+        next[i].handle = h
+        next[i].folder = fold
+        next[i].updatedAt = Int64(Date().timeIntervalSince1970)
+        do { try persist(next) } catch { return UserMessage.textUnlessCancelled(for: error, context: .save) }
+        return nil
     }
 
     func advanceHOTP(_ account: Account) {
         guard account.type == .hotp else { return }
-        mutate { accts in
+        let saved = mutate { accts in
             if let i = accts.firstIndex(where: { $0.id == account.id }) {
                 accts[i].counter += 1
                 accts[i].updatedAt = Int64(Date().timeIntervalSince1970)
             }
         }
-        guard errorMessage == nil else { return }   // the advance didn't persist; no success feedback
+        guard saved else { return }
         // Copy the freshly advanced code, with the same feedback as a TOTP copy.
         if let updated = accounts.first(where: { $0.id == account.id }),
            let code = try? OTP.code(for: updated, at: Date()) {
             copyToPasteboard(code, transient: true)
-            status = "Copied \(account.displayName)"
+            notice = .info("Copied \(account.displayName)")
         }
     }
 

@@ -12,7 +12,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
 @main
 struct TesseraApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @StateObject private var model = AppModel()
+    @StateObject private var model = TesseraApp.makeModel()
     @AppStorage("tessera.theme") private var theme: AppTheme = .system
     @AppStorage("tessera.compact") private var compact = false
 
@@ -43,5 +43,15 @@ struct TesseraApp: App {
                 .environmentObject(model)
                 .preferredColorScheme(theme.colorScheme)
         }
+    }
+
+    /// Render modes get an inert model: no vault file and no Keychain access.
+    private static func makeModel() -> AppModel {
+        #if DEBUG
+        if Screenshots.isRequested || CommandLine.arguments.contains("--marketing") {
+            return AppModel(demo: .locked)
+        }
+        #endif
+        return AppModel()
     }
 }

@@ -30,13 +30,13 @@ extension AppModel {
     /// Copy an account's otpauth setup link (cleartext secret) to the clipboard.
     func copySetupLink(_ account: Account) {
         copyToPasteboard(otpauthURI(for: account))
-        status = "Copied setup link for \(account.displayName)"
+        notice = .info("Copied setup link for \(account.displayName)")
     }
 
     /// Copy an account's base32 setup key (cleartext secret) to the clipboard.
     func copySecretKey(_ account: Account) {
         copyToPasteboard(secretBase32(for: account))
-        status = "Copied setup key for \(account.displayName)"
+        notice = .info("Copied setup key for \(account.displayName)")
     }
 }
 

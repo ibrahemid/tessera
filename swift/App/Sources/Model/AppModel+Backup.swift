@@ -55,7 +55,7 @@ extension AppModel {
             try data.write(to: url, options: [.atomic])
             return true
         } catch {
-            errorMessage = friendly(error)
+            errorMessage = UserMessage.textUnlessCancelled(for: error, context: .save, url: url)
             return false
         }
     }
@@ -68,39 +68,43 @@ extension AppModel {
     func restoreBackup(passphrase: String) async -> Bool {
         guard let url = promptOpen(types: [.json], message: "Choose a Tessera encrypted backup (.json).").first else { return false }
         guard let data = try? Data(contentsOf: url) else {
-            errorMessage = "Couldn't read that file"; return false
+            errorMessage = "Couldn't read that file."; return false
         }
         errorMessage = nil
+        let imported: [Account]
         do {
             let a = argon2
-            let imported = try await Task.detached(priority: .userInitiated) { () -> [Account] in
+            imported = try await Task.detached(priority: .userInitiated) { () -> [Account] in
                 let env = try Envelope.decode(data)
                 return try env.open(passphrase: passphrase, argon2: a)
             }.value
+        } catch {
+            errorMessage = UserMessage.text(for: error, context: .restore)
+            return false
+        }
+        do {
             let (added, _) = try merge(imported, resetIDs: true)
-            status = added == 0 ? "Those accounts are already here" : "Restored \(added) account\(added == 1 ? "" : "s")"
+            notice = .info(added == 0 ? "Those accounts are already here" : "Restored \(added) account\(added == 1 ? "" : "s")")
             return added > 0
         } catch {
-            errorMessage = friendly(error)
+            errorMessage = UserMessage.textUnlessCancelled(for: error, context: .save)
             return false
         }
     }
 
     /// Export every account as plaintext otpauth:// links — the universal format
     /// any authenticator can import. The secrets are readable, so this warns.
-    @discardableResult
-    func exportPlaintextLinks() -> Bool {
-        guard !accounts.isEmpty else { return false }
+    func exportPlaintextLinks() -> Notice? {
+        guard !accounts.isEmpty else { return nil }
         let body = accounts.map { OTPAuth.format($0) }.joined(separator: "\n") + "\n"
         guard let url = promptSave(name: "tessera-accounts.txt", types: [.plainText],
-                                   message: "Plain text — the secret keys are readable. Anyone with this file can generate your codes.") else { return false }
-        var ok = false
-        run {
+                                   message: "Plain text — the secret keys are readable. Anyone with this file can generate your codes.") else { return nil }
+        do {
             try Data(body.utf8).write(to: url, options: [.atomic])
-            status = "Exported \(accounts.count) link\(accounts.count == 1 ? "" : "s")"
-            ok = true
+            return .info("Exported \(accounts.count) link\(accounts.count == 1 ? "" : "s")")
+        } catch {
+            return .failure(UserMessage.text(for: error, context: .save, url: url))
         }
-        return ok
     }
 
     private func promptSave(name: String, types: [UTType], message: String) -> URL? {

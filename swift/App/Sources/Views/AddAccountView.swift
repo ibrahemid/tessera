@@ -7,6 +7,7 @@ import TesseraCore
 struct AddAccountView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) var dismiss
+    @Environment(\.openURL) private var openURL
     @State private var input = ""
     @State private var showManual = false
     @State private var manualSecret = ""
@@ -17,6 +18,14 @@ struct AddAccountView: View {
     /// was the most expensive thing this sheet did.
     @State private var kind: InputDetect.InputKind = .invalid
     @State private var readout: String?
+
+    #if DEBUG
+    init(input: String = "", manual: Bool = false) {
+        _input = State(initialValue: input)
+        _showManual = State(initialValue: manual)
+        _manualSecret = State(initialValue: manual ? input : "")
+    }
+    #endif
 
     private var trimmed: String { input.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var isSetupKey: Bool { kind == .setupKey }
@@ -38,8 +47,8 @@ struct AddAccountView: View {
         .padding(20).frame(width: 440).background(Palette.background)
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { handleDrop($0) }
         .overlay { if dropTargeted { dropOverlay } }
-        .onAppear { model.errorMessage = nil; model.status = nil; model.importReport = nil }
-        .onChange(of: input) { _, text in reclassify(text) }
+        .onAppear { model.errorMessage = nil; model.notice = nil; model.importReport = nil }
+        .onChange(of: input, initial: true) { _, text in reclassify(text) }
     }
 
     @ViewBuilder private var primaryField: some View {
@@ -59,13 +68,13 @@ struct AddAccountView: View {
                     do {
                         let payloads = try await QRCapture.scanScreen()
                         finish(model.importReporting(payloads.joined(separator: "\n")))
-                    } catch { model.errorMessage = "\(error)" } }
+                    } catch { model.errorMessage = UserMessage.text(for: error, context: .scan) } }
             } label: {
                 Label(scanning ? "Scanning…" : "Scan screen", systemImage: "qrcode.viewfinder").font(Typo.label(12, .medium))
-            }.buttonStyle(.plain).foregroundStyle(Palette.accent).disabled(scanning)
+            }.buttonStyle(.plain).foregroundStyle(Palette.accentInk).disabled(scanning)
             Button { finish(model.importPickedFiles()) } label: {
                 Label("Import from images or files", systemImage: "doc.text").font(Typo.label(12, .medium))
-            }.buttonStyle(.plain).foregroundStyle(Palette.accent)
+            }.buttonStyle(.plain).foregroundStyle(Palette.accentInk)
         }
     }
 
@@ -74,6 +83,10 @@ struct AddAccountView: View {
             ImportReportView(report: report)
         } else if let e = model.errorMessage {
             ErrorLine(e)
+            if e == UserMessage.screenRecordingDenied {
+                Button("Open Privacy Settings") { openURL(UserMessage.screenRecordingSettingsURL) }
+                    .buttonStyle(.plain).font(Typo.label(12, .medium)).foregroundStyle(Palette.accentInk)
+            }
         }
     }
 
@@ -142,7 +155,7 @@ struct AddAccountView: View {
         RoundedRectangle(cornerRadius: 12)
             .stroke(Palette.accent, style: StrokeStyle(lineWidth: 2, dash: [6]))
             .background(Palette.accentWash.opacity(0.4), in: RoundedRectangle(cornerRadius: 12))
-            .overlay(Text("Drop images or export files").font(Typo.label(12, .medium)).foregroundStyle(Palette.accent))
+            .overlay(Text("Drop images or export files").font(Typo.label(12, .medium)).foregroundStyle(Palette.accentInk))
             .allowsHitTesting(false)
     }
 }
@@ -161,7 +174,7 @@ struct ImportReportView: View {
                             HStack(alignment: .firstTextBaseline, spacing: 6) {
                                 Text(f.source).font(Typo.label(11, .medium)).foregroundStyle(Palette.textSecondary)
                                 Text(f.display.isEmpty ? f.reason : "\(f.display): \(f.reason)")
-                                    .font(Typo.label(11)).foregroundStyle(Palette.textFaint)
+                                    .font(Typo.label(11)).foregroundStyle(Palette.textSecondary)
                                     .lineLimit(1).truncationMode(.middle)
                                 Spacer(minLength: 0)
                             }
@@ -213,9 +226,10 @@ struct ManualEntryForm: View {
             HStack {
                 Spacer()
                 ActionButton("Add", enabled: !secret.isEmpty && !(issuer.isEmpty && account.isEmpty)) {
-                    model.addManual(type: type, issuer: issuer, account: account, secretBase32: secret,
-                                    algorithm: algorithm, digits: digits, period: period, counter: counter)
-                    if model.errorMessage == nil { onAdded() }
+                    if model.addManual(type: type, issuer: issuer, account: account, secretBase32: secret,
+                                       algorithm: algorithm, digits: digits, period: period, counter: counter) {
+                        onAdded()
+                    }
                 }
             }
         }

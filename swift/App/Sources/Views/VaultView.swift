@@ -116,12 +116,17 @@ struct VaultView: View {
         .sheet(item: $qrAccount) { QRExportView(account: $0) }
         .sheet(item: $editAccount) { EditAccountView(account: $0) }
         // Secondary drop target: dropping export files or QR images onto the main
-        // window imports them; the summary shows in the status capsule.
+        // window imports them; the summary shows in the notice capsule.
         .onDrop(of: [.fileURL], isTargeted: $mainDropTargeted) { providers in
             loadDroppedURLs(providers) { urls in
                 guard !urls.isEmpty else { return }
                 _ = model.importDroppedFiles(urls)
-                if let r = model.importReport, !r.isEmpty { model.status = r.line }
+                if let e = model.errorMessage {
+                    model.errorMessage = nil
+                    model.notice = .failure(e)
+                } else if let r = model.importReport, !r.isEmpty {
+                    model.notice = .info(r.line)
+                }
             }
             return true
         }
@@ -141,23 +146,36 @@ struct VaultView: View {
             Text("Group this account under a new list.")
         }
         .overlay(alignment: .bottom) {
-            if let s = model.status, !showingAdd {
-                StatusLine(s)
-                    .padding(.horizontal, 14).padding(.vertical, 9)
-                    .background(Palette.surfaceHi, in: Capsule())
-                    .overlay(Capsule().stroke(Palette.border, lineWidth: 1))
-                    .padding(.bottom, 16)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                    // Keyed on the token, not the text: repeating an identical
-                    // status restarts the 2.6s countdown instead of inheriting
-                    // the previous one's remaining time.
-                    .task(id: model.statusToken) {
-                        try? await Task.sleep(for: .seconds(2.6))
-                        if model.status == s { withAnimation { model.status = nil } }
-                    }
-            }
+            if let n = model.notice, !showingAdd { noticeCapsule(n) }
         }
-        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: model.status)
+        .animation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.8), value: model.notice)
+    }
+
+    private func noticeCapsule(_ n: AppModel.Notice) -> some View {
+        let isFailure = if case .failure = n { true } else { false }
+        return NoticeLine(n)
+            .padding(.horizontal, 14).padding(.vertical, 9)
+            .background(Palette.surfaceHi, in: Capsule())
+            .overlay(Capsule().stroke(Palette.border, lineWidth: 1))
+            .contentShape(Capsule())
+            .onTapGesture { if isFailure { dismissNotice(n) } }
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(isFailure ? .isButton : [])
+            .accessibilityHint(isFailure ? "Dismisses this message" : "")
+            .accessibilityAction(named: "Dismiss") { dismissNotice(n) }
+            .padding(.bottom, 16)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+            // Keyed on the token, not the text: repeating an identical notice
+            // restarts the countdown instead of inheriting the previous one's.
+            .task(id: model.noticeToken) {
+                do { try await Task.sleep(for: .seconds(isFailure ? 6 : 2.6)) } catch { return }
+                dismissNotice(n)
+            }
+    }
+
+    private func dismissNotice(_ n: AppModel.Notice) {
+        guard model.notice == n else { return }
+        if reduceMotion { model.notice = nil } else { withAnimation { model.notice = nil } }
     }
 
     /// Detail = a fixed search header, an optional compact filter row (the
@@ -244,7 +262,9 @@ struct VaultView: View {
     @ViewBuilder private var detailContent: some View {
         if model.accounts.isEmpty {
             EmptyState(add: { showingAdd = true },
-                       openExisting: model.isExternalVault ? nil : { model.openExistingVault() })
+                       openExisting: model.isExternalVault ? nil : {
+                           if let e = model.openExistingVault() { model.notice = .failure(e) }
+                       })
         } else if visible.isEmpty {
             emptyResults
         } else {
@@ -288,7 +308,7 @@ struct VaultView: View {
                         Text(folderLabel(sel)).font(Typo.label(12.5, .medium))
                         Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
                     }
-                    .foregroundStyle(isFolder(sel) ? Palette.accent : Palette.textSecondary)
+                    .foregroundStyle(isFolder(sel) ? Palette.accentInk : Palette.textSecondary)
                     .padding(.horizontal, 11).padding(.vertical, 6)
                     .background(Palette.surfaceHi, in: RoundedRectangle(cornerRadius: 9))
                     .overlay(RoundedRectangle(cornerRadius: 9).stroke(Palette.border, lineWidth: 1))
@@ -317,7 +337,7 @@ struct VaultView: View {
             .swipeActions(edge: .leading, allowsFullSwipe: true) {
                 Button { model.togglePin(account) } label: {
                     Label(account.pinned ? "Unpin" : "Pin", systemImage: account.pinned ? "pin.slash" : "pin")
-                }.tint(Palette.accent)
+                }.tint(Palette.accentFill)
             }
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                 Button(role: .destructive) { model.remove(account) } label: { Label("Delete", systemImage: "trash") }
@@ -357,7 +377,7 @@ struct VaultView: View {
 
     private func copy(_ account: Account) {
         model.copyToPasteboard(model.code(for: account, at: Date()), transient: true)
-        model.status = "Copied \(account.displayName)"
+        model.notice = .info("Copied \(account.displayName)")
         markCopied(account)
     }
 

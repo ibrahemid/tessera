@@ -147,7 +147,7 @@ extension AppModel {
         let summary = ImportSummary(added: added, duplicates: duplicates,
                                     failures: inputFailures + mergeFailures)
         importReport = summary
-        if added > 0 && summary.failures.isEmpty { status = summary.line }
+        if added > 0 && summary.failures.isEmpty { notice = .info(summary.line) }
         return added > 0
     }
 
@@ -175,15 +175,13 @@ extension AppModel {
         }
         if added > 0 {
             do { try persist(next) }
-            catch { errorMessage = friendly(error); return (0, 0, failures) }
+            catch { errorMessage = UserMessage.text(for: error, context: .add); return (0, 0, failures) }
         }
         return (added, duplicates, failures)
     }
 
     /// A user-facing reason from a thrown error, never exposing a secret.
     private func reasonText(_ error: Error) -> String {
-        if let e = error as? Importers.ImporterError { return e.description }
-        if let e = error as? AccountError { return e.description }
-        return "\(error)"
+        UserMessage.text(for: error, context: .add)
     }
 }

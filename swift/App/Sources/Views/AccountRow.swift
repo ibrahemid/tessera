@@ -40,6 +40,9 @@ struct AccountRowView: View {
     var onCopy: () -> Void
     var onAdvance: () -> Void
     @State private var hovering = false
+    @ScaledMetric(relativeTo: .title) private var glyphBase: CGFloat = 40
+    @ScaledMetric(relativeTo: .title) private var ringBase: CGFloat = 30
+    @ScaledMetric(relativeTo: .title) private var codeBase: CGFloat = 24
 
     private var isHOTP: Bool { account.type == .hotp }
     private var fraction: Double {
@@ -47,9 +50,9 @@ struct AccountRowView: View {
         return max(0, min(1, Double(remaining) / Double(account.period)))
     }
     private var low: Bool { !isHOTP && remaining <= 5 }
-    private var glyphSize: CGFloat { compact ? 36 : 40 }
-    private var ringSize: CGFloat { compact ? 26 : 30 }
-    private var codeSize: CGFloat { compact ? 20 : 24 }
+    private var glyphSize: CGFloat { glyphBase * (compact ? 36 : 40) / 40 }
+    private var ringSize: CGFloat { ringBase * (compact ? 26 : 30) / 30 }
+    private var codeSize: CGFloat { codeBase * (compact ? 20 : 24) / 24 }
     private var primaryName: String { account.displayName }
 
     // Whole row is one button: click copies (or advances HOTP). Pin / QR / list /
@@ -66,7 +69,7 @@ struct AccountRowView: View {
                         if !account.handle.isEmpty {
                             Text(account.handle)
                                 .font(Typo.code(compact ? 10.5 : 11.5))
-                                .foregroundStyle(Palette.accent)
+                                .foregroundStyle(Palette.accentInk)
                                 .padding(.horizontal, 5).padding(.vertical, 1)
                                 .background(RoundedRectangle(cornerRadius: 5, style: .continuous)
                                     .fill(Palette.accentWash))
@@ -87,7 +90,7 @@ struct AccountRowView: View {
                 Spacer(minLength: 8)
                 Text(groupCode(code))
                     .font(Typo.code(codeSize)).monospacedDigit()
-                    .foregroundStyle(copied ? Palette.accent : Palette.textPrimary)
+                    .foregroundStyle(copied ? Palette.accentInk : Palette.textPrimary)
                     .contentTransition(.numericText())
                 trailing
             }

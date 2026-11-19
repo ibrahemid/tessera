@@ -37,7 +37,7 @@ struct QRExportView: View {
                     .frame(maxWidth: 240)
                 if let e = saveError { ErrorLine(e) }
                 HStack {
-                    Button("Save image…") { save(img) }.buttonStyle(.plain).foregroundStyle(Palette.accent)
+                    Button("Save image…") { save(img) }.buttonStyle(.plain).foregroundStyle(Palette.accentInk)
                     Spacer()
                     Button("Done") { dismiss() }.buttonStyle(.plain).foregroundStyle(Palette.textSecondary)
                 }.font(Typo.label(12, .medium)).frame(maxWidth: 240)
@@ -54,7 +54,7 @@ struct QRExportView: View {
         Button { copy(value, field) } label: {
             HStack(spacing: 8) {
                 Image(systemName: copied == field ? "checkmark" : "doc.on.doc")
-                    .font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.accent)
+                    .font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.accentInk)
                 Text(copied == field ? "Copied" : title)
                     .font(Typo.label(12, .medium)).foregroundStyle(Palette.textPrimary)
                 Spacer()
@@ -84,7 +84,7 @@ struct QRExportView: View {
             try QRImage.writePNG(img, to: url)
             saveError = nil
         } catch {
-            saveError = "Couldn't save the image: \(error.localizedDescription)"
+            saveError = UserMessage.text(for: error, context: .save, url: url)
         }
     }
 }

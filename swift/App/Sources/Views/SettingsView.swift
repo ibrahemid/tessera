@@ -11,6 +11,13 @@ struct SettingsView: View {
     @State private var settingPassphrase = false
     @State private var confirmReset = false
     @State private var dedupeResult: Int?
+    @State private var feedback: AppModel.Notice?
+
+    #if DEBUG
+    init(feedback: AppModel.Notice? = nil) {
+        _feedback = State(initialValue: feedback)
+    }
+    #endif
 
     /// Real version from the bundle, so it never drifts from the build.
     static var appVersion: String {
@@ -34,7 +41,7 @@ struct SettingsView: View {
                 if model.biometricsAvailable {
                     Toggle("Require Touch ID to open", isOn: Binding(
                         get: { model.requireBiometrics },
-                        set: { model.setRequireBiometrics($0) }
+                        set: { on in Task { feedback = await model.setRequireBiometrics(on).map { .failure($0) } } }
                     )).disabled(model.isLocked)
                     // Non-blocking: a Touch ID-gated key dies with the enrolled
                     // fingerprint set, and only a passphrase wrap survives that.
@@ -63,12 +70,11 @@ struct SettingsView: View {
             Section("Backup") {
                 Button("Export encrypted backup…") { exporting = true }
                     .disabled(model.isLocked || model.accounts.isEmpty)
-                Button("Export as otpauth links…") { model.exportPlaintextLinks() }
+                Button("Export as otpauth links…") { if let n = model.exportPlaintextLinks() { feedback = n } }
                     .disabled(model.isLocked || model.accounts.isEmpty)
             }
             Section("Accounts") {
-                // nil means the write failed; the error line below is the report.
-                Button("Remove duplicates") { dedupeResult = model.removeDuplicates() }
+                Button("Remove duplicates") { removeDuplicates() }
                     .disabled(model.isLocked || model.accounts.isEmpty)
                 if let n = dedupeResult {
                     Text(n == 0 ? "No duplicates found" : "Removed \(n) duplicate\(n == 1 ? "" : "s")")
@@ -87,7 +93,7 @@ struct SettingsView: View {
                 VaultActionButton(
                     title: "Use another vault file…",
                     subtitle: "Switches the app to that file in place. Use this to share one vault with the tess CLI."
-                ) { model.openExistingVault(guardSwitch: true) }
+                ) { if let e = model.openExistingVault(guardSwitch: true) { feedback = .failure(e) } }
                 VaultActionButton(
                     title: "Restore from backup…",
                     subtitle: "Adds the accounts from an encrypted backup into the current vault. The backup file is not modified."
@@ -106,7 +112,7 @@ struct SettingsView: View {
             Section {
                 Button("Reset Tessera…", role: .destructive) { confirmReset = true }
             }
-            if let e = model.errorMessage { ErrorLine(e) }
+            if let f = feedback { NoticeLine(f) }
         }
         .formStyle(.grouped)
         .frame(width: 420, height: 420)
@@ -116,6 +122,16 @@ struct SettingsView: View {
         .sheet(isPresented: $settingPassphrase) { RecoveryPassphraseView() }
         .resetTesseraDialog(isPresented: $confirmReset, model: model,
                             note: model.isExternalVault ? nil : "Export a backup first if you want to keep them.")
+    }
+
+    private func removeDuplicates() {
+        do {
+            dedupeResult = try model.removeDuplicates()
+            feedback = nil
+        } catch {
+            dedupeResult = nil
+            feedback = UserMessage.textUnlessCancelled(for: error, context: .save).map { .failure($0) }
+        }
     }
 }
 
@@ -192,6 +208,7 @@ struct ExportBackupView: View {
             }
         }
         .padding(20).frame(width: 380).background(Palette.background)
+        .onAppear { model.errorMessage = nil }
     }
 
     private func submitExport() {

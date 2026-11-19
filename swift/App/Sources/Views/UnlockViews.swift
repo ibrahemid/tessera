@@ -70,7 +70,7 @@ struct UnlockView: View {
                       systemImage: model.requireBiometrics ? "touchid" : "lock.open")
                     .font(Typo.label(13, .semibold)).foregroundStyle(Palette.onAccent)
                     .frame(maxWidth: 260).padding(.vertical, 10)
-                    .background(Palette.accent, in: RoundedRectangle(cornerRadius: 10))
+                    .background(Palette.accentFill, in: RoundedRectangle(cornerRadius: 10))
             }.buttonStyle(.plain)
             if let e = model.errorMessage { ErrorLine(e) }
             Button("Can't unlock? Reset Tessera") { confirmReset = true }
@@ -107,7 +107,7 @@ struct PassphraseUnlockView: View {
             if let e = model.errorMessage { ErrorLine(e) }
             if model.passphraseIsRecovery {
                 Button("Try Touch ID again") { model.retryUnlock() }
-                    .buttonStyle(.plain).font(Typo.label(12)).foregroundStyle(Palette.accent)
+                    .buttonStyle(.plain).font(Typo.label(12)).foregroundStyle(Palette.accentInk)
             }
             Button("Can't unlock? Reset Tessera") { confirmReset = true }
                 .buttonStyle(.plain).font(Typo.label(12)).foregroundStyle(Palette.textSecondary)
@@ -161,8 +161,8 @@ struct RecoveryView: View {
                 .multilineTextAlignment(.center).font(Typo.label(13)).foregroundStyle(Palette.textSecondary)
                 .frame(maxWidth: 380)
             PrimaryButton("Try Touch ID again") { model.retryUnlock() }.frame(maxWidth: 260)
-            Button("Open another vault file…") { model.openExistingVault() }
-                .buttonStyle(.plain).font(Typo.label(12)).foregroundStyle(Palette.accent)
+            Button("Open another vault file…") { model.errorMessage = model.openExistingVault() }
+                .buttonStyle(.plain).font(Typo.label(12)).foregroundStyle(Palette.accentInk)
             Button("Reset Tessera") { confirmReset = true }
                 .buttonStyle(.plain).font(Typo.label(12)).foregroundStyle(Palette.textSecondary)
             if let e = model.errorMessage { ErrorLine(e) }
@@ -185,7 +185,7 @@ struct VaultUnreachableView: View {
             Text("The vault file you opened isn't available. It may have moved, or the disk isn't mounted.")
                 .multilineTextAlignment(.center).font(Typo.label(13)).foregroundStyle(Palette.textSecondary)
                 .frame(maxWidth: 360)
-            PrimaryButton("Locate vault…") { model.openExistingVault() }.frame(maxWidth: 260)
+            PrimaryButton("Locate vault…") { model.errorMessage = model.openExistingVault() }.frame(maxWidth: 260)
             Button("Use built-in vault") { model.useBuiltInVault() }
                 .buttonStyle(.plain).font(Typo.label(12)).foregroundStyle(Palette.textSecondary)
             if let e = model.errorMessage { ErrorLine(e) }

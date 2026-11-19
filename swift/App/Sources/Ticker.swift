@@ -68,7 +68,20 @@ final class Ticker: ObservableObject {
         (isEnabled && hasVisibleWindow) ? start() : stop()
     }
 
+    #if DEBUG
+    private var isFrozen = false
+
+    func freeze(at date: Date) {
+        stop()
+        isFrozen = true
+        now = date
+    }
+    #endif
+
     private func start() {
+        #if DEBUG
+        if isFrozen { return }
+        #endif
         guard timer == nil else { return }
         now = Date()
         let t = Timer(timeInterval: 1, repeats: true) { [weak self] _ in

@@ -29,10 +29,15 @@ final class AppModel: ObservableObject {
     /// Distinct non-empty folder names; derived on account changes, not per render tick.
     @Published private(set) var folders: [String] = []
     @Published var errorMessage: String?
-    @Published var status: String? { didSet { statusToken = UUID() } }   // transient success/info feedback
-    /// Bumped on every assignment to `status` so a repeated identical message
+    /// Transient feedback in the main window's capsule.
+    enum Notice: Equatable {
+        case info(String)
+        case failure(String)
+    }
+    @Published var notice: Notice? { didSet { noticeToken = UUID() } }
+    /// Bumped on every assignment to `notice` so a repeated identical message
     /// restarts its auto-dismiss timer instead of being coalesced away.
-    @Published private(set) var statusToken = UUID()
+    @Published private(set) var noticeToken = UUID()
     @Published var vaultExists: Bool
     @Published var importReport: ImportSummary?   // per-item result of the last bulk import
     @Published var requireBiometrics: Bool
@@ -128,7 +133,8 @@ final class AppModel: ObservableObject {
 
     // MARK: Helpers
 
-    func mutate(_ change: (inout [Account]) -> Void) {
+    @discardableResult
+    func mutate(_ change: (inout [Account]) -> Void) -> Bool {
         run {
             var next = accounts
             change(&next)
@@ -159,18 +165,14 @@ final class AppModel: ObservableObject {
         return x
     }
 
-    func run(_ body: () throws -> Void) {
-        do { errorMessage = nil; try body() }
-        catch { errorMessage = friendly(error) }
-    }
-
-    /// User-cancelled biometrics is not an error worth surfacing.
-    func friendly(_ error: Error) -> String? {
-        if case AppKey.AppKeyError.keychain(let s) = error, s == errSecUserCanceled { return nil }
-        if let la = error as? LAError, [.userCancel, .systemCancel, .appCancel].contains(la.code) { return nil }
-        let ns = error as NSError
-        if ns.domain == LAErrorDomain, [-2, -4, -9].contains(ns.code) { return nil }
-        if ns.code == Int(errSecUserCanceled) { return nil }
-        return "\(error)"
+    @discardableResult
+    func run(_ body: () throws -> Void) -> Bool {
+        do {
+            try body()
+            return true
+        } catch {
+            if let text = UserMessage.textUnlessCancelled(for: error, context: .save) { notice = .failure(text) }
+            return false
+        }
     }
 }
