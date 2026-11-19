@@ -11,6 +11,7 @@
 		0125A7EC59A9232B10825377 /* TesseraCore in Frameworks */ = {isa = PBXBuildFile; productRef = D36932C0B4E71481932BA6B1 /* TesseraCore */; };
 		01FF63F1E4D93546EB12A378 /* TesseraArgon2 in Frameworks */ = {isa = PBXBuildFile; productRef = 0997318CE937D69E1FC2EFEC /* TesseraArgon2 */; };
 		05223C448D2EE1EA75F8CD80 /* LoginItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D1CFF602BB3F3C39BF84E5A /* LoginItem.swift */; };
+		0A123344BA63FC4959BB5F5D /* Screenshots+Sheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E7945974EFB1241E19C0C8E /* Screenshots+Sheets.swift */; };
 		228F58F9DF36897480109097 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8DDF9A8DC6E209A6456F90D /* DesignSystem.swift */; };
 		23D7CA25090971136FEF974B /* SecureEnclaveWrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71761D1F9E90EC0D08056C27 /* SecureEnclaveWrap.swift */; };
 		3DB5C56435002045878599BE /* SharedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6050D46BCCD7A94C1EB4C05 /* SharedViews.swift */; };
@@ -22,6 +23,7 @@
 		6E8204E458E546B44132425D /* AppModel+Import.swift in Sources */ = {isa = PBXBuildFile; fileRef = 833B89996F0CBADE6830DD6F /* AppModel+Import.swift */; };
 		751DBEC4A4CFA5B43CDD0923 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7014709BEAE165593AA57D4C /* Components.swift */; };
 		75E886CE62E54B812C800E45 /* MarketingShot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6ACB1EA702E8FB216F872413 /* MarketingShot.swift */; };
+		7707276B546D453F6B198A43 /* Screenshots+Vault.swift in Sources */ = {isa = PBXBuildFile; fileRef = D343F50DB83D5F7274B888E4 /* Screenshots+Vault.swift */; };
 		780163B6EDB4E27599D12F92 /* EditAccountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5359996DED482C287CB65855 /* EditAccountView.swift */; };
 		781FDFB9979D2FD9936DD90D /* QRExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E32095F0FBF02F9853D2489D /* QRExportView.swift */; };
 		7CCBF9A23951466E6517E583 /* Screenshots.swift in Sources */ = {isa = PBXBuildFile; fileRef = 742D6CF20A0CA607B92A5058 /* Screenshots.swift */; };
@@ -55,6 +57,7 @@
 /* Begin PBXFileReference section */
 		012EC52FD26C12E32C8E850B /* AppModel+Clipboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel+Clipboard.swift"; sourceTree = "<group>"; };
 		01DF399763E847F20F3A5A10 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		0E7945974EFB1241E19C0C8E /* Screenshots+Sheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Screenshots+Sheets.swift"; sourceTree = "<group>"; };
 		14C1CA4855CC4252BFD8F5DA /* swift */ = {isa = PBXFileReference; lastKnownFileType = folder; name = swift; path = .; sourceTree = SOURCE_ROOT; };
 		236F525984459E019EFAFBE0 /* UnlockViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnlockViews.swift; sourceTree = "<group>"; };
 		2DBAA510C3D19FC1992EAFA4 /* QRCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRCapture.swift; sourceTree = "<group>"; };
@@ -76,6 +79,7 @@
 		AB20145D16705BFB72841740 /* QRImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRImage.swift; sourceTree = "<group>"; };
 		B0E3E5686F4545C2B90EE18A /* AppModel+Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel+Settings.swift"; sourceTree = "<group>"; };
 		B6050D46BCCD7A94C1EB4C05 /* SharedViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedViews.swift; sourceTree = "<group>"; };
+		D343F50DB83D5F7274B888E4 /* Screenshots+Vault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Screenshots+Vault.swift"; sourceTree = "<group>"; };
 		D8DDF9A8DC6E209A6456F90D /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		D8EFA54C946B346599042412 /* AddAccountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddAccountView.swift; sourceTree = "<group>"; };
 		DB81888CFE988A0C5741E66A /* FlowUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowUITests.swift; sourceTree = "<group>"; };
@@ -169,6 +173,8 @@
 				2DBAA510C3D19FC1992EAFA4 /* QRCapture.swift */,
 				AB20145D16705BFB72841740 /* QRImage.swift */,
 				742D6CF20A0CA607B92A5058 /* Screenshots.swift */,
+				0E7945974EFB1241E19C0C8E /* Screenshots+Sheets.swift */,
+				D343F50DB83D5F7274B888E4 /* Screenshots+Vault.swift */,
 				71761D1F9E90EC0D08056C27 /* SecureEnclaveWrap.swift */,
 				F0346812191C19A3D3ED2CA9 /* TesseraApp.swift */,
 				F44EB6379515E6C1C999EC02 /* Ticker.swift */,
@@ -323,6 +329,8 @@
 				6C2CB1FA6123563570C89EF5 /* QRCapture.swift in Sources */,
 				781FDFB9979D2FD9936DD90D /* QRExportView.swift in Sources */,
 				8A5153B726FDD6B2F77525E2 /* QRImage.swift in Sources */,
+				0A123344BA63FC4959BB5F5D /* Screenshots+Sheets.swift in Sources */,
+				7707276B546D453F6B198A43 /* Screenshots+Vault.swift in Sources */,
 				7CCBF9A23951466E6517E583 /* Screenshots.swift in Sources */,
 				23D7CA25090971136FEF974B /* SecureEnclaveWrap.swift in Sources */,
 				009487487DDFE1AEFC2BC6B4 /* SettingsView.swift in Sources */,

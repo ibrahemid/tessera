@@ -48,7 +48,9 @@ enum Screenshots {
     static let mainSize = CGSize(width: 920, height: 620)
     static let compactSize = CGSize(width: 480, height: 620)
 
-    static var shots: [Shot] {
+    static var shots: [Shot] { baseShots + vaultShots + sheetShots }
+
+    static var baseShots: [Shot] {
         let root = { AnyView(RootView()) }
         let uri = "otpauth://totp/GitHub:octocat?secret=JBSWY3DPEHPK3PXP&issuer=GitHub"
         return [
