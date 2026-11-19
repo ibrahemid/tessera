@@ -32,11 +32,16 @@ check_swift_verify() {
 }
 
 check_app_build() {
-  cd "$ROOT/swift" && xcodegen generate &&
-    xcodebuild -project Tessera.xcodeproj -scheme Tessera -configuration Debug \
-      -derivedDataPath "$LOG_DIR/dd" CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="-" \
-      DEVELOPMENT_TEAM= build &&
-    ! grep -E "warning: .*\.swift|\.swift:[0-9]+:[0-9]+: warning" "$LOG_DIR/app-build.log"
+  build_log="$LOG_DIR/xcodebuild.log"
+  cd "$ROOT/swift" && xcodegen generate || return 1
+  xcodebuild -project Tessera.xcodeproj -scheme Tessera -configuration Debug \
+    -derivedDataPath "$LOG_DIR/dd" CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="-" \
+    DEVELOPMENT_TEAM= SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
+    build-for-testing >"$build_log" 2>&1 || {
+    grep -E "\.swift:[0-9]+:[0-9]+: (error|warning)" "$build_log" | sort -u | head -n 40
+    tail -n 5 "$build_log"
+    return 1
+  }
 }
 
 check_linux() {

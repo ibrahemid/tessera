@@ -4,6 +4,7 @@ import XCTest
 /// with no prompts, the Add sheet opens without dismissing the app, import works,
 /// and Settings opens.
 final class FlowUITests: XCTestCase {
+    @MainActor
     func testLaunchAddAndSettings() throws {
         let app = XCUIApplication()
         app.launchArguments += ["-uitest"]
