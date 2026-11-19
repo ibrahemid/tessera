@@ -42,7 +42,7 @@ func (e *passphraseSourceError) Error() string {
 func (e *passphraseSourceError) Unwrap() error { return e.err }
 
 var (
-	packagePrefix  = regexp.MustCompile(`(^|: )(store|vault|otpauth|migration|base32x|secretstore|qr|account|importers|exporters|detect|procenv|code|otp): `)
+	packagePrefix  = regexp.MustCompile(`(^|: )(store|vault|otpauth|migration|base32x|secretstore|qr|account|importers|exporters|detect|procenv|code|otp|screenshot|clipboard|dbusx): `)
 	issuerMismatch = regexp.MustCompile(`issuer mismatch \(label ("(?:[^"\\]|\\.)*"), param ("(?:[^"\\]|\\.)*")\)`)
 )
 
