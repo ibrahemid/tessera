@@ -97,9 +97,9 @@ All `b64` fields are **base64 standard alphabet (RFC 4648 §4, `+/`), WITH `=` p
 1. Object keys sorted ascending by **UTF-8 byte order** (not locale, not language Dictionary order).
 2. No insignificant whitespace. No newlines. UTF-8, no BOM.
 3. Strings: Go `encoding/json` string escaping with HTML-escaping OFF (`json.Encoder.SetEscapeHTML(false)`), which is exactly:
-   - The two-character escapes `\"`, `\\`, `\n`, `\r`, `\t`. A control char `< 0x20` with no two-character form is `\u00XX` with lowercase hex (e.g. U+0001 -> `\u0001`).
+   - The two-character escapes `\"`, `\\`, `\b`, `\f`, `\n`, `\r`, `\t` (Go 1.22 and later write `\b` and `\f`; earlier releases wrote `\u0008` and `\u000c`, and readers accept both). A control char `< 0x20` with no two-character form is `\u00XX` with lowercase hex (e.g. U+0001 -> `\u0001`). U+007F is written raw.
    - `/`, `<`, `>`, `&` are NOT escaped (that is what HTML-escaping off means).
-   - No non-ASCII escaping: emit raw UTF-8. The ONE exception is the line separators U+2028 and U+2029, which Go always escapes as `\u2028` / `\u2029` regardless of the HTML-escaping setting; both cores MUST escape them too. `canonical_edge.json` pins all of the above.
+   - No non-ASCII escaping: emit raw UTF-8. The ONE exception is the line separators U+2028 and U+2029, which Go always escapes as `\u2028` / `\u2029` regardless of the HTML-escaping setting; both cores MUST escape them too. `canonical_edge.json` and `canonical_edge_v2.json` pin all of the above.
 4. Numbers: integers only, base-10, no leading zeros, no `+`, no exponent, no decimal point, no `-0`. Every integer fits `int64`. Readers MUST reject any other number form anywhere in the payload (`6.0`, `1e3`), and MUST reject a non-boolean `pinned` or a non-integer where an integer field is defined.
 5. Secrets are RAW key bytes, base64-standard with padding (see above). Google-migration secrets arrive as raw bytes; Steam secrets are base64-decoded to raw bytes; otpauth secrets are base32-decoded to raw bytes. The payload normalizes ALL to raw-bytes-then-base64.
 6. Parsers MUST reject duplicate keys, compared as byte strings after unescaping.
@@ -256,7 +256,7 @@ Rotation generates a new random DEK, reseals the payload under it, and rebuilds 
 
 ## Version 2 test vectors
 
-`testvectors.json` and `canonical_edge.json` MUST also cover:
+`testvectors.json` and `canonical_edge_v2.json` (two version 2 accounts in canonical form; `canonical_edge.json` stays the version 1 file) MUST also cover:
 
 - Canonical output for an account with each of `deleted_at`, `note`, `order` alone and all three together (sorted positions: `deleted_at` between `created_at` and `digits`; `note` and `order` between `issuer` and `period`).
 - An account whose v2 fields are all at their defaults serializes to the v1 bytes.
@@ -265,3 +265,5 @@ Rotation generates a new random DEK, reseals the payload under it, and rebuilds 
 - Negative: a float in an extension field; a duplicate key inside an extension object; `"pinned": 1`; `"digits": 6.0`.
 - A version 2 envelope that both cores cross-decrypt, and the envelope negatives listed under *Failure modes*.
 - An envelope with an unknown top-level key and a wrap of unknown type: both survive a load and save.
+- An envelope as Foundation's `JSONEncoder` writes it (indented, ` : ` after keys, `/` escaped as `\/`): every Tessera app release writes this form, and both cores MUST open it.
+- `\b` and `\f` in a string value, written as two-character escapes.

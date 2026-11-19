@@ -300,6 +300,17 @@ func seWrapObject() object {
 	}
 }
 
+// foundationStyle renders an envelope the way Foundation's JSONEncoder writes
+// it with pretty printing: indented, " : " after keys, "/" escaped.
+func foundationStyle(o object) string {
+	var b bytes.Buffer
+	if err := json.Indent(&b, marshal(o), "", "  "); err != nil {
+		panic(err)
+	}
+	s := strings.ReplaceAll(b.String(), "/", `\/`)
+	return strings.ReplaceAll(s, `": `, `" : `)
+}
+
 func unknownWrap(i int) object {
 	return object{{"type", "hardware-key"}, {"slot", i}, {"blob", pattern(8, byte(i))}}
 }
@@ -450,6 +461,7 @@ func envelopeStrictBlock() object {
 		vcase("se-and-passphrase", env(seWrapObject(), good)),
 		vcase("unknown-top-level-key", base.with("x_future", future)),
 		vcase("sixteen-wraps", env(append(unknownWraps(15), good)...)),
+		{{"name", "escaped-slashes-indented"}, {"envelope_json", foundationStyle(base)}},
 	}
 
 	inv := func(name, envelopeJSON, code string) object {
@@ -882,11 +894,11 @@ func edgeAccountsV2() []account.Account {
 			Secret: pattern(20, 0xec), Algorithm: "SHA1", Digits: 6, Period: 30,
 			Folder: "Work/\u05d7\u05d1\u05e8\u05d4", Handle: "ev", Tags: []string{"t<1>", "t&2", "\u2028"},
 			Pinned: true, CreatedAt: v2Created, UpdatedAt: v2Deleted, DeletedAt: v2Deleted,
-			Note: "first\nsecond\tthird \"q\" \\ \x1f\x7f end", Order: 7,
+			Note: "first\nsecond\tthird \"q\" \\ \b\f\x1f\x7f end", Order: 7,
 			Extra: map[string]json.RawMessage{
 				"x_list": json.RawMessage(`[1,-2,"s",true,false,null,[],{}]`),
 				"x_obj":  json.RawMessage(marshal(object{{"b", object{{"z", 1}, {"a", []any{object{{"y", true}, {"x", nil}}}}}}, {"a", "\u2028"}})),
-				"x_str":  json.RawMessage(marshal("c\x01\x1f\x7f\u2028<&>")),
+				"x_str":  json.RawMessage(marshal("c\x01\b\f\x1f\x7f\u2028<&>")),
 			},
 		},
 		{
