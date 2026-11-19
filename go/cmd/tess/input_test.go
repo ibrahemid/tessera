@@ -9,13 +9,6 @@ import (
 	"testing"
 )
 
-// TestMain pins stdin as not a terminal, so no test waits on a prompt when the
-// suite itself runs from an interactive shell.
-func TestMain(m *testing.M) {
-	stdinIsTTY = func() bool { return false }
-	os.Exit(m.Run())
-}
-
 // stubStdinTTY forces the stdin-is-a-terminal answer for one test.
 func stubStdinTTY(t *testing.T, isTTY bool) {
 	t.Helper()

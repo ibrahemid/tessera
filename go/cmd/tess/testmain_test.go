@@ -7,8 +7,11 @@ import (
 	"github.com/ibrahemid/tessera/go/internal/vault"
 )
 
-// Every command test unlocks a vault; the production argon2id cost is covered in internal/vault.
+// TestMain pins stdin as not a terminal, so no test waits on a prompt when the
+// suite runs from an interactive shell, and lowers the argon2id cost: every
+// command test unlocks a vault, and the production cost is covered in internal/vault.
 func TestMain(m *testing.M) {
+	stdinIsTTY = func() bool { return false }
 	vault.DefaultArgon2 = vault.Argon2Params{V: vault.DefaultArgon2.V, M: 64, T: 1, P: 1}
 	os.Exit(m.Run())
 }

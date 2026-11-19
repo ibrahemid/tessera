@@ -208,7 +208,8 @@ func TestExportIDIsStableForAnyID(t *testing.T) {
 	if exportID("a") == exportID("b") {
 		t.Fatal("distinct ids must not collide")
 	}
-	if exportID("a") != exportID("a") {
+	first, second := exportID("a"), exportID("a")
+	if first != second {
 		t.Fatal("exportID must be deterministic")
 	}
 	if len(exportID("a")) != 36 {

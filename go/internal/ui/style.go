@@ -4,7 +4,6 @@
 package ui
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -76,4 +75,4 @@ func Bar(remaining, period, width int) string {
 }
 
 // Plain renders without styling (for piping/JSON contexts when needed).
-func Plain(s string) string { return fmt.Sprintf("%s", s) }
+func Plain(s string) string { return s }
