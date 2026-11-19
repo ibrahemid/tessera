@@ -4,9 +4,10 @@ import (
 	"errors"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
-	"github.com/ibrahemid/tessera/go/internal/keychain"
+	"github.com/ibrahemid/tessera/go/internal/secretstore"
 	"github.com/ibrahemid/tessera/go/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -19,14 +20,18 @@ var errNoSilentUnlock = errors.New("vault cannot be opened without prompting")
 // completionAccounts loads the accounts offered as completions, replaceable in tests.
 var completionAccounts = loadCompletionAccounts
 
+// completionLookupTimeout bounds the secret store read behind a completion.
+const completionLookupTimeout = time.Second
+
 // loadCompletionAccounts opens the vault only when the passphrase is already
-// available from the environment or the login keychain.
+// available from the environment or the secret store.
 func loadCompletionAccounts() ([]account.Account, error) {
 	path, err := store.Resolve(vaultPath)
 	if err != nil {
 		return nil, err
 	}
-	if !canUnlockSilently(path) {
+	p, ok := silentUnlock(path)
+	if !ok {
 		return nil, errNoSilentUnlock
 	}
 	// store.Acquire waits for the lock; a completion that blocks holds the
@@ -37,21 +42,29 @@ func loadCompletionAccounts() ([]account.Account, error) {
 		return nil, err
 	}
 	defer lock.Release()
-	s, err := loadSession(path)
+	s, err := unlockSession(path, p)
 	if err != nil {
 		return nil, err
 	}
 	return s.accounts, nil
 }
 
-// canUnlockSilently reports whether the vault passphrase can be resolved
-// without prompting.
-func canUnlockSilently(path string) bool {
-	if os.Getenv("TESSERA_PASSPHRASE") != "" {
-		return true
+// silentUnlock returns an unlock that never prompts, and whether a passphrase
+// is available for it from the environment or the secret store. A locked or
+// unavailable store is a miss.
+func silentUnlock(path string) (unlockProvider, bool) {
+	refuse := func(string) (string, error) { return "", errNoSilentUnlock }
+	if pass := os.Getenv("TESSERA_PASSPHRASE"); pass != "" {
+		return unlockProvider{envPass: pass, prompt: refuse}, true
 	}
-	_, hit, err := keychain.Lookup(path)
-	return err == nil && hit
+	pass, from, hit, err := lookupStored(path, completionLookupTimeout)
+	if err != nil || !hit {
+		return unlockProvider{}, false
+	}
+	return unlockProvider{
+		lookup: func() (string, secretstore.Backend, bool, error) { return pass, from, true, nil },
+		prompt: refuse,
+	}, true
 }
 
 // completeHandles offers the handles matching prefix, each described by its

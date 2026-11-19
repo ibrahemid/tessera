@@ -11,6 +11,8 @@ import (
 
 	"github.com/ibrahemid/tessera/go/internal/account"
 	"github.com/ibrahemid/tessera/go/internal/base32x"
+	"github.com/ibrahemid/tessera/go/internal/secretstore"
+	"github.com/ibrahemid/tessera/go/internal/secretstore/secretstoretest"
 	"github.com/ibrahemid/tessera/go/internal/store"
 	"github.com/ibrahemid/tessera/go/internal/vault"
 )
@@ -28,9 +30,12 @@ func TestUserMessageNamesTheFix(t *testing.T) {
 			"invalid setup key: base32 uses A-Z and 2-7"},
 		{"env passphrase", &passphraseSourceError{source: "TESSERA_PASSPHRASE", path: path, err: vault.ErrWrongPassphrase},
 			"the passphrase in $TESSERA_PASSPHRASE doesn't open " + path},
-		{"keychain passphrase", &passphraseSourceError{source: sourceKeychain, path: path, err: vault.ErrWrongPassphrase},
+		{"keychain passphrase", &passphraseSourceError{store: "keychain", path: path, err: vault.ErrWrongPassphrase},
 			"the keychain passphrase doesn't open " + path + "; run `tess vault forget`"},
+		{"secret service passphrase", &passphraseSourceError{store: "Secret Service", path: path, err: vault.ErrWrongPassphrase},
+			"the Secret Service passphrase doesn't open " + path + "; run `tess vault forget`"},
 		{"package prefix", errors.New("store: vault: something broke"), "something broke"},
+		{"secret store prefix", fmt.Errorf("remember: %w", secretstore.ErrLocked), "remember: the secret store is locked; unlock it and retry"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -77,18 +82,32 @@ func TestWrongEnvPassphraseNamesTheVariable(t *testing.T) {
 	}
 }
 
-func TestStaleKeychainPassphraseSaysToForgetIt(t *testing.T) {
-	p := unlockProvider{
-		path:   "/v/vault.json",
-		lookup: func() (string, bool, error) { return "old", true, nil },
-		prompt: func(string) (string, error) { return "", errors.New("no terminal") },
-		tryOpen: func(string) ([]account.Account, error) {
-			return nil, vault.ErrWrongPassphrase
-		},
+func TestStaleStoredPassphraseSaysToForgetIt(t *testing.T) {
+	cases := []struct {
+		id, name, want string
+	}{
+		{"keychain", "login keychain", "the keychain passphrase doesn't open /v/vault.json; run `tess vault forget`"},
+		{"secret-service", "Secret Service", "the Secret Service passphrase doesn't open /v/vault.json; run `tess vault forget`"},
+		{"credential-manager", "Windows Credential Manager", "the Windows Credential Manager passphrase doesn't open /v/vault.json; run `tess vault forget`"},
 	}
-	_, _, err := resolvePassphrase(p)
-	if got := userMessage(err); got != "the keychain passphrase doesn't open /v/vault.json; run `tess vault forget`" {
-		t.Errorf("message = %q", got)
+	for _, c := range cases {
+		t.Run(c.id, func(t *testing.T) {
+			from := &secretstoretest.Fake{BackendID: c.id, BackendName: c.name}
+			p := unlockProvider{
+				path: "/v/vault.json",
+				lookup: func() (string, secretstore.Backend, bool, error) {
+					return "old", from, true, nil
+				},
+				prompt: func(string) (string, error) { return "", errors.New("no terminal") },
+				tryOpen: func(string) ([]account.Account, error) {
+					return nil, vault.ErrWrongPassphrase
+				},
+			}
+			_, _, err := resolvePassphrase(p)
+			if got := userMessage(err); got != c.want {
+				t.Errorf("message = %q, want %q", got, c.want)
+			}
+		})
 	}
 }
 

@@ -1,19 +1,21 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
 	"github.com/ibrahemid/tessera/go/internal/code"
-	"github.com/ibrahemid/tessera/go/internal/keychain"
+	"github.com/ibrahemid/tessera/go/internal/secretstore"
 	"github.com/ibrahemid/tessera/go/internal/store"
 	"github.com/ibrahemid/tessera/go/internal/ui"
 	"github.com/ibrahemid/tessera/go/internal/vault"
@@ -72,23 +74,41 @@ func confirmYN(prompt string) bool {
 	return s == "y" || s == "yes"
 }
 
+const (
+	// unlockLookupTimeout bounds the silent secret store read during unlock.
+	unlockLookupTimeout = 2 * time.Second
+	// storeProbeTimeout bounds the checks that pick or inspect a secret store.
+	storeProbeTimeout = 2 * time.Second
+	// interactiveStoreTimeout bounds a secret store write or delete, which may
+	// wait on the user to unlock the store.
+	interactiveStoreTimeout = 2 * time.Minute
+
+	keychainID      = "keychain"
+	kernelKeyringID = "kernel-keyring"
+)
+
+// errNoUnlockTerminal reports a passphrase that must be typed while stdin is not
+// a terminal.
+var errNoUnlockTerminal = errors.New("set $TESSERA_PASSPHRASE or run on a terminal to enter the vault passphrase")
+
 // unlockProvider supplies the side effects of passphrase resolution so the
 // ordering logic in resolvePassphrase stays pure and unit-testable.
 type unlockProvider struct {
-	path        string                              // vault path, named when a stored passphrase fails
-	envPass     string                              // $TESSERA_PASSPHRASE ("" if unset)
-	lookup      func() (string, bool, error)        // silent keychain lookup for this vault
-	store       func(pass string) error             // persist pass to the keychain
-	prompt      func(prompt string) (string, error) // interactive passphrase prompt
-	confirm     func(prompt string) bool            // y/N prompt
-	tryOpen     func(pass string) ([]account.Account, error)
-	canRemember bool // keychain available AND interactive: only then may we offer to store
+	path       string                                                              // vault path, named when a stored passphrase fails
+	envPass    string                                                              // $TESSERA_PASSPHRASE ("" if unset)
+	lookup     func() (pass string, from secretstore.Backend, hit bool, err error) // silent secret store lookup for this vault
+	rememberIn func() secretstore.Backend                                          // store for a typed passphrase; nil when none may be offered
+	store      func(b secretstore.Backend, pass string) error                      // persist pass in b
+	prompt     func(prompt string) (string, error)                                 // interactive passphrase prompt
+	confirm    func(prompt string) bool                                            // y/N prompt
+	tryOpen    func(pass string) ([]account.Account, error)
 }
 
 // resolvePassphrase applies the unlock order: $TESSERA_PASSPHRASE, then a silent
-// keychain lookup, then an interactive prompt. After a successful interactive
-// unlock (and only then) it may offer to remember the passphrase. It returns the
-// passphrase and the opened accounts so the vault is decrypted exactly once.
+// secret store lookup, then an interactive prompt. After a successful
+// interactive unlock (and only then) it may offer to remember the passphrase. It
+// returns the passphrase and the opened accounts so the vault is decrypted
+// exactly once.
 func resolvePassphrase(p unlockProvider) (string, []account.Account, error) {
 	if p.envPass != "" {
 		accts, err := p.tryOpen(p.envPass)
@@ -101,20 +121,23 @@ func resolvePassphrase(p unlockProvider) (string, []account.Account, error) {
 		return p.envPass, accts, nil
 	}
 
-	stale := false // a keychain passphrase that no longer opens the vault (rekeyed)
+	stale := false // a stored passphrase that no longer opens the vault (rekeyed)
 	var staleErr error
-	if kp, hit, err := p.lookup(); err == nil && hit {
-		accts, oerr := p.tryOpen(kp)
-		if oerr == nil {
-			return kp, accts, nil
+	var staleFrom secretstore.Backend
+	if p.lookup != nil {
+		if kp, from, hit, err := p.lookup(); err == nil && hit {
+			accts, oerr := p.tryOpen(kp)
+			if oerr == nil {
+				return kp, accts, nil
+			}
+			stale, staleErr, staleFrom = true, oerr, from
 		}
-		stale, staleErr = true, oerr
 	}
 
 	entered, err := p.prompt("Vault passphrase: ")
 	if err != nil {
 		if stale && errors.Is(staleErr, vault.ErrWrongPassphrase) {
-			return "", nil, &passphraseSourceError{source: sourceKeychain, path: p.path, err: staleErr}
+			return "", nil, &passphraseSourceError{store: storeNoun(staleFrom), path: p.path, err: staleErr}
 		}
 		return "", nil, err
 	}
@@ -122,22 +145,95 @@ func resolvePassphrase(p unlockProvider) (string, []account.Account, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	if p.canRemember {
-		q := "Remember in the login keychain so tess stops prompting? [y/N] "
+	if b := rememberTarget(p); b != nil {
+		q := fmt.Sprintf("Remember in the %s so tess stops prompting? [y/N] ", b.Name())
 		if stale {
-			q = "Stored passphrase no longer opens the vault. Update the keychain entry? [y/N] "
+			q = fmt.Sprintf("Stored passphrase no longer opens the vault. Update the %s entry? [y/N] ", storeNoun(b))
 		}
 		if p.confirm(q) {
-			if serr := p.store(entered); serr != nil {
-				fmt.Fprintln(os.Stderr, "warning:", serr)
+			if serr := p.store(b, entered); serr != nil {
+				fmt.Fprintln(os.Stderr, "warning:", ui.Sanitize(userMessage(serr)))
 			}
 		}
 	}
 	return entered, accts, nil
 }
 
+// rememberTarget is the store a typed passphrase may be offered to, or nil.
+func rememberTarget(p unlockProvider) secretstore.Backend {
+	if p.rememberIn == nil {
+		return nil
+	}
+	return p.rememberIn()
+}
+
+// storeNoun names a secret store in prompts and errors about its entry. The
+// login keychain keeps its short name.
+func storeNoun(b secretstore.Backend) string {
+	if b == nil || b.ID() == keychainID {
+		return "keychain"
+	}
+	return b.Name()
+}
+
+// lookupStored reads the passphrase for path from the secret store within
+// timeout. It never prompts; a locked or unavailable store is an error or a
+// miss, and callers treat both as a miss.
+func lookupStored(path string, timeout time.Duration) (string, secretstore.Backend, bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return secretstore.Lookup(ctx, path)
+}
+
+// interactiveContext bounds a secret store call that may wait on the user, and
+// cancels it on Ctrl-C.
+func interactiveContext(parent context.Context) (context.Context, context.CancelFunc) {
+	ctx, stop := signal.NotifyContext(parent, os.Interrupt)
+	ctx, cancel := context.WithTimeout(ctx, interactiveStoreTimeout)
+	return ctx, func() {
+		cancel()
+		stop()
+	}
+}
+
+// interactiveUnlock resolves the passphrase from the environment, then the
+// secret store, then a terminal prompt, and offers to remember a typed one.
+func interactiveUnlock(path string) unlockProvider {
+	isTTY := stdinIsTTY()
+	return unlockProvider{
+		envPass: os.Getenv("TESSERA_PASSPHRASE"),
+		lookup: func() (string, secretstore.Backend, bool, error) {
+			return lookupStored(path, unlockLookupTimeout)
+		},
+		rememberIn: func() secretstore.Backend {
+			if !isTTY {
+				return nil
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), storeProbeTimeout)
+			defer cancel()
+			b, err := secretstore.ForStore(ctx)
+			if err != nil {
+				return nil
+			}
+			return b
+		},
+		store: func(b secretstore.Backend, pass string) error {
+			ctx, stop := interactiveContext(context.Background())
+			defer stop()
+			return b.Store(ctx, path, pass, 0)
+		},
+		prompt: func(q string) (string, error) {
+			if !isTTY {
+				return "", errNoUnlockTerminal
+			}
+			return promptPassphrase(q)
+		},
+		confirm: confirmYN,
+	}
+}
+
 // openSession resolves the vault path, takes the vault lock, loads the envelope
-// and decrypts it, resolving the passphrase from env, the login keychain, or an
+// and decrypts it, resolving the passphrase from env, the secret store, or an
 // interactive prompt. Every caller must close the returned session.
 func openSession() (*session, error) {
 	path, err := store.Resolve(vaultPath)
@@ -159,33 +255,31 @@ func openSession() (*session, error) {
 
 // loadSession reads and decrypts the vault at path. The caller owns the lock.
 func loadSession(path string) (*session, error) {
+	return unlockSession(path, interactiveUnlock(path))
+}
+
+// unlockSession reads the vault at path and decrypts it with the passphrase p
+// resolves. The caller owns the lock.
+func unlockSession(path string, p unlockProvider) (*session, error) {
 	env, err := store.Load(path)
 	if err != nil {
 		return nil, err
 	}
-	isTTY := stdinIsTTY()
 	var dek []byte
-	pass, accts, err := resolvePassphrase(unlockProvider{
-		path:    path,
-		envPass: os.Getenv("TESSERA_PASSPHRASE"),
-		lookup:  func() (string, bool, error) { return keychain.Lookup(path) },
-		store:   func(p string) error { return keychain.Store(path, p) },
-		prompt:  promptPassphrase,
-		confirm: confirmYN,
-		tryOpen: func(p string) ([]account.Account, error) {
-			d, err := env.UnwrapDEK(p)
-			if err != nil {
-				return nil, err
-			}
-			a, err := env.OpenWithDEK(d)
-			if err != nil {
-				return nil, err
-			}
-			dek = d
-			return a, nil
-		},
-		canRemember: keychain.Supported() && isTTY,
-	})
+	p.path = path
+	p.tryOpen = func(pass string) ([]account.Account, error) {
+		d, err := env.UnwrapDEK(pass)
+		if err != nil {
+			return nil, err
+		}
+		a, err := env.OpenWithDEK(d)
+		if err != nil {
+			return nil, err
+		}
+		dek = d
+		return a, nil
+	}
+	pass, accts, err := resolvePassphrase(p)
 	if err != nil {
 		return nil, err
 	}

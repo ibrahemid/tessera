@@ -21,21 +21,20 @@ type exitError struct {
 func (e *exitError) Error() string { return e.err.Error() }
 func (e *exitError) Unwrap() error { return e.err }
 
-// sourceKeychain names the login keychain as a passphrase source.
-const sourceKeychain = "keychain"
-
 // passphraseSourceError reports that a passphrase tess did not prompt for, from
-// an environment variable or the login keychain, does not open the vault, so the
-// user knows which setting to fix.
+// an environment variable or a secret store, does not open the vault, so the
+// user knows which setting to fix. source is the variable name; store, when
+// set, names the secret store instead.
 type passphraseSourceError struct {
 	source string
+	store  string
 	path   string
 	err    error
 }
 
 func (e *passphraseSourceError) Error() string {
-	if e.source == sourceKeychain {
-		return fmt.Sprintf("the keychain passphrase doesn't open %s; run `tess vault forget`", e.path)
+	if e.store != "" {
+		return fmt.Sprintf("the %s passphrase doesn't open %s; run `tess vault forget`", e.store, e.path)
 	}
 	return fmt.Sprintf("the passphrase in $%s doesn't open %s", e.source, e.path)
 }
@@ -43,7 +42,7 @@ func (e *passphraseSourceError) Error() string {
 func (e *passphraseSourceError) Unwrap() error { return e.err }
 
 var (
-	packagePrefix  = regexp.MustCompile(`(^|: )(store|vault|otpauth|migration|base32x|keychain|qr|account|importers|exporters|detect|procenv|code|otp): `)
+	packagePrefix  = regexp.MustCompile(`(^|: )(store|vault|otpauth|migration|base32x|secretstore|qr|account|importers|exporters|detect|procenv|code|otp): `)
 	issuerMismatch = regexp.MustCompile(`issuer mismatch \(label ("(?:[^"\\]|\\.)*"), param ("(?:[^"\\]|\\.)*")\)`)
 )
 
