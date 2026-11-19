@@ -23,7 +23,6 @@ targets:
         buildPhase: resources
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.ibrahemid.tessera
         PRODUCT_NAME: Tessera
         MARKETING_VERSION: "1.1.0"
         CURRENT_PROJECT_VERSION: "9"
@@ -37,6 +36,11 @@ targets:
         # Apple team "Ibrahem Mahyob". In Xcode, Signing & Capabilities → select
         # the team (auto-manage). For CLI archiving, pass your 10-char Team ID:
         #   xcodebuild ... DEVELOPMENT_TEAM=XXXXXXXXXX
+      configs:
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: com.ibrahemid.tessera.dev
+        Release:
+          PRODUCT_BUNDLE_IDENTIFIER: com.ibrahemid.tessera
     dependencies:
       - package: Tessera
         product: TesseraCore
