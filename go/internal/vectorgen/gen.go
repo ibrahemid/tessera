@@ -20,9 +20,21 @@ import (
 )
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "edge" {
-		os.Stdout.Write(edgeCanonical())
-		return
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "edge":
+			os.Stdout.Write(edgeCanonical())
+			return
+		case "edge2":
+			os.Stdout.Write(edgeCanonicalV2())
+			return
+		case "v2":
+			if err := runV2(os.Stdin, os.Stdout); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+			return
+		}
 	}
 	steamVectors()
 	argon2Vectors()
