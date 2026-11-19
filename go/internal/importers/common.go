@@ -42,8 +42,8 @@ func buildAccountRaw(typ, issuer, acct string, secret []byte, algo string, digit
 	}
 	return account.Account{
 		Type:      t,
-		Issuer:    strings.TrimSpace(issuer),
-		Account:   strings.TrimSpace(acct),
+		Issuer:    account.CleanText(issuer),
+		Account:   account.CleanText(acct),
 		Secret:    secret,
 		Algorithm: algorithm,
 		Digits:    digits,
@@ -74,14 +74,14 @@ func parseOTPValue(v, issuerFallback, accountFallback string) (account.Account, 
 		if err != nil {
 			return account.Account{}, false, errors.New("unsupported Steam secret encoding")
 		}
-		acct := accountFallback
-		if strings.TrimSpace(acct) == "" {
-			acct = issuerFallback
+		acct := account.CleanText(accountFallback)
+		if acct == "" {
+			acct = account.CleanText(issuerFallback)
 		}
 		return account.Account{
 			Type:      account.Steam,
 			Issuer:    "Steam",
-			Account:   strings.TrimSpace(acct),
+			Account:   acct,
 			Secret:    secret,
 			Algorithm: "SHA1",
 			Digits:    5,
@@ -94,8 +94,8 @@ func parseOTPValue(v, issuerFallback, accountFallback string) (account.Account, 
 		}
 		return account.Account{
 			Type:      account.TOTP,
-			Issuer:    strings.TrimSpace(issuerFallback),
-			Account:   strings.TrimSpace(accountFallback),
+			Issuer:    account.CleanText(issuerFallback),
+			Account:   account.CleanText(accountFallback),
 			Secret:    secret,
 			Algorithm: "SHA1",
 			Digits:    6,

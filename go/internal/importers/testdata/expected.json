@@ -99,7 +99,7 @@
     "accounts": [
       { "type": "totp", "issuer": "Example", "account": "alice@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0 },
       { "type": "steam", "issuer": "Steam", "account": "gabe", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 5, "period": 30, "counter": 0 },
-      { "type": "hotp", "issuer": "Bank", "account": "ops", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA256", "digits": 8, "period": 30, "counter": 5 }
+      { "type": "hotp", "issuer": "Bank", "account": "ops", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA256", "digits": 8, "period": 30, "counter": 5, "note": "recovery" }
     ]
   },
   {
@@ -128,7 +128,7 @@
     "source": "Apple Passwords",
     "accounts": [
       { "type": "totp", "issuer": "Example", "account": "alice@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0 },
-      { "type": "hotp", "issuer": "Bank", "account": "ops", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA256", "digits": 8, "period": 30, "counter": 5 }
+      { "type": "hotp", "issuer": "Bank", "account": "ops", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA256", "digits": 8, "period": 30, "counter": 5, "note": "note, with comma" }
     ]
   },
   {

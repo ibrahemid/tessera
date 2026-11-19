@@ -18,6 +18,7 @@ type protonEntry struct {
 		EntryType string `json:"entry_type"`
 		Name      string `json:"name"`
 	} `json:"content"`
+	Note string `json:"note"`
 }
 
 func parseProton(data []byte) ([]account.Account, error) {
@@ -39,6 +40,7 @@ func parseProton(data []byte) ([]account.Account, error) {
 		if strings.EqualFold(e.Content.EntryType, "Steam") && a.Type != account.Steam {
 			return nil, fmt.Errorf("proton entry %q: marked Steam but its uri is not a Steam secret", e.Content.Name)
 		}
+		a.Note = account.CleanNote(e.Note)
 		out = append(out, a)
 	}
 	return out, nil

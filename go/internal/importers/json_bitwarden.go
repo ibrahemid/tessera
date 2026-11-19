@@ -13,6 +13,7 @@ type bitwardenFile struct {
 
 type bitwardenItem struct {
 	Name  string `json:"name"`
+	Notes string `json:"notes"`
 	Login *struct {
 		Username string `json:"username"`
 		TOTP     string `json:"totp"`
@@ -39,6 +40,7 @@ func parseBitwardenItems(data []byte) ([]account.Account, error) {
 		if !ok {
 			continue
 		}
+		a.Note = account.CleanNote(it.Notes)
 		out = append(out, a)
 	}
 	return out, nil

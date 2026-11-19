@@ -15,6 +15,7 @@ type csvFormat struct {
 	titleCol int
 	userCol  int
 	otpCol   int
+	noteCol  int
 }
 
 // csvHeaders maps an exact header line to its format. Apple publishes no schema
@@ -22,8 +23,8 @@ type csvFormat struct {
 // detection stops matching and the file is reported as unrecognized rather than
 // parsed against the wrong columns.
 var csvHeaders = map[string]csvFormat{
-	"Title,URL,Username,Password,Notes,OTPAuth":                        {name: "Apple Passwords", titleCol: 0, userCol: 2, otpCol: 5},
-	"Title,Url,Username,Password,OTPAuth,Favorite,Archived,Tags,Notes": {name: "1Password", titleCol: 0, userCol: 2, otpCol: 4},
+	"Title,URL,Username,Password,Notes,OTPAuth":                        {name: "Apple Passwords", titleCol: 0, userCol: 2, otpCol: 5, noteCol: 4},
+	"Title,Url,Username,Password,OTPAuth,Favorite,Archived,Tags,Notes": {name: "1Password", titleCol: 0, userCol: 2, otpCol: 4, noteCol: 8},
 }
 
 var utf8BOM = []byte("\xef\xbb\xbf")
@@ -75,6 +76,9 @@ func parseCSV(data []byte, f csvFormat) ([]account.Account, error) {
 		}
 		if !ok {
 			continue
+		}
+		if f.noteCol < len(row) {
+			a.Note = account.CleanNote(row[f.noteCol])
 		}
 		out = append(out, a)
 	}

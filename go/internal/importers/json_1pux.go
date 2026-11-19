@@ -17,6 +17,7 @@ type onePUXFile struct {
 
 type onePUXItem struct {
 	Details struct {
+		NotesPlain  string `json:"notesPlain"`
 		LoginFields []struct {
 			Value       string `json:"value"`
 			Designation string `json:"designation"`
@@ -65,6 +66,7 @@ func parse1PUXData(data []byte) ([]account.Account, error) {
 						if !ok {
 							continue
 						}
+						a.Note = account.CleanNote(item.Details.NotesPlain)
 						out = append(out, a)
 					}
 				}

@@ -21,6 +21,7 @@ type aegisEntry struct {
 	Type   string `json:"type"`
 	Name   string `json:"name"`
 	Issuer string `json:"issuer"`
+	Note   string `json:"note"`
 	Info   struct {
 		Secret  string `json:"secret"`
 		Algo    string `json:"algo"`
@@ -50,6 +51,7 @@ func parseAegis(data []byte) ([]account.Account, error) {
 		if err != nil {
 			return nil, fmt.Errorf("aegis entry %q: %w", e.Name, err)
 		}
+		a.Note = account.CleanNote(e.Note)
 		out = append(out, a)
 	}
 	return out, nil

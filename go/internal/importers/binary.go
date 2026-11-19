@@ -3,6 +3,7 @@ package importers
 import (
 	"archive/zip"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 
@@ -12,6 +13,8 @@ import (
 // max1PUXDataBytes caps how much of export.data is read out of an archive, so a
 // zip bomb cannot exhaust memory during an import.
 const max1PUXDataBytes = 64 << 20
+
+var ErrExportDataTooLarge = errors.New("export.data in the archive is larger than 64 MiB")
 
 // IsZip reports whether data begins with the zip local-file-header magic.
 func IsZip(data []byte) bool {
@@ -38,6 +41,9 @@ func parse1PUX(data []byte) ([]account.Account, error) {
 	for _, f := range zr.File {
 		if f.Name != "export.data" {
 			continue
+		}
+		if f.UncompressedSize64 > max1PUXDataBytes {
+			return nil, fmt.Errorf("1password: %w", ErrExportDataTooLarge)
 		}
 		rc, err := f.Open()
 		if err != nil {

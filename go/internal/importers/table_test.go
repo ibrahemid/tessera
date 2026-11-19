@@ -27,6 +27,7 @@ type expectedAccount struct {
 	Digits    int    `json:"digits"`
 	Period    int    `json:"period"`
 	Counter   int64  `json:"counter"`
+	Note      string `json:"note"`
 }
 
 type expectedEntry struct {
@@ -139,6 +140,9 @@ func assertAccounts(t *testing.T, got []account.Account, want []expectedAccount)
 		}
 		if a.Counter != w.Counter {
 			t.Errorf("account %d: counter = %d, want %d", i, a.Counter, w.Counter)
+		}
+		if a.Note != w.Note {
+			t.Errorf("account %d: note = %q, want %q", i, a.Note, w.Note)
 		}
 	}
 }
