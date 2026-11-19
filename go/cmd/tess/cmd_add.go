@@ -42,7 +42,7 @@ func newAddCmd() *cobra.Command {
   tess add ZB573K4APD63E6RLD3WAHI3QFZ35RLEP        # bare base32 setup key -> TOTP
   tess add code.png                                # QR image (all codes decoded)
   tess add export.json                             # Aegis/2FAS/Raivo export, or migration/otpauth lines
-  tess add --screen                                # select a QR code on screen (macOS)
+  tess add --screen                                # select a QR code on screen (macOS, Linux)
   cat export.json | tess add -                     # read the input from stdin
   tess add                                         # type the URI or setup key without echo
   tess add --secret - --issuer GitHub              # read the setup key from stdin
@@ -59,7 +59,7 @@ TOTP defaults; --issuer also replaces the issuer of an otpauth URI. --qr and
 			fromArgument := false
 			switch {
 			case fromScreen:
-				accts, problems, err = addFromScreen()
+				accts, problems, err = addFromScreen(cmd.Context())
 			case len(args) == 1:
 				fromArgument = isSecretArgument(args[0])
 				accts, problems, err = addFromArg(args[0], issuer, acct, algorithm, digits, period)
@@ -136,7 +136,7 @@ TOTP defaults; --issuer also replaces the issuer of an otpauth URI. --qr and
 	f.IntVar(&digits, "digits", 6, "code digits (manual/setup key)")
 	f.IntVar(&period, "period", 30, "period seconds (manual/setup key)")
 	f.StringVar(&folder, "folder", "", "folder to place the account(s) in")
-	f.BoolVar(&fromScreen, "screen", false, "select a QR code on screen and add it (macOS)")
+	f.BoolVar(&fromScreen, "screen", false, "select a QR code on screen and add it (macOS, Linux)")
 	return cmd
 }
 

@@ -1,42 +1,39 @@
 package main
 
 import (
-	"errors"
-	"fmt"
+	"context"
 	"os"
-	"path/filepath"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
+	"github.com/ibrahemid/tessera/go/internal/screenshot"
 )
 
-// errScreenCaptureUnsupported reports a platform with no interactive capture.
-var errScreenCaptureUnsupported = errors.New("--screen needs macOS; save the QR to a file and run `tess add <file>`")
-
 // captureScreenPNG is the interactive screen capture, replaceable in tests.
-var captureScreenPNG = captureScreen
+var captureScreenPNG = screenshot.Capture
 
 // addFromScreen grabs a QR code off the screen and decodes every code in the
-// selection. The PNG holds a cleartext secret, so it lives in a private
-// directory for the length of the call and no longer.
-func addFromScreen() ([]account.Account, []importProblem, error) {
-	dir, err := os.MkdirTemp("", "tessera-screen-")
+// selection. The PNG holds a cleartext secret, so it lives for the length of
+// the call and no longer: the scratch directory is removed, and so is a
+// capture the desktop portal saved elsewhere.
+func addFromScreen(ctx context.Context) ([]account.Account, []importProblem, error) {
+	dir, err := screenshot.ScratchDir()
 	if err != nil {
-		return nil, nil, fmt.Errorf("create scratch directory: %w", err)
+		return nil, nil, err
 	}
 	defer os.RemoveAll(dir)
-	path := filepath.Join(dir, "capture.png")
 
-	captureErr := captureScreenPNG(path)
-	if errors.Is(captureErr, errScreenCaptureUnsupported) {
-		return nil, nil, captureErr
+	path, err := captureScreenPNG(ctx, dir)
+	if err != nil {
+		return nil, nil, err
 	}
-	// screencapture exits non-zero and writes nothing when the user presses
-	// Esc, so an absent file is a cancel rather than a failure.
-	if _, statErr := os.Stat(path); statErr != nil {
-		return nil, nil, fmt.Errorf("capture cancelled")
-	}
-	if captureErr != nil {
-		return nil, nil, captureErr
-	}
+	defer removeCapture(path)
 	return addFromImage(path)
+}
+
+// removeCapture deletes the capture at path when it is a regular file, never
+// what a symlink there points to.
+func removeCapture(path string) {
+	if fi, err := os.Lstat(path); err == nil && fi.Mode().IsRegular() {
+		os.Remove(path)
+	}
 }
