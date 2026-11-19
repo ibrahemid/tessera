@@ -83,7 +83,9 @@ Why the key lives in the keychain: an SE key blob is bound to the device, not to
 **Legacy form (written by app versions before 1.2.0).** No `kdf` key; `se_key` is the key's `dataRepresentation` itself; info string `tessera.se.dek.v1`. The app still opens it, and on the first successful open it MUST:
 
 1. create a keychain-held key, add the current-form wrap and remove the legacy wrap, in one write;
-2. rotate the DEK (see *DEK rotation*), because the legacy blob in any older copy of the file still unwraps the old DEK. A vault with no passphrase wrap rotates immediately. A vault with a passphrase wrap rotates as soon as the passphrase is available (the next passphrase entry in the app, or `tess vault rekey`); until then the app shows that the step is pending.
+2. rotate the DEK (see *DEK rotation*), because the legacy blob in any older copy of the file still unwraps the old DEK. A vault with no passphrase wrap rotates immediately. A vault with a passphrase wrap rotates as soon as the passphrase is available (the next passphrase entry in the app, or `tess vault rekey`); until then the app shows that the step is pending. One exception: a vault with no passphrase wrap that also holds a Secure Enclave wrap this Mac cannot open (another Mac's) migrates without rotating and stays pending, because rotation would remove that Mac's only way in; it finishes once a recovery passphrase is set.
+
+The pending state is stored on the keychain item, not in the vault file: `kSecAttrGeneric` holds `tessera.rotation-pending.v1` from the moment the item is created until the rotation that replaces the key.
 
 The CLI never opens either form. It reports `ErrAppOnlyVault` when a `secure-enclave` wrap is present and no passphrase wrap is.
 
