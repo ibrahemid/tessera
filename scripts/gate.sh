@@ -158,11 +158,11 @@ gate_integrations() {
   alfred="$ROOT/integrations/alfred"
   unit_env="env -u TESS_TEST_BINARY -u TESSERA_VAULT -u TESSERA_PASSPHRASE"
   run_check raycast-deps check_raycast_deps
+  run_check raycast-build sh -c "cd '$raycast' && ./node_modules/.bin/ray build --output dist"
   run_check raycast-eslint sh -c "cd '$raycast' && ./node_modules/.bin/eslint src test"
   run_check raycast-prettier sh -c "cd '$raycast' && ./node_modules/.bin/prettier --check src test package.json README.md"
   run_check raycast-tsc sh -c "cd '$raycast' && ./node_modules/.bin/tsc --noEmit"
   run_check raycast-vitest sh -c "cd '$raycast' && $unit_env ./node_modules/.bin/vitest run"
-  run_check raycast-build sh -c "cd '$raycast' && ./node_modules/.bin/ray build --output dist"
   run_check alfred-test sh -c "cd '$alfred' && $unit_env node --test 'test/*.test.mjs'"
   run_check alfred-plist plutil -lint "$alfred/workflow/info.plist"
   run_check alfred-build "$alfred/build.sh"
