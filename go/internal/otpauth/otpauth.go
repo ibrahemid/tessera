@@ -14,6 +14,17 @@ import (
 	"github.com/ibrahemid/tessera/go/internal/base32x"
 )
 
+// IssuerMismatchError reports a URI whose label issuer and issuer parameter
+// name different issuers.
+type IssuerMismatchError struct {
+	Label string
+	Param string
+}
+
+func (e *IssuerMismatchError) Error() string {
+	return fmt.Sprintf("otpauth: issuer mismatch (label %q, param %q)", e.Label, e.Param)
+}
+
 // Parse decodes an otpauth:// URI into an Account.
 func Parse(uri string) (account.Account, error) {
 	var a account.Account
@@ -60,7 +71,7 @@ func Parse(uri string) (account.Account, error) {
 
 	if iss := account.CleanText(q.Get("issuer")); iss != "" {
 		if a.Issuer != "" && a.Issuer != iss {
-			return a, fmt.Errorf("otpauth: issuer mismatch (label %q, param %q)", a.Issuer, iss)
+			return a, &IssuerMismatchError{Label: a.Issuer, Param: iss}
 		}
 		a.Issuer = iss
 	}
