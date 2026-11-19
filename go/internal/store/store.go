@@ -5,6 +5,7 @@ package store
 import (
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -44,6 +45,19 @@ func (e *BackupAvailableError) Error() string {
 }
 
 func (e *BackupAvailableError) Unwrap() error { return e.Err }
+
+// MaxVaultSize is the largest vault file Load reads. No real vault comes close.
+const MaxVaultSize int64 = 64 << 20
+
+// TooLargeError reports a file over MaxVaultSize, refused before it is read.
+type TooLargeError struct {
+	Path  string
+	Limit int64
+}
+
+func (e *TooLargeError) Error() string {
+	return fmt.Sprintf("store: %s is larger than %d MiB, more than any vault holds; check that the path points at a Tessera vault", e.Path, e.Limit>>20)
+}
 
 // ExistsError reports that WriteSecretFile found a file, directory or symlink
 // at the destination and was not asked to replace it.
@@ -90,25 +104,64 @@ func Exists(path string) bool {
 	return err == nil
 }
 
-// Load reads and parses the envelope at path. When the file does not parse
-// and a backup exists, the error is a *BackupAvailableError naming it.
+// Load reads and parses the envelope at path. A file over MaxVaultSize is
+// refused with a *TooLargeError before it is read. When the file is too large
+// or does not parse and a backup exists, the error is a *BackupAvailableError
+// naming it.
 func Load(path string) (*vault.Envelope, error) {
 	data, err := readFile(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, ErrNotFound
 		}
+		var tooLarge *TooLargeError
+		if errors.As(err, &tooLarge) {
+			return nil, withBackup(path, err)
+		}
 		return nil, fmt.Errorf("store: read vault: %w", err)
 	}
 	env, err := vault.Unmarshal(data)
 	if err != nil {
-		bak := BackupPath(path)
-		if _, statErr := os.Lstat(bak); statErr == nil {
-			return nil, &BackupAvailableError{Path: path, Backup: bak, Err: err}
-		}
-		return nil, err
+		return nil, withBackup(path, err)
 	}
 	return env, nil
+}
+
+func withBackup(path string, err error) error {
+	bak := BackupPath(path)
+	if _, statErr := os.Lstat(bak); statErr == nil {
+		return &BackupAvailableError{Path: path, Backup: bak, Err: err}
+	}
+	return err
+}
+
+// HasBackup reports whether the vault at path has a backup file.
+func HasBackup(path string) bool {
+	_, err := os.Lstat(BackupPath(path))
+	return err == nil
+}
+
+func readCappedFile(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if info.Size() > MaxVaultSize {
+		return nil, &TooLargeError{Path: path, Limit: MaxVaultSize}
+	}
+	data, err := io.ReadAll(io.LimitReader(f, MaxVaultSize+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > MaxVaultSize {
+		return nil, &TooLargeError{Path: path, Limit: MaxVaultSize}
+	}
+	return data, nil
 }
 
 // LoadBackup reads and parses the backup of the vault at path.
@@ -147,7 +200,8 @@ func Save(path string, env *vault.Envelope) error {
 
 func backupCurrent(path string) error {
 	data, err := readFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
+	var tooLarge *TooLargeError
+	if errors.Is(err, fs.ErrNotExist) || errors.As(err, &tooLarge) {
 		return nil
 	}
 	if err != nil {

@@ -8,7 +8,7 @@ import (
 
 func mkdirPrivate(dir string) error { return os.MkdirAll(dir, 0o700) }
 
-func readFile(path string) ([]byte, error) { return os.ReadFile(path) }
+func readFile(path string) ([]byte, error) { return readCappedFile(path) }
 
 func removeFile(path string) error { return os.Remove(path) }
 

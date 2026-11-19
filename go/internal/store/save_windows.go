@@ -42,7 +42,7 @@ func readFile(path string) ([]byte, error) {
 	var data []byte
 	err := retry("read", path, func() error {
 		var rerr error
-		data, rerr = os.ReadFile(path)
+		data, rerr = readCappedFile(path)
 		return rerr
 	})
 	return data, err
