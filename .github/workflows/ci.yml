@@ -11,42 +11,264 @@ permissions:
 jobs:
   go:
     runs-on: ubuntu-26.04
-    defaults:
-      run:
-        working-directory: go
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go/go.mod
-      - run: go build ./...
-      - run: go vet ./...
-      - run: go test -race ./...
+          cache-dependency-path: go/go.sum
+      - name: Verify modules
+        run: go -C go mod verify
+      - name: Install staticcheck and govulncheck
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@2026.2.2
+          go install golang.org/x/vuln/cmd/govulncheck@v1.10.0
+      - name: Gate
+        run: GATE_LOG_DIR="$RUNNER_TEMP/gate" scripts/gate.sh go
+      - name: Vet and staticcheck for darwin
+        env:
+          GOOS: darwin
+          GOARCH: arm64
+        run: |
+          go -C go vet ./...
+          staticcheck_bin="$(go env GOPATH)/bin/staticcheck"
+          cd go && "$staticcheck_bin" ./...
+      - name: Gate logs
+        if: failure()
+        run: |
+          find "$RUNNER_TEMP/gate" -maxdepth 2 -type f -name '*.log' | sort | while IFS= read -r log; do
+            printf '::group::%s\n' "${log#"$RUNNER_TEMP/gate/"}"
+            cat "$log"
+            printf '::endgroup::\n'
+          done
 
-  swift-interop-verifier:
-    runs-on: macos-26
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Compile TesseraCore + verifier (no SPM)
-        run: swiftc -O swift/Sources/TesseraCore/*.swift swift/Tools/verify/main.swift -o tessera_verify
-      - name: Run shared interop vectors
-        run: ./tessera_verify "${GITHUB_WORKSPACE}/spec"
-
-  swift-spm-tests:
-    runs-on: macos-26
-    defaults:
-      run:
-        working-directory: swift
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Run XCTest (argon2id + full vault cross-decrypt)
-        run: swift test
-
-  installer:
+  linux-integration:
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Shellcheck
-        run: shellcheck install.sh test/install_test.sh
-      - name: Install from a local tarball
-        run: ./test/install_test.sh
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      - name: Integration suites
+        run: GATE_LOG_DIR="$RUNNER_TEMP/gate" test/linux/run.sh
+      - name: Gate logs
+        if: failure()
+        run: |
+          find "$RUNNER_TEMP/gate" -maxdepth 2 -type f -name '*.log' | sort | while IFS= read -r log; do
+            printf '::group::%s\n' "${log#"$RUNNER_TEMP/gate/"}"
+            cat "$log"
+            printf '::endgroup::\n'
+          done
+
+  release-check:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      - name: Release check
+        run: GATE_LOG_DIR="$RUNNER_TEMP/gate" scripts/release-check.sh
+      - name: Package suites
+        run: |
+          dist="$RUNNER_TEMP/gate/release/tree-a/go/dist"
+          for ext in deb rpm apk pkg.tar.zst; do
+            set -- "$dist"/*."$ext"
+            [ -e "$1" ] || { printf 'no .%s package in %s\n' "$ext" "$dist"; exit 1; }
+          done
+          GATE_LOG_DIR="$RUNNER_TEMP/gate" GATE_LINUX_DIST="$dist" test/linux/run.sh static package
+      - name: Gate logs
+        if: failure()
+        run: |
+          find "$RUNNER_TEMP/gate" -maxdepth 2 -type f -name '*.log' | sort | while IFS= read -r log; do
+            printf '::group::%s\n' "${log#"$RUNNER_TEMP/gate/"}"
+            cat "$log"
+            printf '::endgroup::\n'
+          done
+
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            race: true
+          - runner: windows-11-arm
+            race: false
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out with LF line endings
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      - name: Build
+        run: go -C go build ./...
+      - name: Vet
+        run: go -C go vet ./...
+      - name: Test
+        env:
+          RACE: ${{ matrix.race }}
+        run: |
+          $env:XDG_DATA_HOME = Join-Path $env:RUNNER_TEMP 'xdg'
+          $flags = @()
+          if ($env:RACE -eq 'true') {
+            $env:CGO_ENABLED = '1'
+            $flags += '-race'
+          }
+          go -C go test @flags ./...
+          if ($LASTEXITCODE -ne 0) { throw "go test exited $LASTEXITCODE" }
+      - name: Credential Manager and clipboard tests
+        env:
+          TESSERA_WINCRED_TEST: '1'
+          TESSERA_WINCLIP_TEST: '1'
+        run: |
+          $env:XDG_DATA_HOME = Join-Path $env:RUNNER_TEMP 'xdg'
+          function Test-Gated([string] $Package, [string] $Pattern) {
+            $out = go -C go test -count=1 -v -run $Pattern $Package
+            $rc = $LASTEXITCODE
+            $out | Out-Host
+            if ($rc -ne 0) { throw "go test $Package exited $rc" }
+            if (@($out) -match '^\s*--- SKIP') { throw "$Package skipped a gated test" }
+            if (-not (@($out) -match '^\s*--- PASS')) { throw "$Package ran no gated test" }
+          }
+          Test-Gated ./internal/secretstore '^TestCredentialManagerRoundTrip$'
+          Test-Gated ./internal/clipboard '^TestWindowsClipboard'
+      - name: CLI smoke test
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          $work = Join-Path $env:RUNNER_TEMP 'smoke'
+          New-Item -ItemType Directory -Force -Path $work | Out-Null
+          $tess = Join-Path $work 'tess.exe'
+          go -C go build -o $tess ./cmd/tess
+          if ($LASTEXITCODE -ne 0) { throw "go build exited $LASTEXITCODE" }
+
+          function Invoke-Tess([string[]] $Arguments) {
+            $out = & $tess @Arguments
+            if ($LASTEXITCODE -ne 0) { throw "tess $($Arguments -join ' ') exited $LASTEXITCODE" }
+            @($out) -join "`n"
+          }
+          function Assert-Equal([string] $Name, [string] $Got, [string] $Want) {
+            if ($Got -ne $Want) { throw "${Name}: got '$Got', want '$Want'" }
+          }
+          function Assert-Line([string] $Name, [string] $Text, [string] $Want) {
+            if (($Text -split "`n") -notcontains $Want) { throw "${Name}: no line '$Want' in:`n$Text" }
+          }
+          function Get-ClipboardText { ((Get-Clipboard -Raw) ?? '').TrimEnd("`r", "`n") }
+
+          $passphrase = 'test-passphrase-1'
+          $hotpUri = 'otpauth://hotp/Fixture:hotp@example.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=Fixture&counter=0'
+          $code0 = '755224'
+          $vault = Join-Path $work 'vault.json'
+          $env:XDG_DATA_HOME = Join-Path $work 'xdg'
+          $env:TESSERA_VAULT = $vault
+          $env:TESSERA_PASSPHRASE = $passphrase
+
+          Assert-Equal 'init' (Invoke-Tess @('vault', 'init')) "Created vault at $vault"
+          $added = Invoke-Tess @('add', $hotpUri)
+          $prefix = 'Added Fixture (hotp@example.com) as '
+          if (-not $added.StartsWith($prefix)) { throw "add: got '$added'" }
+          $handle = $added.Substring($prefix.Length)
+
+          Set-Clipboard -Value 'tessera-smoke'
+          Assert-Equal 'code --no-copy' (Invoke-Tess @('code', $handle, '--no-copy')) $code0
+          Assert-Equal 'clipboard untouched by --no-copy' (Get-ClipboardText) 'tessera-smoke'
+
+          $rows = @(Invoke-Tess @('list', '--json') | ConvertFrom-Json)
+          $match = @($rows | Where-Object { $_.issuer -eq 'Fixture' -and $_.account -eq 'hotp@example.com' -and $_.type -eq 'hotp' })
+          Assert-Equal 'list --json' "$($rows.Count) $($match.Count)" '1 1'
+
+          Assert-Equal 'vault remember' (Invoke-Tess @('vault', 'remember')) "Stored passphrase for $vault in the Windows Credential Manager"
+          Remove-Item Env:TESSERA_PASSPHRASE
+          Assert-Equal 'code unlocks from the Credential Manager' (Invoke-Tess @('code', $handle, '--no-copy')) $code0
+          $status = Invoke-Tess @('vault', 'status')
+          Assert-Line 'status path' $status "Path:     $vault"
+          Assert-Line 'status secrets' $status 'Secrets:  entry present (Windows Credential Manager)'
+          Assert-Line 'vault forget' (Invoke-Tess @('vault', 'forget')) "Removed the stored passphrase for $vault from the Windows Credential Manager"
+          & $tess code $handle '--no-copy'
+          if ($LASTEXITCODE -eq 0) { throw 'code unlocked after vault forget' }
+
+          $env:TESSERA_PASSPHRASE = $passphrase
+          Assert-Equal 'code -c --clear 2' (Invoke-Tess @('code', $handle, '-c', '--clear', '2')) $code0
+          Assert-Equal 'clipboard holds the code' (Get-ClipboardText) $code0
+          $deadline = (Get-Date).AddSeconds(30)
+          while ((Get-ClipboardText) -ne '' -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 200 }
+          Assert-Equal 'clipboard cleared after the delay' (Get-ClipboardText) ''
+
+          Remove-Item Env:TESSERA_VAULT, Env:XDG_DATA_HOME -ErrorAction Ignore
+          $legacy = Join-Path $env:USERPROFILE '.local\share\tessera\vault.json'
+          if (Test-Path -LiteralPath $legacy) { throw "legacy vault present at $legacy" }
+          $default = Join-Path $env:LOCALAPPDATA 'Tessera\vault.json'
+          if (Test-Path -LiteralPath $default) { throw "vault present at $default before init" }
+          Assert-Equal 'init at the default path' (Invoke-Tess @('vault', 'init')) "Created vault at $default"
+          if (-not (Test-Path -LiteralPath $default -PathType Leaf)) { throw "no vault file at $default" }
+          Assert-Line 'status default path' (Invoke-Tess @('vault', 'status')) "Path:     $default"
+
+  macos:
+    runs-on: macos-26
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install xcodegen
+        env:
+          XCODEGEN_VERSION: 2.45.4
+          XCODEGEN_SHA256: 090ec29491aad50aec10631bf6e62253fed733c50f3aab0f5ffc86bc170bdbef
+        run: |
+          zip="$RUNNER_TEMP/xcodegen.zip"
+          curl -fsSL --retry 3 -o "$zip" "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+          printf '%s  %s\n' "$XCODEGEN_SHA256" "$zip" | shasum -a 256 -c -
+          unzip -q "$zip" -d "$RUNNER_TEMP"
+          printf '%s\n' "$RUNNER_TEMP/xcodegen/bin" >>"$GITHUB_PATH"
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          xcodegen --version
+      - name: Gate
+        run: GATE_LOG_DIR="$RUNNER_TEMP/gate" scripts/gate.sh swift app
+      - name: Gate logs
+        if: failure()
+        run: |
+          find "$RUNNER_TEMP/gate" -maxdepth 2 -type f -name '*.log' | sort | while IFS= read -r log; do
+            printf '::group::%s\n' "${log#"$RUNNER_TEMP/gate/"}"
+            cat "$log"
+            printf '::endgroup::\n'
+          done
+
+  shell:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Gate
+        run: |
+          shellcheck --version
+          GATE_LOG_DIR="$RUNNER_TEMP/gate" scripts/gate.sh shell
+      - name: Gate logs
+        if: failure()
+        run: |
+          find "$RUNNER_TEMP/gate" -maxdepth 2 -type f -name '*.log' | sort | while IFS= read -r log; do
+            printf '::group::%s\n' "${log#"$RUNNER_TEMP/gate/"}"
+            cat "$log"
+            printf '::endgroup::\n'
+          done
