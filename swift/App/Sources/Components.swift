@@ -39,22 +39,32 @@ struct CountdownRing: View {
     let low: Bool
     var size: CGFloat = 30
     var reduceMotion: Bool = false
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
+    @State private var previous: Double?
+
+    private var arcStyle: StrokeStyle {
+        low && differentiateWithoutColor
+            ? StrokeStyle(lineWidth: 2.6, lineCap: .butt, dash: [3, 2.2])
+            : StrokeStyle(lineWidth: 2.6, lineCap: .round)
+    }
 
     var body: some View {
         ZStack {
             Circle().stroke(Palette.ringTrack, lineWidth: 2.6)
             Circle()
                 .trim(from: 0, to: fraction)
-                .stroke(low ? Palette.warning : Palette.accent,
-                        style: StrokeStyle(lineWidth: 2.6, lineCap: .round))
+                .stroke(low ? Palette.warning : Palette.accent, style: arcStyle)
                 .rotationEffect(.degrees(-90))
-                .animation(reduceMotion ? nil : .linear(duration: 1), value: fraction)
+                .animation(RingMotion.animates(from: previous, to: fraction, reduceMotion: reduceMotion)
+                           ? .linear(duration: 1) : nil, value: fraction)
             Text("\(remaining)")
-                .font(.system(size: max(10, size * 0.34), weight: .medium))
+                .font(.system(size: max(10, size * 0.34), weight: low ? .bold : .medium))
                 .monospacedDigit()
                 .foregroundStyle(low ? Palette.warning : Palette.textSecondary)
         }
         .frame(width: size, height: size)
+        .onAppear { previous = fraction }
+        .onChange(of: fraction) { _, new in previous = new }
     }
 }
 

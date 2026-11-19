@@ -23,8 +23,9 @@ final class NotificationObservers: @unchecked Sendable {
 /// countdown observe it, so a tick never re-renders the window chrome, the
 /// sidebar, the settings form, or an open sheet. The timer runs in the
 /// `.common` run-loop mode (menus and scrolling would otherwise freeze the
-/// rings) with a 0.1s tolerance, and it stops entirely while the vault is
-/// locked or the app has no visible, unoccluded window.
+/// rings), fires just past each wall-clock second with a 0.03s tolerance, and
+/// stops entirely while the vault is locked or the app has no visible,
+/// unoccluded window.
 @MainActor
 final class Ticker: ObservableObject {
     @Published private(set) var now = Date()
@@ -47,6 +48,27 @@ final class Ticker: ObservableObject {
                 DispatchQueue.main.async { Task { @MainActor in self?.sync() } }
             })
         }
+        observers.add(app, app.addObserver(forName: .NSSystemClockDidChange, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.realign() }
+        })
+        let workspace = NSWorkspace.shared.notificationCenter
+        observers.add(workspace, workspace.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.realign() }
+        })
+    }
+
+    @discardableResult
+    func refresh() -> Date {
+        #if DEBUG
+        if isFrozen { return now }
+        #endif
+        now = Date()
+        return now
+    }
+
+    private func realign() {
+        stop()
+        sync()
     }
 
     /// Ticking is on only while there is something to render: the caller passes
@@ -84,10 +106,10 @@ final class Ticker: ObservableObject {
         #endif
         guard timer == nil else { return }
         now = Date()
-        let t = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+        let t = Timer(fire: TickSchedule.nextFire(after: now), interval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.now = Date() }
         }
-        t.tolerance = 0.1
+        t.tolerance = 0.03
         RunLoop.main.add(t, forMode: .common)
         timer = t
     }

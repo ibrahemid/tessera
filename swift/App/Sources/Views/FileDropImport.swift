@@ -30,6 +30,8 @@ struct FileDropImport: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// False while another sheet covers the window.
     let isEnabled: Bool
+    /// Files chosen through a menu command; imported like a drop, then cleared.
+    @Binding var picked: [URL]
     @State private var targeted = false
     @State private var reviewing = false
     @State private var reviewBackup: URL?
@@ -41,6 +43,11 @@ struct FileDropImport: ViewModifier {
                 guard isEnabled, model.importProgress == nil else { return false }
                 loadDroppedURLs(providers) { urls in Task { await importDropped(urls) } }
                 return true
+            }
+            .onChange(of: picked) { _, urls in
+                guard !urls.isEmpty else { return }
+                picked = []
+                Task { await importDropped(urls) }
             }
             .overlay { if targeted && isEnabled { FileDropHighlight().padding(8) } }
             .overlay(alignment: .bottom) {
@@ -94,7 +101,7 @@ struct ImportProgressCapsule: View {
 }
 
 extension View {
-    func fileDropImport(isEnabled: Bool) -> some View {
-        modifier(FileDropImport(isEnabled: isEnabled))
+    func fileDropImport(isEnabled: Bool, picked: Binding<[URL]> = .constant([])) -> some View {
+        modifier(FileDropImport(isEnabled: isEnabled, picked: picked))
     }
 }

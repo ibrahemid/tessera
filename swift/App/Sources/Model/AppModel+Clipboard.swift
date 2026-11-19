@@ -8,8 +8,8 @@ extension AppModel {
     /// secret, and expires after `pasteboardExpiry` — guarded by `changeCount`,
     /// so a copy the user made in the meantime is never wiped. A rotating code
     /// is additionally marked transient (it is worthless once its period ends).
-    func copyToPasteboard(_ value: String, transient: Bool = false) {
-        let pb = NSPasteboard.general
+    func copyToPasteboard(_ value: String, transient: Bool = false, to pasteboard: NSPasteboard = .general) {
+        let pb = pasteboard
         pb.clearContents()
         pb.setString(value, forType: .string)
         pb.setString("", forType: .nsConcealed)
@@ -17,11 +17,12 @@ extension AppModel {
         if transient { pb.setString("", forType: .nsTransient) }
 
         let stamp = pb.changeCount
+        let name = pb.name
         pasteboardClear?.cancel()
         pasteboardClear = Task { @MainActor in
             try? await Task.sleep(for: .seconds(AppModel.pasteboardExpiry))
             guard !Task.isCancelled else { return }
-            let pb = NSPasteboard.general
+            let pb = NSPasteboard(name: name)
             guard pb.changeCount == stamp else { return }   // the user copied something else
             pb.clearContents()
         }

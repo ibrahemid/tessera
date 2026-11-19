@@ -286,6 +286,6 @@ struct WindowConfigurator: NSViewRepresentable {
         let delta = frame.width - target
         frame.origin.x += delta / 2          // keep the window visually centered
         frame.size.width = target
-        window.setFrame(frame, display: true, animate: true)
+        window.setFrame(frame, display: true, animate: !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
     }
 }
