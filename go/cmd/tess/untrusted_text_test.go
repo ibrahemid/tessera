@@ -133,7 +133,7 @@ func TestModifyMessagesEscapeUntrustedText(t *testing.T) {
 			}
 			assertNoRawControl(t, "stdout", stdout)
 			assertNoRawControl(t, "stderr", stderr)
-			if !strings.Contains(stdout, escapedOSC) {
+			if !strings.Contains(stdout, `\x1b]`) {
 				t.Errorf("expected the escaped text in %q", stdout)
 			}
 		})

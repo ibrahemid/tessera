@@ -157,7 +157,7 @@ func TestMatchTableOutput(t *testing.T) {
 	cmd.SetOut(&buf)
 	printMatchTable(cmd, s.accounts, []int{0, 1}, false)
 	got := buf.String()
-	for _, want := range []string{"handle", "issuer", "account", "ac", "ac2", "alice", "bob"} {
+	for _, want := range []string{"alias", "issuer", "account", "ac", "ac2", "alice", "bob"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("table missing %q:\n%s", want, got)
 		}

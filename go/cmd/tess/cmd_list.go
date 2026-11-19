@@ -1,7 +1,6 @@
 package main
 
 import (
-	"sort"
 	"strings"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
@@ -40,7 +39,7 @@ func newListCmd() *cobra.Command {
 				out(cmd, "%s", mustJSON(rows))
 				return nil
 			}
-			if len(s.accounts) == 0 {
+			if len(account.Live(s.accounts)) == 0 {
 				out(cmd, "%s", ui.SubtleStyle.Render("No accounts. Add one with `tess add`."))
 				return nil
 			}
@@ -76,7 +75,7 @@ func newListCmd() *cobra.Command {
 
 func filterAccounts(in []account.Account, folder, tag string) []account.Account {
 	var out []account.Account
-	for _, a := range in {
+	for _, a := range account.Live(in) {
 		if folder != "" && a.Folder != folder {
 			continue
 		}
@@ -85,12 +84,7 @@ func filterAccounts(in []account.Account, folder, tag string) []account.Account 
 		}
 		out = append(out, a)
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Pinned != out[j].Pinned {
-			return out[i].Pinned
-		}
-		return strings.ToLower(label(out[i])) < strings.ToLower(label(out[j]))
-	})
+	sortForDisplay(out)
 	return out
 }
 

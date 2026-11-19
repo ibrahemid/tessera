@@ -53,6 +53,7 @@ TOTP defaults; --issuer also replaces the issuer of an otpauth URI. --qr and
 
 ` + argumentNote,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			issuer, acct, folder = account.CleanText(issuer), account.CleanText(acct), account.CleanText(folder)
 			var accts []account.Account
 			var problems []importProblem
 			var err error
@@ -93,7 +94,7 @@ TOTP defaults; --issuer also replaces the issuer of an otpauth URI. --qr and
 			}
 			if len(accts) == 1 && isUnnamed(accts[0]) && stdinIsTTY() {
 				if name, perr := promptLine("Issuer: "); perr == nil {
-					accts[0].Issuer = name
+					accts[0].Issuer = account.CleanText(name)
 				}
 			}
 

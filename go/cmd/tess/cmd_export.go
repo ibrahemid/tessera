@@ -59,13 +59,13 @@ Formats for --format:
 				return err
 			}
 			defer s.close()
-			accts := s.accounts
+			accts := account.Live(s.accounts)
 			if len(args) == 1 {
 				idx, err := s.single(cmd, args[0])
 				if err != nil {
 					return err
 				}
-				accts = accts[idx : idx+1]
+				accts = s.accounts[idx : idx+1]
 			}
 			if format != "" {
 				return exportFormat(cmd, accts, format, outPath)

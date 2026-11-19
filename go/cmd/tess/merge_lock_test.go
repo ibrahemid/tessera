@@ -20,13 +20,13 @@ func TestTwoWayMergeReadsTheSourceUnderItsLock(t *testing.T) {
 
 	var lockErr error
 	old := loadMergeSource
-	loadMergeSource = func(path, pass string) ([]account.Account, *vault.Envelope, []byte, error) {
+	loadMergeSource = func(path string, key mergeSourceKey) ([]account.Account, *vault.Envelope, []byte, error) {
 		if l, err := store.TryAcquire(path); err == nil {
 			_ = l.Release()
 		} else {
 			lockErr = err
 		}
-		return old(path, pass)
+		return old(path, key)
 	}
 	t.Cleanup(func() { loadMergeSource = old })
 

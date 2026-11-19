@@ -204,7 +204,10 @@ func TestCompletionLookupStopsAtItsDeadline(t *testing.T) {
 // account query offers handles; a missing one is invisible until a user tabs.
 func TestCompletionIsWiredOnAccountCommands(t *testing.T) {
 	root := newRootCmd()
-	want := []string{"code", "show", "rm", "rename", "alias", "move", "tag", "export"}
+	want := []string{
+		"code", "show", "rm", "rename", "alias", "move", "tag", "export",
+		"restore", "pin", "unpin", "order", "note", "edit",
+	}
 	for _, name := range want {
 		c, _, err := root.Find([]string{name})
 		if err != nil {

@@ -83,7 +83,9 @@ func newRootCmd() *cobra.Command {
 		{"codes", []*cobra.Command{newCodeCmd(), newWatchCmd()}},
 		{"accounts", []*cobra.Command{
 			newAddCmd(), newListCmd(), newShowCmd(), newRenameCmd(),
-			newAliasCmd(), newMoveCmd(), newTagCmd(), newRemoveCmd(),
+			newAliasCmd(), newMoveCmd(), newTagCmd(), newNoteCmd(),
+			newPinCmd(), newUnpinCmd(), newOrderCmd(), newEditCmd(),
+			newDedupeCmd(), newRemoveCmd(), newTrashCmd(), newRestoreCmd(),
 		}},
 		{"transfer", []*cobra.Command{newImportCmd(), newExportCmd(), newMergeCmd()}},
 		{"vault", []*cobra.Command{newVaultCmd()}},

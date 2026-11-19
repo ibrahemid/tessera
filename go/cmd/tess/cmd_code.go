@@ -177,7 +177,12 @@ func printOneCode(cmd *cobra.Command, s *session, idx int, opts *codeOptions) er
 	}
 	a := &s.accounts[idx]
 	if a.Type == account.HOTP && opts.next {
-		a.Counter++
+		next, err := account.NextCounter(a.Counter)
+		if err != nil {
+			return fmt.Errorf("cannot advance the counter of %s (%w); `tess edit %s --counter N` sets a new one",
+				label(*a), err, displayHandle(*a))
+		}
+		a.Counter = next
 		a.UpdatedAt = now().Unix()
 	}
 	t := now()

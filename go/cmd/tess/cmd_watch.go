@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 
+	"github.com/ibrahemid/tessera/go/internal/account"
 	"github.com/ibrahemid/tessera/go/internal/tui"
 	"github.com/spf13/cobra"
 )
@@ -32,12 +33,22 @@ func newWatchCmd() *cobra.Command {
 					if i < 0 {
 						return fmt.Errorf("account is no longer in the vault")
 					}
+					if fresh.accounts[i].Trashed() {
+						return fmt.Errorf("account is in the Trash")
+					}
+					next, err := account.NextCounter(fresh.accounts[i].Counter)
+					if err != nil {
+						return err
+					}
+					if next != counter {
+						return fmt.Errorf("the counter changed in another tess process; restart tess watch")
+					}
 					fresh.accounts[i].Counter = counter
 					fresh.accounts[i].UpdatedAt = now().Unix()
 					return nil
 				})
 			}
-			return runWatchView(s.accounts, advance, wipe.schedule)
+			return runWatchView(filterAccounts(s.accounts, "", ""), advance, wipe.schedule)
 		},
 	}
 }

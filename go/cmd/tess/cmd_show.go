@@ -40,6 +40,13 @@ func newShowCmd() *cobra.Command {
 			for _, row := range showRows(a) {
 				out(cmd, "%-10s %s", row[0], ui.Sanitize(row[1]))
 			}
+			for n, line := range noteLines(a.Note) {
+				key := ""
+				if n == 0 {
+					key = "note"
+				}
+				out(cmd, "%-10s %s", key, ui.Sanitize(line))
+			}
 			if withSecret {
 				out(cmd, "%-10s %s", "secret", base32x.EncodeNoPad(a.Secret))
 			}
@@ -58,7 +65,7 @@ func newShowCmd() *cobra.Command {
 // not apply to its type (period for HOTP, counter for everything else).
 func showRows(a account.Account) [][2]string {
 	rows := [][2]string{
-		{"handle", a.Handle},
+		{"alias", a.Handle},
 		{"issuer", a.Issuer},
 		{"account", a.Account},
 		{"type", string(a.Type)},
@@ -80,4 +87,13 @@ func showRows(a account.Account) [][2]string {
 		rows = append(rows, [2]string{"pinned", "yes"})
 	}
 	return rows
+}
+
+// noteLines splits a note into the lines tess show prints, with each tab
+// widened to spaces so it is not escaped.
+func noteLines(note string) []string {
+	if note == "" {
+		return nil
+	}
+	return strings.Split(strings.ReplaceAll(note, "\t", "    "), "\n")
 }

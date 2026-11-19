@@ -372,46 +372,67 @@ func indexByID(accts []account.Account, id string) int {
 	return -1
 }
 
-// resolveMatches applies the spec account-resolution precedence and returns the
-// indices matched by the first stage that matches anything: exact handle, then
-// exact issuer/account (case-insensitive), then unique substring over
-// handle/issuer/account. A single index is a unique resolution; more than one
-// means the caller must disambiguate. Zero total matches is an error.
+// resolveMatches resolves query among live accounts. Trashed accounts are
+// reachable only through the Trash commands.
 func (s *session) resolveMatches(query string) ([]int, error) {
+	return s.resolveIn(query, false)
+}
+
+// resolveIn applies the spec account-resolution precedence to the live accounts,
+// or to the trashed ones when trashed is set, and returns the indices matched by
+// the first stage that matches anything: exact handle, then exact
+// issuer/account (case-insensitive), then substring over handle/issuer/account.
+// A single index is a unique resolution; more than one means the caller must
+// disambiguate. Zero total matches is an error.
+func (s *session) resolveIn(query string, trashed bool) ([]int, error) {
 	q := strings.ToLower(strings.TrimSpace(query))
 	if q == "" {
 		return nil, fmt.Errorf("empty query")
 	}
-	var stage []int
-	for i, a := range s.accounts {
-		if a.Handle != "" && a.Handle == q {
-			stage = append(stage, i)
-		}
-	}
-	if len(stage) > 0 {
-		return stage, nil
-	}
-	for i, a := range s.accounts {
-		if strings.ToLower(a.Issuer) == q || strings.ToLower(a.Account) == q {
-			stage = append(stage, i)
-		}
-	}
-	if len(stage) > 0 {
-		return stage, nil
-	}
-	for i, a := range s.accounts {
-		hay := strings.ToLower(a.Handle + " " + a.Issuer + " " + a.Account)
-		if strings.Contains(hay, q) {
-			stage = append(stage, i)
-		}
-	}
-	if len(stage) > 0 {
-		return stage, nil
+	if idxs := matchStages(s.accounts, q, trashed); len(idxs) > 0 {
+		return idxs, nil
 	}
 	if looksLikeSecret(query) {
 		return nil, errSecretQuery
 	}
-	return nil, fmt.Errorf("no account matches %q", query)
+	if trashed {
+		return nil, fmt.Errorf("nothing in the Trash matches %q; `tess trash` lists the Trash", query)
+	}
+	switch inTrash := matchStages(s.accounts, q, true); len(inTrash) {
+	case 0:
+		return nil, fmt.Errorf("no account matches %q", query)
+	case 1:
+		return nil, fmt.Errorf("no account matches %q; %s is in the Trash, `tess restore %s` brings it back",
+			query, label(s.accounts[inTrash[0]]), displayHandle(s.accounts[inTrash[0]]))
+	default:
+		return nil, fmt.Errorf("no account matches %q; %d accounts in the Trash do, `tess trash` lists them", query, len(inTrash))
+	}
+}
+
+// matchStages returns the indices of the accounts in the chosen state matched by
+// the first resolution stage that matches any; q is lowercased and trimmed.
+func matchStages(accts []account.Account, q string, trashed bool) []int {
+	stages := []func(account.Account) bool{
+		func(a account.Account) bool { return a.Handle != "" && a.Handle == q },
+		func(a account.Account) bool {
+			return strings.ToLower(a.Issuer) == q || strings.ToLower(a.Account) == q
+		},
+		func(a account.Account) bool {
+			return strings.Contains(strings.ToLower(a.Handle+" "+a.Issuer+" "+a.Account), q)
+		},
+	}
+	for _, match := range stages {
+		var idxs []int
+		for i, a := range accts {
+			if a.Trashed() == trashed && match(a) {
+				idxs = append(idxs, i)
+			}
+		}
+		if len(idxs) > 0 {
+			return idxs
+		}
+	}
+	return nil
 }
 
 // errSecretQuery answers a query that is a setup key or an otpauth URI rather
@@ -429,7 +450,13 @@ func errAmbiguous(n int, query string) error {
 // non-zero (it cannot act without a unique target). When stdout is not a
 // terminal the table goes to stderr, out of the way of a script reading stdout.
 func (s *session) single(cmd *cobra.Command, query string) (int, error) {
-	idxs, err := s.resolveMatches(query)
+	return s.singleIn(cmd, query, false)
+}
+
+// singleIn is single over the live accounts, or the trashed ones when trashed
+// is set.
+func (s *session) singleIn(cmd *cobra.Command, query string, trashed bool) (int, error) {
+	idxs, err := s.resolveIn(query, trashed)
 	if err != nil {
 		return -1, err
 	}
@@ -444,9 +471,53 @@ func (s *session) single(cmd *cobra.Command, query string) (int, error) {
 	return idxs[0], nil
 }
 
-// printMatchTable renders the ambiguous matches as an aligned handle/issuer/
+// resolveScope names the accounts a query is resolved among.
+type resolveScope int
+
+const (
+	liveScope resolveScope = iota
+	trashScope
+	// liveThenTrashScope resolves among live accounts, and among trashed ones
+	// only when no live account matches.
+	liveThenTrashScope
+)
+
+// singleScoped is single over the accounts in sc.
+func (s *session) singleScoped(cmd *cobra.Command, query string, sc resolveScope) (int, error) {
+	switch sc {
+	case trashScope:
+		return s.singleIn(cmd, query, true)
+	case liveThenTrashScope:
+		q := strings.ToLower(strings.TrimSpace(query))
+		if q != "" && len(matchStages(s.accounts, q, false)) == 0 && len(matchStages(s.accounts, q, true)) > 0 {
+			return s.singleIn(cmd, query, true)
+		}
+	}
+	return s.singleIn(cmd, query, false)
+}
+
+// resolveEach resolves every query to one account before anything changes, so
+// a query that matches nothing or several accounts leaves the vault untouched.
+// It returns indices in query order, each account once.
+func (s *session) resolveEach(cmd *cobra.Command, queries []string, sc resolveScope) ([]int, error) {
+	idxs := make([]int, 0, len(queries))
+	seen := make(map[int]bool, len(queries))
+	for _, q := range queries {
+		i, err := s.singleScoped(cmd, q, sc)
+		if err != nil {
+			return nil, err
+		}
+		if !seen[i] {
+			seen[i] = true
+			idxs = append(idxs, i)
+		}
+	}
+	return idxs, nil
+}
+
+// printMatchTable renders the ambiguous matches as an aligned alias/issuer/
 // account table so the user can pick a unique reference. With withCodes it adds
-// each account's current code (used by `tess code` without --copy). The handle
+// each account's current code (used by `tess code` without --copy). The alias
 // column is never truncated: it is the string the user types.
 func printMatchTable(cmd *cobra.Command, accts []account.Account, idxs []int, withCodes bool) {
 	printMatchTableTo(cmd.OutOrStdout(), accts, idxs, withCodes)
@@ -454,15 +525,15 @@ func printMatchTable(cmd *cobra.Command, accts []account.Account, idxs []int, wi
 
 // printMatchTableTo writes the match table to w.
 func printMatchTableTo(w io.Writer, accts []account.Account, idxs []int, withCodes bool) {
-	hw, iw, aw := len("handle"), len("issuer"), len("account")
+	hw, iw, aw := len("alias"), len("issuer"), len("account")
 	for _, i := range idxs {
 		hw = max(hw, utf8.RuneCountInString(displayHandle(accts[i])))
 		iw = max(iw, utf8.RuneCountInString(ui.Sanitize(accts[i].Issuer)))
 		aw = max(aw, utf8.RuneCountInString(ui.Sanitize(accts[i].Account)))
 	}
-	header := fmt.Sprintf("%s  %s  %s", padRight("handle", hw), padRight("issuer", iw), "account")
+	header := fmt.Sprintf("%s  %s  %s", padRight("alias", hw), padRight("issuer", iw), "account")
 	if withCodes {
-		header = fmt.Sprintf("%s  %s  %s  %s", padRight("handle", hw), padRight("issuer", iw), padRight("account", aw), "code")
+		header = fmt.Sprintf("%s  %s  %s  %s", padRight("alias", hw), padRight("issuer", iw), padRight("account", aw), "code")
 	}
 	fmt.Fprintln(w, ui.SubtleStyle.Render(header))
 	t := now()
@@ -491,6 +562,9 @@ func setHandle(s *session, idx int, newHandle string) error {
 	}
 	for i, a := range s.accounts {
 		if i != idx && a.Handle == h {
+			if a.Trashed() {
+				return fmt.Errorf("alias %q already used by %s in the Trash", h, label(a))
+			}
 			return fmt.Errorf("alias %q already used by %s", h, label(a))
 		}
 	}

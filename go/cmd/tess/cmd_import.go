@@ -263,7 +263,7 @@ func mergeAccounts(s *session, imported []account.Account) (added, skipped int, 
 func mergeAccountsDetailed(s *session, imported []account.Account) mergeResult {
 	var r mergeResult
 	seen := map[string]bool{}
-	for _, a := range s.accounts {
+	for _, a := range account.Live(s.accounts) {
 		seen[dedupeKey(a)] = true
 	}
 	ts := now().Unix()

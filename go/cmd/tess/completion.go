@@ -67,17 +67,30 @@ func silentUnlock(path string) (unlockProvider, bool) {
 	}, true
 }
 
-// completeHandles offers the handles matching prefix, each described by its
-// issuer and account so two handles for the same service stay distinguishable.
+// completeHandles offers the live handles matching prefix, each described by
+// its issuer and account so two handles for the same service stay
+// distinguishable.
 func completeHandles(prefix string) ([]string, cobra.ShellCompDirective) {
+	return completeHandlesWhere(prefix, isLive, nil)
+}
+
+func isLive(a account.Account) bool { return !a.Trashed() }
+
+// completeHandlesWhere offers the handles matching prefix among the accounts
+// keep accepts, leaving out the handles in exclude.
+func completeHandlesWhere(prefix string, keep func(account.Account) bool, exclude []string) ([]string, cobra.ShellCompDirective) {
 	accts, err := completionAccounts()
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
+	skip := make(map[string]bool, len(exclude))
+	for _, e := range exclude {
+		skip[strings.ToLower(e)] = true
+	}
 	p := strings.ToLower(prefix)
 	matches := make([]string, 0, len(accts))
 	for _, a := range accts {
-		if a.Handle == "" || !strings.HasPrefix(a.Handle, p) {
+		if a.Handle == "" || !keep(a) || skip[a.Handle] || !strings.HasPrefix(a.Handle, p) {
 			continue
 		}
 		if l := label(a); l != "" {
@@ -96,4 +109,26 @@ func completeFirstArg(cmd *cobra.Command, args []string, toComplete string) ([]s
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 	return completeHandles(toComplete)
+}
+
+// completeEveryArg completes a live handle in every positional slot, for the
+// commands that take several queries, leaving out the ones already given.
+func completeEveryArg(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	return completeHandlesWhere(toComplete, isLive, args)
+}
+
+// completeTrashedArgs completes the handles of accounts in the Trash, for
+// tess restore.
+func completeTrashedArgs(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	return completeHandlesWhere(toComplete, account.Account.Trashed, args)
+}
+
+// completeRemoveArgs completes live handles for tess rm, and the Trash as well
+// once --purge is given.
+func completeRemoveArgs(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	keep := isLive
+	if cmd != nil && cmd.Flags().Changed("purge") {
+		keep = func(account.Account) bool { return true }
+	}
+	return completeHandlesWhere(toComplete, keep, args)
 }
