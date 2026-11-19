@@ -72,6 +72,10 @@ gate_go() {
   if command -v staticcheck >/dev/null 2>&1; then
     run_check go-staticcheck sh -c "cd '$ROOT/go' && staticcheck ./..."
   fi
+  for target_os in linux windows; do
+    run_check "go-vet-$target_os" env GOOS="$target_os" GOARCH=amd64 go -C "$ROOT/go" vet ./...
+    run_check "go-staticcheck-$target_os" sh -c "cd '$ROOT/go' && GOOS=$target_os GOARCH=amd64 staticcheck ./..."
+  done
   for target in linux/amd64 linux/arm64 windows/amd64 windows/arm64 darwin/amd64; do
     run_check "go-cross-$(printf '%s' "$target" | tr / -)" \
       env GOOS="${target%/*}" GOARCH="${target#*/}" CGO_ENABLED=0 go -C "$ROOT/go" build -o /dev/null ./cmd/tess
