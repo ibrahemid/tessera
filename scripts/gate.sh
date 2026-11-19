@@ -33,6 +33,15 @@ check_swift_verify() {
     "$bin" "$ROOT/spec" "$ROOT/go/internal/importers/testdata"
 }
 
+check_govuln() {
+  dir="$LOG_DIR/vuln"
+  mkdir -p "$dir"
+  for os in darwin linux windows; do
+    GOOS="$os" GOARCH=arm64 CGO_ENABLED=0 go -C "$ROOT/go" build -o "$dir/tess-$os" ./cmd/tess || return 1
+    govulncheck -mode=binary "$dir/tess-$os" || return 1
+  done
+}
+
 check_app_build() {
   build_log="$LOG_DIR/xcodebuild.log"
   cd "$ROOT/swift" && xcodegen generate || return 1
@@ -58,7 +67,7 @@ gate_go() {
   run_check go-fmt check_gofmt
   run_check go-test env XDG_DATA_HOME="$LOG_DIR/xdg" TESSERA_VAULT= go -C "$ROOT/go" test -race ./...
   if command -v govulncheck >/dev/null 2>&1; then
-    run_check go-vuln sh -c "cd '$ROOT/go' && govulncheck ./..."
+    run_check go-vuln check_govuln
   fi
   if command -v staticcheck >/dev/null 2>&1; then
     run_check go-staticcheck sh -c "cd '$ROOT/go' && staticcheck ./..."
