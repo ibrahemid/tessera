@@ -76,10 +76,7 @@ func TestNoHTMLEscape(t *testing.T) {
 	}
 }
 
-func TestForwardCompatIgnoresUnknownField(t *testing.T) {
-	// A payload written by a newer version carries a field this reader does not
-	// know. It MUST decode (AEAD-authenticated payload; tolerance is safe) and,
-	// on re-encode, MUST NOT preserve the unknown field (canonical = spec fields).
+func TestForwardCompatPreservesUnknownField(t *testing.T) {
 	payload := []byte(`[{"account":"a@b.co","algorithm":"SHA1","counter":0,` +
 		`"created_at":1,"digits":6,"folder":"","future_field":{"x":[1,2]},` +
 		`"id":"id1","issuer":"ACME","period":30,"pinned":false,` +
@@ -91,12 +88,18 @@ func TestForwardCompatIgnoresUnknownField(t *testing.T) {
 	if len(got) != 1 || got[0].ID != "id1" || got[0].Issuer != "ACME" {
 		t.Fatalf("known fields not decoded: %+v", got)
 	}
+	if string(got[0].Extra["future_field"]) != `{"x":[1,2]}` {
+		t.Fatalf("unknown field not kept: %q", got[0].Extra["future_field"])
+	}
 	reencoded, err := CanonicalJSON(got)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(reencoded), "future_field") {
-		t.Errorf("re-encode must drop unknown field:\n%s", reencoded)
+	if string(reencoded) != string(payload) {
+		t.Errorf("re-encode must carry the unknown field back unchanged:\n got %s\nwant %s", reencoded, payload)
+	}
+	if FormatVersion(got) != 2 {
+		t.Error("an extension field must make the payload version 2")
 	}
 }
 

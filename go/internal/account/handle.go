@@ -87,11 +87,16 @@ func AssignHandles(accounts []Account) bool {
 		}
 		return ax.ID < ay.ID
 	})
+	next := make(map[string]int)
 	for _, i := range missing {
 		base := handleBase(accounts[i].Issuer, accounts[i].Account)
 		h := base
-		for n := 2; taken[h]; n++ {
-			h = base + strconv.Itoa(n)
+		if taken[h] {
+			n := max(next[base], 2)
+			for h = base + strconv.Itoa(n); taken[h]; h = base + strconv.Itoa(n) {
+				n++
+			}
+			next[base] = n + 1
 		}
 		accounts[i].Handle = h
 		taken[h] = true
