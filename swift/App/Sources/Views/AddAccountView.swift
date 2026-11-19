@@ -13,28 +13,43 @@ struct AddAccountView: View {
     @State private var manualSecret = ""
     @State private var scanning = false
     @State private var dropTargeted = false
+    @State private var restoreFile: URL?
+    @FocusState private var inputFocused: Bool
+    /// Opened to show the report of an import started elsewhere (a drop on the
+    /// main window), so appearing keeps that report.
+    private let keepReport: Bool
+    /// A Tessera backup found by that import, offered for restore on appear.
+    private let pendingBackup: URL?
     /// Classification and readout are derived once per edit, not per render:
     /// parsing a pasted migration blob or app export on every body evaluation
     /// was the most expensive thing this sheet did.
     @State private var kind: InputDetect.InputKind = .invalid
     @State private var readout: String?
 
+    init(keepReport: Bool = false, pendingBackup: URL? = nil) {
+        self.keepReport = keepReport
+        self.pendingBackup = pendingBackup
+    }
+
     #if DEBUG
-    init(input: String = "", manual: Bool = false) {
+    init(input: String, manual: Bool = false, keepReport: Bool = false) {
         _input = State(initialValue: input)
         _showManual = State(initialValue: manual)
         _manualSecret = State(initialValue: manual ? input : "")
+        self.keepReport = keepReport
+        self.pendingBackup = nil
     }
     #endif
 
     private var trimmed: String { input.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var isSetupKey: Bool { kind == .setupKey }
+    private var importing: Bool { model.importProgress != nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack { Text("Add accounts").font(Typo.display(18)).foregroundStyle(Palette.textPrimary); Spacer() }
             if showManual {
-                ManualEntryForm(prefillSecret: manualSecret) { dismiss() }
+                ManualEntryForm(prefillSecret: manualSecret, onAdded: { dismiss() }, onCancel: { dismiss() })
                 Button("Back to paste") { showManual = false; model.errorMessage = nil }
                     .buttonStyle(.plain).font(Typo.label(12)).foregroundStyle(Palette.textSecondary)
             } else {
@@ -45,16 +60,33 @@ struct AddAccountView: View {
             }
         }
         .padding(20).frame(width: 440).background(Palette.background)
+        .background(CaptureShield())
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { handleDrop($0) }
-        .overlay { if dropTargeted { dropOverlay } }
-        .onAppear { model.errorMessage = nil; model.notice = nil; model.importReport = nil }
+        .overlay { if dropTargeted { FileDropHighlight() } }
+        .onAppear {
+            model.errorMessage = nil; model.notice = nil
+            if !keepReport { model.importReport = nil }
+            if !showManual { inputFocused = true }
+            if let pendingBackup { restoreFile = pendingBackup }
+        }
         .onChange(of: input, initial: true) { _, text in reclassify(text) }
+        .sheet(isPresented: Binding(get: { restoreFile != nil }, set: { if !$0 { restoreFile = nil } })) {
+            RestoreBackupView(file: restoreFile) { line in
+                model.notice = .info(line)
+                if model.importReport?.hasDetail != true { dismiss() }
+            }
+        }
     }
 
     @ViewBuilder private var primaryField: some View {
         Text("Paste an otpauth link, an app or Google Authenticator export, or a setup key. One per line.")
             .font(Typo.label(12)).foregroundStyle(Palette.textSecondary)
-        FieldBox { TextField("otpauth://…", text: $input, axis: .vertical).lineLimit(3...8) }
+            .fixedSize(horizontal: false, vertical: true)
+        FieldBox {
+            TextField("otpauth://…", text: $input, axis: .vertical).lineLimit(3...8)
+                .autocorrectionDisabled()
+                .focused($inputFocused)
+        }
         if let r = readout {
             Text(r).font(Typo.label(11, .medium)).foregroundStyle(Palette.textSecondary)
         }
@@ -71,15 +103,20 @@ struct AddAccountView: View {
                     } catch { model.errorMessage = UserMessage.text(for: error, context: .scan) } }
             } label: {
                 Label(scanning ? "Scanning…" : "Scan screen", systemImage: "qrcode.viewfinder").font(Typo.label(12, .medium))
-            }.buttonStyle(.plain).foregroundStyle(Palette.accentInk).disabled(scanning)
-            Button { finish(model.importPickedFiles()) } label: {
+            }.buttonStyle(.plain).foregroundStyle(Palette.accentInk).disabled(scanning || importing)
+            Button {
+                let urls = model.chooseImportFiles()
+                Task { await importFiles(urls) }
+            } label: {
                 Label("Import from images or files", systemImage: "doc.text").font(Typo.label(12, .medium))
-            }.buttonStyle(.plain).foregroundStyle(Palette.accentInk)
+            }.buttonStyle(.plain).foregroundStyle(Palette.accentInk).disabled(scanning || importing)
         }
     }
 
     @ViewBuilder private var resultArea: some View {
-        if let report = model.importReport, !report.isEmpty {
+        if let p = model.importProgress {
+            ImportProgressView(progress: p)
+        } else if let report = model.importReport, !report.isEmpty {
             ImportReportView(report: report)
         } else if let e = model.errorMessage {
             ErrorLine(e)
@@ -95,7 +132,7 @@ struct AddAccountView: View {
             Spacer()
             Button("Cancel") { dismiss() }.buttonStyle(.plain).foregroundStyle(Palette.textSecondary)
                 .keyboardShortcut(.cancelAction)
-            ActionButton(isSetupKey ? "Continue" : "Add", enabled: !trimmed.isEmpty) { primaryAction() }
+            ActionButton(isSetupKey ? "Continue" : "Add", enabled: !trimmed.isEmpty && !importing) { primaryAction() }
         }
     }
 
@@ -114,6 +151,18 @@ struct AddAccountView: View {
     /// anything failed.
     private func finish(_ added: Bool) {
         if added, model.importReport?.hasDetail == false { dismiss() }
+    }
+
+    /// A Tessera backup among the files opens the restore sheet; otherwise the
+    /// same rule as the paste path.
+    private func importFiles(_ urls: [URL]) async {
+        guard !urls.isEmpty else { return }
+        let result = await model.importFiles(urls)
+        if let backup = result.backup {
+            restoreFile = backup
+        } else {
+            finish(result.added > 0)
+        }
     }
 
     /// Classify the field once per edit and build the factual one-line readout of
@@ -142,21 +191,11 @@ struct AddAccountView: View {
     }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
+        guard !importing else { return false }
         loadDroppedURLs(providers) { urls in
-            guard !urls.isEmpty else { return }
-            // Same rule as the paste path: a clean import closes the sheet, a
-            // partial one stays open so the per-item report is readable.
-            finish(model.importDroppedFiles(urls))
+            Task { await importFiles(urls) }
         }
         return true
-    }
-
-    private var dropOverlay: some View {
-        RoundedRectangle(cornerRadius: 12)
-            .stroke(Palette.accent, style: StrokeStyle(lineWidth: 2, dash: [6]))
-            .background(Palette.accentWash.opacity(0.4), in: RoundedRectangle(cornerRadius: 12))
-            .overlay(Text("Drop images or export files").font(Typo.label(12, .medium)).foregroundStyle(Palette.accentInk))
-            .allowsHitTesting(false)
     }
 }
 
@@ -166,7 +205,7 @@ struct ImportReportView: View {
     let report: ImportSummary
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if report.added > 0 { StatusLine(report.line) } else { ErrorLine(report.line) }
+            if report.needsReview { ErrorLine(report.line) } else { StatusLine(report.line) }
             if report.hasDetail {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 4) {
@@ -175,7 +214,8 @@ struct ImportReportView: View {
                                 Text(f.source).font(Typo.label(11, .medium)).foregroundStyle(Palette.textSecondary)
                                 Text(f.display.isEmpty ? f.reason : "\(f.display): \(f.reason)")
                                     .font(Typo.label(11)).foregroundStyle(Palette.textSecondary)
-                                    .lineLimit(1).truncationMode(.middle)
+                                    .lineLimit(2).truncationMode(.middle)
+                                    .fixedSize(horizontal: false, vertical: true)
                                 Spacer(minLength: 0)
                             }
                         }
@@ -189,10 +229,30 @@ struct ImportReportView: View {
     }
 }
 
+/// Files read so far in a running import.
+struct ImportProgressView: View {
+    let progress: ImportProgress
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ProgressView(value: Double(progress.done), total: Double(max(progress.total, 1)))
+            Text(Self.text(for: progress))
+                .font(Typo.label(11)).foregroundStyle(Palette.textSecondary)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    static func text(for progress: ImportProgress) -> String {
+        progress.total == 1 ? "Reading 1 file…"
+            : "Reading \(min(progress.done + 1, progress.total)) of \(progress.total) files…"
+    }
+}
+
 struct ManualEntryForm: View {
     @EnvironmentObject var model: AppModel
     var prefillSecret: String = ""
     var onAdded: () -> Void
+    var onCancel: (() -> Void)? = nil
+    @FocusState private var issuerFocused: Bool
     @State private var type: OTPType = .totp
     @State private var issuer = ""
     @State private var account = ""
@@ -208,9 +268,12 @@ struct ManualEntryForm: View {
                 Text("Time-based (TOTP)").tag(OTPType.totp)
                 Text("Counter (HOTP)").tag(OTPType.hotp)
             }
-            FieldBox { TextField("Issuer (e.g. GitHub)", text: $issuer) }
-            FieldBox { TextField("Account (e.g. you@example.com)", text: $account) }
-            FieldBox { TextField("Setup key (base32 secret)", text: $secret) }
+            FieldBox { TextField("Issuer (e.g. GitHub)", text: $issuer).focused($issuerFocused) }
+            FieldBox {
+                TextField(text: $account, prompt: Text(verbatim: "Account (e.g. you@example.com)")) { Text("Account") }
+                    .autocorrectionDisabled()
+            }
+            FieldBox { TextField("Setup key (base32 secret)", text: $secret).autocorrectionDisabled() }
             HStack(spacing: 10) {
                 Picker("Algorithm", selection: $algorithm) {
                     ForEach(["SHA1", "SHA256", "SHA512"], id: \.self) { Text($0).tag($0) }
@@ -225,6 +288,10 @@ struct ManualEntryForm: View {
             if let e = model.errorMessage { ErrorLine(e) }
             HStack {
                 Spacer()
+                if let onCancel {
+                    Button("Cancel", action: onCancel).buttonStyle(.plain).foregroundStyle(Palette.textSecondary)
+                        .keyboardShortcut(.cancelAction)
+                }
                 ActionButton("Add", enabled: !secret.isEmpty && !(issuer.isEmpty && account.isEmpty)) {
                     if model.addManual(type: type, issuer: issuer, account: account, secretBase32: secret,
                                        algorithm: algorithm, digits: digits, period: period, counter: counter) {
@@ -233,6 +300,9 @@ struct ManualEntryForm: View {
                 }
             }
         }
-        .onAppear { if secret.isEmpty { secret = prefillSecret } }
+        .onAppear {
+            if secret.isEmpty { secret = prefillSecret }
+            issuerFocused = true
+        }
     }
 }

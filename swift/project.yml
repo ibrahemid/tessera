@@ -61,6 +61,21 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         TEST_TARGET_NAME: Tessera
 
+  TesseraAppTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: App/UnitTests
+    dependencies:
+      - target: Tessera
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ibrahemid.tessera.apptests
+        SWIFT_VERSION: "6.0"
+        GENERATE_INFOPLIST_FILE: YES
+        BUNDLE_LOADER: $(TEST_HOST)
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/Tessera.app/Contents/MacOS/Tessera
+
 schemes:
   Tessera:
     build:
@@ -72,3 +87,4 @@ schemes:
       config: Debug
       targets:
         - TesseraUITests
+        - TesseraAppTests

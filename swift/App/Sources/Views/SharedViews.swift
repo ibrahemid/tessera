@@ -100,12 +100,13 @@ struct PrimaryButton: View {
     }
     var body: some View {
         Button(action: action) {
-            Text(title).font(Typo.label(13, .semibold)).foregroundStyle(Palette.onAccent)
+            Text(title).font(Typo.label(13, .semibold))
+                .foregroundStyle(enabled ? Palette.onAccent : Palette.textSecondary)
                 .frame(maxWidth: .infinity).padding(.vertical, 9)
-                .background(Palette.accentFill, in: RoundedRectangle(cornerRadius: 9))
+                .background(enabled ? Palette.accentFill : Palette.surfaceHi, in: RoundedRectangle(cornerRadius: 9))
+                .overlay(RoundedRectangle(cornerRadius: 9).stroke(enabled ? Color.clear : Palette.border, lineWidth: 1))
         }
         .buttonStyle(.plain)
-        .opacity(enabled ? 1 : 0.45)   // dim the whole control; never blend the fill toward the bg
         .disabled(!enabled)
     }
 }

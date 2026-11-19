@@ -26,7 +26,6 @@ struct VaultView: View {
     @State private var didFocusSearch = false
     @State private var listSheetAccount: Account?   // account being assigned to a new list
     @State private var newListName = ""
-    @State private var mainDropTargeted = false
 
     private var folders: [String] { model.folders }
 
@@ -115,21 +114,7 @@ struct VaultView: View {
         .sheet(isPresented: $showingAdd) { AddAccountView() }
         .sheet(item: $qrAccount) { QRExportView(account: $0) }
         .sheet(item: $editAccount) { EditAccountView(account: $0) }
-        // Secondary drop target: dropping export files or QR images onto the main
-        // window imports them; the summary shows in the notice capsule.
-        .onDrop(of: [.fileURL], isTargeted: $mainDropTargeted) { providers in
-            loadDroppedURLs(providers) { urls in
-                guard !urls.isEmpty else { return }
-                _ = model.importDroppedFiles(urls)
-                if let e = model.errorMessage {
-                    model.errorMessage = nil
-                    model.notice = .failure(e)
-                } else if let r = model.importReport, !r.isEmpty {
-                    model.notice = .info(r.line)
-                }
-            }
-            return true
-        }
+        .fileDropImport(isEnabled: !showingAdd && qrAccount == nil && editAccount == nil && listSheetAccount == nil)
         .alert("New List", isPresented: Binding(
             get: { listSheetAccount != nil },
             set: { if !$0 { listSheetAccount = nil; newListName = "" } }

@@ -8,9 +8,9 @@ extension AppModel {
 
     // MARK: Recovery passphrase
 
-    /// Minimum recovery passphrase length. Matches the tess CLI, which opens the
-    /// same wrap.
-    static let minPassphraseLength = 8
+    /// No passphrase wrap: only this Mac's Secure Enclave or Keychain key opens
+    /// the vault, so it can't be opened anywhere else or after that key is lost.
+    var opensOnThisMacOnly: Bool { !isLocked && !hasRecoveryPassphrase }
 
     /// Add (or replace) the vault's argon2id passphrase wrap, so the vault opens
     /// with either Touch ID or this passphrase — and so the tess CLI can open it.
@@ -18,8 +18,8 @@ extension AppModel {
     /// Returns nil on success, or a factual reason to show inline.
     func setRecoveryPassphrase(_ passphrase: String) async -> String? {
         guard let env = envelope, let dek = dek else { return "Unlock the vault first." }
-        guard passphrase.count >= AppModel.minPassphraseLength else {
-            return "Use at least \(AppModel.minPassphraseLength) characters."
+        guard passphrase.count >= PasswordRule.minLength else {
+            return PasswordRule.text(for: .tooShort, noun: "passphrase")
         }
         do {
             let a = argon2
@@ -31,10 +31,9 @@ extension AppModel {
             try store.save(updated)
             self.envelope = updated
             self.lastVaultModified = store.modifiedAt
-            notice = .info("Recovery passphrase saved")
             return nil
         } catch {
-            return UserMessage.textUnlessCancelled(for: error, context: .settings) ?? "Couldn't save the recovery passphrase."
+            return UserMessage.textUnlessCancelled(for: error, context: .settings) ?? "Couldn’t save the recovery passphrase."
         }
     }
 

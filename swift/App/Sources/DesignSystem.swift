@@ -42,7 +42,7 @@ enum Palette {
 
     static let textPrimary   = Color.themed(light: 0x1A1C22, dark: 0xF2F2F5)
     static let textSecondary = Color.themed(light: 0x6B6F7B, dark: 0x9DA1AD, lightHC: 0x4E525C, darkHC: 0x9DA1AD)
-    static let textFaint     = Color.themed(light: 0x8A8E99, dark: 0x6A6E7A, lightHC: 0x4E525C, darkHC: 0x9DA1AD)
+    static let textFaint     = Color.themed(light: 0x858994, dark: 0x737785, lightHC: 0x4E525C, darkHC: 0x9DA1AD)
 
     // Antique gold accent — the tessera.
     static let accent     = Color.themed(light: 0xA9791F, dark: 0xE3B23C)

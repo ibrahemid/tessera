@@ -40,6 +40,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var noticeToken = UUID()
     @Published var vaultExists: Bool
     @Published var importReport: ImportSummary?   // per-item result of the last bulk import
+    @Published var importProgress: ImportProgress?
     @Published var requireBiometrics: Bool
     /// Whether the vault carries an argon2id passphrase wrap: the recovery path
     /// when Touch ID can't open it, and what lets the tess CLI open it too.

@@ -16,6 +16,7 @@ struct EditAccountView: View {
     @State private var alias: String
     @State private var folder: String
     @State private var error: String?
+    @FocusState private var issuerFocused: Bool
 
     init(account: Account) {
         self.account = account
@@ -39,6 +40,7 @@ struct EditAccountView: View {
             labeledField("Issuer") {
                 TextField("Service name", text: $issuer)
                     .textFieldStyle(.plain).autocorrectionDisabled()
+                    .focused($issuerFocused)
                     .onChange(of: issuer) { error = nil }
             }
             labeledField("Account") {
@@ -58,8 +60,8 @@ struct EditAccountView: View {
                 Text("An alias is required. Type one to save.")
                     .font(Typo.label(11)).foregroundStyle(Palette.textSecondary)
             }
-            labeledField("List") {
-                TextField("Optional folder", text: $folder)
+            labeledField("Folder") {
+                TextField("None", text: $folder)
                     .textFieldStyle(.plain).autocorrectionDisabled()
                     .onChange(of: folder) { error = nil }
             }
@@ -80,6 +82,7 @@ struct EditAccountView: View {
             }.font(Typo.label(12, .medium))
         }
         .padding(24).frame(width: 320).background(Palette.background)
+        .onAppear { issuerFocused = true }
     }
 
     @ViewBuilder private func labeledField<Content: View>(_ label: String,

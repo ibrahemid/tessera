@@ -94,12 +94,12 @@ enum Screenshots {
             }) { AnyView(AddAccountView(input: "JBSWY3DPEHPK3PX1", manual: true)) },
             Shot(screen: "edit", variant: "account") { AnyView(EditAccountView(account: accounts[0])) },
             Shot(screen: "qr", variant: "export") { AnyView(QRExportView(account: accounts[0])) },
-            Shot(screen: "settings", variant: "top", size: CGSize(width: 420, height: 420)) { AnyView(SettingsView()) },
-            Shot(screen: "settings", variant: "bottom", size: CGSize(width: 420, height: 420), scrollToBottom: true) {
-                AnyView(SettingsView())
-            },
-            Shot(screen: "settings", variant: "feedback", size: CGSize(width: 420, height: 420), scrollToBottom: true) {
-                AnyView(SettingsView(feedback: .failure("That file isn't a Tessera vault.")))
+            Shot(screen: "settings", variant: "general") { AnyView(SettingsView(tab: .general)) },
+            Shot(screen: "settings", variant: "security") { AnyView(SettingsView(tab: .security)) },
+            Shot(screen: "settings", variant: "vault") { AnyView(SettingsView(tab: .vault)) },
+            Shot(screen: "settings", variant: "backup") { AnyView(SettingsView(tab: .backup)) },
+            Shot(screen: "settings", variant: "feedback") {
+                AnyView(SettingsView(tab: .vault, feedback: [.vaultFile: .failure("That file isn’t a Tessera vault.")]))
             },
             Shot(screen: "recoverypassphrase", variant: "sheet") { AnyView(RecoveryPassphraseView()) },
             Shot(screen: "backup", variant: "export") { AnyView(ExportBackupView()) },

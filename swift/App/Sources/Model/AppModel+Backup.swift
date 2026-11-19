@@ -3,17 +3,64 @@ import AppKit
 import UniformTypeIdentifiers
 import TesseraCore
 
+enum BackupExportOutcome: Equatable {
+    case saved(URL)
+    case failed(String)
+}
+
+enum BackupRestoreOutcome: Equatable {
+    case restored(Int)
+    /// Every account in the backup is already in the vault.
+    case nothingNew(Int)
+    case failed(String)
+
+    /// Result line for the screen that started the restore.
+    var line: String? {
+        switch self {
+        case .restored(let n): return "Restored \(n) account\(n == 1 ? "" : "s")."
+        case .nothingNew(let n):
+            return n == 1 ? "The account in this backup is already in your vault."
+                          : "All \(n) accounts in this backup are already in your vault."
+        case .failed: return nil
+        }
+    }
+}
+
+/// Checks a file is a Tessera encrypted backup before asking for its password.
+enum BackupFile {
+    /// Why `url` can't be restored with a password, or nil when it can.
+    static func problem(at url: URL) -> String? {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard let data = try? Data(contentsOf: url) else {
+            return "Couldn’t read \(url.lastPathComponent). Choose another file."
+        }
+        return problem(in: data)
+    }
+
+    static func problem(in data: Data) -> String? {
+        guard let env = try? Envelope.decode(data) else {
+            return "That file isn’t a Tessera backup. Choose a file made with Export encrypted backup."
+        }
+        guard env.hasPassphraseWrap else {
+            return UserMessage.text(for: VaultError.noPassphraseWrap, context: .restore)
+        }
+        return nil
+    }
+}
+
 extension AppModel {
-    // MARK: Reset & backup
+    // MARK: Reset
 
     /// Start over. For the built-in vault this deletes the Keychain key and the
     /// vault file. For an external vault shared with the CLI, it only detaches
-    /// (drops the bookmark) — the app never deletes a file the CLI owns.
+    /// (drops the bookmark); the app never deletes a file the CLI owns.
     func resetTessera() {
         pendingSwitchMessage = nil
         if store.isExternal {
             store.clearExternal()
         } else {
+            backupLedger.forget(vaultAt: store.vaultURL.path)
             AppKey.delete()
             try? FileManager.default.removeItem(at: store.vaultURL)
         }
@@ -25,85 +72,83 @@ extension AppModel {
         Task { await open(reason: "Unlock your Tessera vault") }
     }
 
-    /// What reset does here, which differs by vault source: an external file the
-    /// CLI owns is only disconnected, never deleted.
-    var resetActionTitle: String {
-        isExternalVault ? "Disconnect vault" : "Delete vault and start over"
+    // MARK: Encrypted backup
+
+    /// Ask where to save a backup. Comes before the password work so a cancel
+    /// never pays the argon2 cost.
+    func chooseBackupDestination() -> URL? {
+        promptSave(name: "tessera-backup.json", types: [.json],
+                   message: "Encrypted with the backup password. Keep the file and the password.")
     }
 
-    var resetWarning: String {
-        isExternalVault
-            ? "Disconnects the vault file; the file itself is not deleted."
-            : "Deletes all accounts and the vault key on this Mac."
-    }
-
-    /// Write an encrypted, passphrase-wrapped copy of the current accounts to a
-    /// file the user picks. Restorable with that passphrase by the `tess` CLI.
-    /// The panel comes first so a cancel never pays the argon2 cost, which runs
-    /// off the main thread.
-    @discardableResult
-    func exportBackup(passphrase: String) async -> Bool {
-        guard let url = promptSave(name: "tessera-backup.json", types: [.json],
-                                   message: "Encrypted with this password. Keep the file and password safe.") else { return false }
-        errorMessage = nil
+    /// Write an encrypted, password-wrapped copy of the current accounts to
+    /// `url`. Restorable with that password here and by the tess CLI. The
+    /// argon2 work runs off the main thread.
+    func exportBackup(to url: URL, password: String) async -> BackupExportOutcome {
+        guard password.count >= PasswordRule.minLength else {
+            return .failed(PasswordRule.text(for: .tooShort, noun: "password"))
+        }
+        let accts = accounts
+        let a = argon2
         do {
-            let accts = accounts
-            let a = argon2
             let data = try await Task.detached(priority: .userInitiated) {
-                try Envelope.create(accounts: accts, passphrase: passphrase, argon2: a).encoded()
+                try Envelope.create(accounts: accts, passphrase: password, argon2: a).encoded()
             }.value
             try data.write(to: url, options: [.atomic])
-            return true
+            backupLedger.recordExport(forVaultAt: store.vaultURL.path)
+            return .saved(url)
         } catch {
-            errorMessage = UserMessage.textUnlessCancelled(for: error, context: .save, url: url)
-            return false
+            return .failed(UserMessage.text(for: error, context: .export, url: url))
         }
     }
 
-    /// Restore accounts from a Tessera encrypted backup. Decrypts with the backup
-    /// password (argon2 off the main thread) and merges into the current vault,
-    /// skipping exact duplicates. Reuses the same Envelope format the CLI
-    /// reads/writes — no format change.
-    @discardableResult
-    func restoreBackup(passphrase: String) async -> Bool {
-        guard let url = promptOpen(types: [.json], message: "Choose a Tessera encrypted backup (.json).").first else { return false }
-        guard let data = try? Data(contentsOf: url) else {
-            errorMessage = "Couldn't read that file."; return false
+    /// Ask for a backup file to restore.
+    func chooseBackupFile() -> URL? {
+        promptOpen(types: [.json], message: "Choose a Tessera backup.", allowsOther: true).first
+    }
+
+    /// Restore accounts from the Tessera encrypted backup at `url`. Decrypts with
+    /// the backup password (argon2 off the main thread) and merges into the
+    /// current vault, skipping exact duplicates.
+    func restoreBackup(from url: URL, password: String) async -> BackupRestoreOutcome {
+        let scoped = url.startAccessingSecurityScopedResource()
+        let data = try? Data(contentsOf: url)
+        if scoped { url.stopAccessingSecurityScopedResource() }
+        guard let data else {
+            return .failed("Couldn’t read \(url.lastPathComponent). Choose another file.")
         }
-        errorMessage = nil
+        if let problem = BackupFile.problem(in: data) { return .failed(problem) }
         let imported: [Account]
         do {
             let a = argon2
             imported = try await Task.detached(priority: .userInitiated) { () -> [Account] in
-                let env = try Envelope.decode(data)
-                return try env.open(passphrase: passphrase, argon2: a)
+                try Envelope.decode(data).open(passphrase: password, argon2: a)
             }.value
         } catch {
-            errorMessage = UserMessage.text(for: error, context: .restore)
-            return false
+            return .failed(UserMessage.text(for: error, context: .restore))
         }
         do {
             let (added, _) = try merge(imported, resetIDs: true)
-            notice = .info(added == 0 ? "Those accounts are already here" : "Restored \(added) account\(added == 1 ? "" : "s")")
-            return added > 0
+            return added == 0 ? .nothingNew(imported.count) : .restored(added)
         } catch {
-            errorMessage = UserMessage.textUnlessCancelled(for: error, context: .save)
-            return false
+            return .failed(UserMessage.text(for: error, context: .save))
         }
     }
 
-    /// Export every account as plaintext otpauth:// links — the universal format
-    /// any authenticator can import. The secrets are readable, so this warns.
+    // MARK: Plain text export
+
+    /// Export every account as plaintext otpauth:// links, the format any
+    /// authenticator can import. The secrets are readable, so the panel says so.
     func exportPlaintextLinks() -> Notice? {
         guard !accounts.isEmpty else { return nil }
         let body = accounts.map { OTPAuth.format($0) }.joined(separator: "\n") + "\n"
         guard let url = promptSave(name: "tessera-accounts.txt", types: [.plainText],
-                                   message: "Plain text — the secret keys are readable. Anyone with this file can generate your codes.") else { return nil }
+                                   message: "Plain text. Anyone with this file can read the setup keys and generate your codes.") else { return nil }
         do {
             try Data(body.utf8).write(to: url, options: [.atomic])
-            return .info("Exported \(accounts.count) link\(accounts.count == 1 ? "" : "s")")
+            return .info("Exported \(accounts.count) link\(accounts.count == 1 ? "" : "s") to \(url.lastPathComponent)")
         } catch {
-            return .failure(UserMessage.text(for: error, context: .save, url: url))
+            return .failure(UserMessage.text(for: error, context: .export, url: url))
         }
     }
 

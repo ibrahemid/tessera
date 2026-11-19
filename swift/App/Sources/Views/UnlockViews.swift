@@ -26,7 +26,7 @@ struct RootView: View {
                 }
             }
         }
-        .tint(Palette.accent)
+        .tint(Palette.accentFill)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(WindowConfigurator(compact: compact))
         .task { await model.openOnLaunch() }
@@ -45,15 +45,17 @@ struct LaunchView: View {
 /// The one confirm dialog in front of the destructive reset, shared by every
 /// surface that offers it. Its wording comes from the model, because reset means
 /// two different things: it deletes the built-in vault, but only disconnects an
-/// external file the tess CLI owns.
+/// external file the tess CLI owns. Cancel is the default button.
 extension View {
-    func resetTesseraDialog(isPresented: Binding<Bool>, model: AppModel, note: String? = nil) -> some View {
-        confirmationDialog("Reset Tessera?", isPresented: isPresented, titleVisibility: .visible) {
-            Button(model.resetActionTitle, role: .destructive) { model.resetTessera() }
-            Button("Cancel", role: .cancel) {}
+    func resetTesseraDialog(isPresented: Binding<Bool>, model: AppModel) -> some View {
+        let c = model.resetConfirmation
+        return confirmationDialog(c.title, isPresented: isPresented, titleVisibility: .visible) {
+            Button(c.action, role: .destructive) { model.resetTessera() }
+            Button("Cancel", role: .cancel) {}.keyboardShortcut(.defaultAction)
         } message: {
-            Text([model.resetWarning, note].compactMap { $0 }.joined(separator: " "))
+            Text(c.message)
         }
+        .dialogSeverity(.critical)
     }
 }
 
@@ -73,7 +75,7 @@ struct UnlockView: View {
                     .background(Palette.accentFill, in: RoundedRectangle(cornerRadius: 10))
             }.buttonStyle(.plain)
             if let e = model.errorMessage { ErrorLine(e) }
-            Button("Can't unlock? Reset Tessera") { confirmReset = true }
+            Button("Can’t unlock? Reset Tessera…") { confirmReset = true }
                 .buttonStyle(.plain).font(Typo.label(12)).foregroundStyle(Palette.textSecondary)
             Spacer()
         }
@@ -89,18 +91,19 @@ struct PassphraseUnlockView: View {
     @State private var passphrase = ""
     @State private var unlocking = false
     @State private var confirmReset = false
+    @FocusState private var fieldFocused: Bool
     var body: some View {
         VStack(spacing: 16) {
             Spacer()
             MosaicMark(side: 50)
-            Text(model.passphraseIsRecovery ? "Touch ID can't open this vault" : "This vault has a passphrase")
+            Text(model.passphraseIsRecovery ? "Touch ID can’t open this vault" : "This vault has a passphrase")
                 .font(Typo.display(20)).foregroundStyle(Palette.textPrimary)
             Text(model.passphraseIsRecovery
-                 ? "Its Secure Enclave key no longer works, which normally means the Mac's enrolled fingerprints changed. Enter the recovery passphrase to open it and set Touch ID up again."
+                 ? "Its Secure Enclave key no longer works, which normally means the Mac’s enrolled fingerprints changed. Enter the recovery passphrase to open it and set Touch ID up again."
                  : "It was created outside this app, for example with the tess CLI. After it opens once, Tessera unlocks it automatically.")
                 .multilineTextAlignment(.center).font(Typo.label(13)).foregroundStyle(Palette.textSecondary)
                 .frame(maxWidth: 360)
-            FieldBox { SecureField("Vault passphrase", text: $passphrase).onSubmit(unlock) }
+            FieldBox { SecureField("Vault passphrase", text: $passphrase).focused($fieldFocused).onSubmit(unlock) }
                 .frame(maxWidth: 260)
             PrimaryButton(unlocking ? "Unlocking…" : "Unlock", enabled: !passphrase.isEmpty && !unlocking) { unlock() }
                 .frame(maxWidth: 260)
@@ -109,12 +112,13 @@ struct PassphraseUnlockView: View {
                 Button("Try Touch ID again") { model.retryUnlock() }
                     .buttonStyle(.plain).font(Typo.label(12)).foregroundStyle(Palette.accentInk)
             }
-            Button("Can't unlock? Reset Tessera") { confirmReset = true }
+            Button("Can’t unlock? Reset Tessera…") { confirmReset = true }
                 .buttonStyle(.plain).font(Typo.label(12)).foregroundStyle(Palette.textSecondary)
             Spacer()
         }
         .padding(32)
         .resetTesseraDialog(isPresented: $confirmReset, model: model)
+        .onAppear { fieldFocused = true }
     }
 
     private func unlock() {
@@ -129,19 +133,21 @@ struct PassphraseUnlockView: View {
 
 struct ResetPromptView: View {
     @EnvironmentObject var model: AppModel
+    @State private var confirmReset = false
     var body: some View {
         VStack(spacing: 16) {
             Spacer()
             MosaicMark(side: 50)
-            Text("Can't open this vault").font(Typo.display(20)).foregroundStyle(Palette.textPrimary)
-            Text("Its key isn't on this Mac, so the accounts can't be decrypted. Reset to start a new vault.")
+            Text("Can’t open this vault").font(Typo.display(20)).foregroundStyle(Palette.textPrimary)
+            Text("Its key isn’t on this Mac, so the accounts can’t be decrypted. Reset to start a new vault. If you have an encrypted backup, restore it afterwards from Settings > Backup.")
                 .multilineTextAlignment(.center).font(Typo.label(13)).foregroundStyle(Palette.textSecondary)
                 .frame(maxWidth: 360)
-            PrimaryButton("Reset Tessera") { model.resetTessera() }.frame(maxWidth: 260)
+            PrimaryButton("Reset Tessera…") { confirmReset = true }.frame(maxWidth: 260)
             if let e = model.errorMessage { ErrorLine(e) }
             Spacer()
         }
         .padding(32)
+        .resetTesseraDialog(isPresented: $confirmReset, model: model)
     }
 }
 
@@ -156,14 +162,17 @@ struct RecoveryView: View {
         VStack(spacing: 16) {
             Spacer()
             MosaicMark(side: 50)
-            Text("Touch ID can't open this vault").font(Typo.display(20)).foregroundStyle(Palette.textPrimary)
-            Text("The vault key is tied to the fingerprints that were enrolled when it was set up. Adding or removing a fingerprint invalidates it, and this vault has no recovery passphrase.")
+            Text("Touch ID can’t open this vault").font(Typo.display(20)).foregroundStyle(Palette.textPrimary)
+            Text("The vault key is tied to the fingerprints that were enrolled when it was set up. Adding or removing a fingerprint invalidates it.")
+                .multilineTextAlignment(.center).font(Typo.label(13)).foregroundStyle(Palette.textSecondary)
+                .frame(maxWidth: 380)
+            Text("This vault has no recovery passphrase, so it opens only with this Mac’s Touch ID key. If you have an encrypted backup, reset Tessera and restore it from Settings > Backup, then set a recovery passphrase in Settings > Security.")
                 .multilineTextAlignment(.center).font(Typo.label(13)).foregroundStyle(Palette.textSecondary)
                 .frame(maxWidth: 380)
             PrimaryButton("Try Touch ID again") { model.retryUnlock() }.frame(maxWidth: 260)
             Button("Open another vault file…") { model.errorMessage = model.openExistingVault() }
                 .buttonStyle(.plain).font(Typo.label(12)).foregroundStyle(Palette.accentInk)
-            Button("Reset Tessera") { confirmReset = true }
+            Button("Reset Tessera…") { confirmReset = true }
                 .buttonStyle(.plain).font(Typo.label(12)).foregroundStyle(Palette.textSecondary)
             if let e = model.errorMessage { ErrorLine(e) }
             Spacer()
@@ -181,8 +190,8 @@ struct VaultUnreachableView: View {
         VStack(spacing: 16) {
             Spacer()
             MosaicMark(side: 50)
-            Text("Can't reach your vault").font(Typo.display(20)).foregroundStyle(Palette.textPrimary)
-            Text("The vault file you opened isn't available. It may have moved, or the disk isn't mounted.")
+            Text("Can’t reach your vault").font(Typo.display(20)).foregroundStyle(Palette.textPrimary)
+            Text("The vault file you opened isn’t available. It may have moved, or the disk isn’t mounted.")
                 .multilineTextAlignment(.center).font(Typo.label(13)).foregroundStyle(Palette.textSecondary)
                 .frame(maxWidth: 360)
             PrimaryButton("Locate vault…") { model.errorMessage = model.openExistingVault() }.frame(maxWidth: 260)

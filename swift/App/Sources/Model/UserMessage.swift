@@ -10,7 +10,7 @@ enum AccountEntryError: Error {
 }
 
 enum UserMessage {
-    enum Context { case unlock, restore, add, scan, settings, save }
+    enum Context { case unlock, restore, add, scan, settings, save, export }
 
     static let screenRecordingDenied = "Tessera needs Screen Recording permission to scan."
     static let screenRecordingSettingsURL =
@@ -29,7 +29,8 @@ enum UserMessage {
         if let e = error as? LAError, let t = text(for: e.code) { return t }
         if let c = error as? CocoaError, fileWriteCodes.contains(c.code),
            let target = url ?? c.url ?? c.filePath.map({ URL(fileURLWithPath: $0) }) {
-            return "Couldn't save to \(target.lastPathComponent): \(error.localizedDescription)"
+            let line = "Couldn’t save to \(target.lastPathComponent): \(error.localizedDescription)"
+            return context == .export ? line + " Choose another folder." : line
         }
         return error.localizedDescription
     }
@@ -58,7 +59,7 @@ enum UserMessage {
         .fileWriteVolumeReadOnly,
     ]
 
-    private static let invalidSetupKey = "That setup key isn't valid. It uses letters A to Z and digits 2 to 7."
+    private static let invalidSetupKey = "That setup key isn’t valid. It uses letters A to Z and digits 2 to 7."
 
     private static func text(for e: AccountEntryError) -> String {
         switch e {
@@ -71,9 +72,9 @@ enum UserMessage {
         switch e {
         case .wrongPassphrase:
             switch context {
-            case .unlock: return "That passphrase doesn't open this vault."
-            case .restore: return "That password doesn't open this backup."
-            case .add, .scan, .settings, .save: return "Unlock the vault first."
+            case .unlock: return "That passphrase doesn’t open this vault."
+            case .restore: return "That password doesn’t open this backup."
+            case .add, .scan, .settings, .save, .export: return "Unlock the vault first."
             }
         case .noPassphraseWrap:
             return context == .restore
@@ -103,17 +104,17 @@ enum UserMessage {
     private static func text(for e: AppKey.AppKeyError) -> String {
         switch e {
         case .keychain(let s):
-            return "Couldn't read the vault key from the Keychain (error \(s)). Lock and unlock your Mac, then try again."
+            return "Couldn’t read the vault key from the Keychain (error \(s)). Lock and unlock your Mac, then try again."
         case .missing:
-            return "Couldn't find the vault key in the Keychain. Quit and reopen Tessera."
+            return "Couldn’t find the vault key in the Keychain. Quit and reopen Tessera."
         }
     }
 
     private static func text(for e: SecureEnclaveWrap.SEError) -> String {
         switch e {
-        case .notAvailable: return "This Mac has no Secure Enclave, so Touch ID can't protect the vault."
+        case .notAvailable: return "This Mac has no Secure Enclave, so Touch ID can’t protect the vault."
         case .noWrap: return "This vault has no Touch ID key for this Mac."
-        case .deriveFailed: return "The Secure Enclave couldn't unlock the vault key. Try again."
+        case .deriveFailed: return "The Secure Enclave couldn’t unlock the vault key. Try again."
         }
     }
 
@@ -126,7 +127,7 @@ enum UserMessage {
 
     private static func text(for code: LAError.Code) -> String? {
         switch code {
-        case .authenticationFailed: return "Touch ID didn't recognize that finger. Try again."
+        case .authenticationFailed: return "Touch ID didn’t recognize that finger. Try again."
         case .biometryLockout:
             return "Touch ID is locked after too many tries. Lock and unlock your Mac with its password, then try again."
         default: return nil

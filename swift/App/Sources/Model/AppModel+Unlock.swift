@@ -140,10 +140,10 @@ extension AppModel {
         // Reject anything that isn't a Tessera vault before touching the bookmark,
         // so a stray file never becomes the configured vault.
         guard let data = try? Data(contentsOf: url), (try? Envelope.decode(data)) != nil else {
-            return "That file isn't a Tessera vault."
+            return "That file isn’t a Tessera vault."
         }
         if guardSwitch, !confirmVaultSwitch(to: url) { return nil }
-        guard store.setExternal(url) else { return "Couldn't open that vault." }
+        guard store.setExternal(url) else { return "Couldn’t open that vault." }
         pendingSwitchMessage = "Now using \(homeRelative(url))"
         reopenFromStore()
         return nil
