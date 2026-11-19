@@ -4,7 +4,7 @@ CLI-first TOTP/2FA authenticator for macOS, plus a native SwiftUI app. Free, ope
 
 ## Layout
 
-- `spec/` — SOURCE OF TRUTH. `vault-format.md`, `otpauth.md`, `testvectors.json`, `canonical_edge.json`. Change behavior here first.
+- `spec/` — SOURCE OF TRUTH. `vault-format.md`, `otpauth.md`, `testvectors.json`, `canonical_edge.json`, `canonical_edge_v2.json`. Change behavior here first.
 - `go/` — `tess` CLI + core (module `github.com/ibrahemid/tessera/go`, Go 1.26). Security-critical code (OTP, base32, vault) is stdlib/`x/crypto` only.
 - `swift/` — `TesseraCore` (Sources/) verified via `swiftc` + the SwiftUI app (App/). Deps: swift-crypto (Linux only) and the vendored PHC argon2 (`CArgon2` target, wrapped by `TesseraArgon2`).
 - `docs/` — BUILD.md, APP_STORE.md, design spec under `docs/superpowers/specs/`.
@@ -20,7 +20,7 @@ CLI-first TOTP/2FA authenticator for macOS, plus a native SwiftUI app. Free, ope
 - Go: `go -C go test -race ./...`, `go -C go vet ./...`, `gofmt -l go/` (empty).
 - Swift core (no Xcode): `swiftc -O swift/Sources/TesseraCore/*.swift swift/Tools/verify/main.swift -o /tmp/v && /tmp/v "$(pwd)/spec" "$(pwd)/go/internal/importers/testdata"`.
 - Swift argon2id + full Go→Swift cross-decrypt: `cd swift && swift test` (needs full Xcode; CLT SwiftPM is broken).
-- After changing vectors: regenerate via `go -C go run ./internal/vectorgen` and `... edge > spec/canonical_edge.json`, re-pin, rerun both suites.
+- After changing vectors: regenerate via `go -C go run ./internal/vectorgen` (prints version 1 snippets to paste), `... v2 < spec/testvectors.json` (writes the whole file with the version 2 keys respliced; redirect to a temp file, then replace), `... edge > spec/canonical_edge.json` and `... edge2 > spec/canonical_edge_v2.json`; rerun both suites. `go/internal/vectorgen` tests fail when a file and the generator disagree.
 
 ## Needs full Xcode (the M1 Pro server has it; the Air's CLT does not)
 

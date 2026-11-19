@@ -80,4 +80,6 @@ truth and hand-authored). To regenerate:
 ```sh
 go -C go run ./internal/vectorgen            # prints snippets to paste
 go -C go run ./internal/vectorgen edge > spec/canonical_edge.json
+go -C go run ./internal/vectorgen edge2 > spec/canonical_edge_v2.json
+go -C go run ./internal/vectorgen v2 < spec/testvectors.json > /tmp/testvectors.json && mv /tmp/testvectors.json spec/testvectors.json
 ```
