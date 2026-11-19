@@ -6,10 +6,10 @@ import (
 	"io"
 	"regexp"
 	"runtime"
-	"strconv"
 	"strings"
 
 	"github.com/ibrahemid/tessera/go/internal/base32x"
+	"github.com/ibrahemid/tessera/go/internal/otpauth"
 	"github.com/ibrahemid/tessera/go/internal/store"
 	"github.com/ibrahemid/tessera/go/internal/ui"
 	"github.com/ibrahemid/tessera/go/internal/vault"
@@ -80,8 +80,7 @@ func quoteArg(s string) string {
 }
 
 var (
-	packagePrefix  = regexp.MustCompile(`(^|: )(store|vault|otpauth|migration|base32x|secretstore|qr|account|importers|exporters|detect|procenv|code|otp|screenshot|clipboard|dbusx): `)
-	issuerMismatch = regexp.MustCompile(`issuer mismatch \(label ("(?:[^"\\]|\\.)*"), param ("(?:[^"\\]|\\.)*")\)`)
+	packagePrefix = regexp.MustCompile(`(^|: )(store|vault|otpauth|migration|base32x|secretstore|qr|account|importers|exporters|detect|procenv|code|otp|screenshot|clipboard|dbusx): `)
 )
 
 // userMessage turns an error from any layer into the sentence tess prints: the
@@ -110,14 +109,11 @@ func userMessage(err error) string {
 	case errors.Is(err, base32x.ErrInvalid):
 		return "invalid setup key: base32 uses A-Z and 2-7"
 	}
-	msg := err.Error()
-	if m := issuerMismatch.FindStringSubmatch(msg); m != nil {
-		label, lerr := strconv.Unquote(m[1])
-		param, perr := strconv.Unquote(m[2])
-		if lerr == nil && perr == nil {
-			return fmt.Sprintf("issuer differs between the label (%s) and the issuer parameter (%s); add with --issuer to choose", label, param)
-		}
+	var mismatch *otpauth.IssuerMismatchError
+	if errors.As(err, &mismatch) {
+		return fmt.Sprintf("issuer differs between the label (%s) and the issuer parameter (%s); add with --issuer to choose", mismatch.Label, mismatch.Param)
 	}
+	msg := err.Error()
 	for {
 		stripped := packagePrefix.ReplaceAllString(msg, "$1")
 		if stripped == msg {
