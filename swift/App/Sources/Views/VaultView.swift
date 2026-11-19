@@ -369,7 +369,7 @@ struct VaultView: View {
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
-                .environment(\.defaultMinListRowHeight, 0)
+                .environment(\.defaultMinListRowHeight, 1)
                 .frame(maxWidth: .infinity)   // fills the centered column from detailScaffold
                 .onChange(of: selection.cursor) { _, cursor in
                     guard let cursor else { return }
