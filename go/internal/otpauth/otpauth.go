@@ -44,7 +44,10 @@ func Parse(uri string) (account.Account, error) {
 	}
 	a.Issuer, a.Account = issuer, acct
 
-	q := u.Query()
+	q, err := parseQuery(u.RawQuery)
+	if err != nil {
+		return a, err
+	}
 	secretParam := q.Get("secret")
 	if secretParam == "" {
 		return a, fmt.Errorf("otpauth: missing secret")
@@ -55,7 +58,7 @@ func Parse(uri string) (account.Account, error) {
 	}
 	a.Secret = secret
 
-	if iss := q.Get("issuer"); iss != "" {
+	if iss := account.CleanText(q.Get("issuer")); iss != "" {
 		if a.Issuer != "" && a.Issuer != iss {
 			return a, fmt.Errorf("otpauth: issuer mismatch (label %q, param %q)", a.Issuer, iss)
 		}
@@ -108,7 +111,7 @@ func Parse(uri string) (account.Account, error) {
 			return a, fmt.Errorf("otpauth: hotp requires counter")
 		}
 		n, err := strconv.ParseInt(c, 10, 64)
-		if err != nil || n < 0 {
+		if err != nil || n < 0 || n > account.MaxCounter {
 			return a, fmt.Errorf("otpauth: invalid counter %q", c)
 		}
 		a.Counter = n
@@ -136,7 +139,34 @@ func splitLabel(escapedPath string) (issuer, acct string, err error) {
 	if err != nil {
 		return "", "", fmt.Errorf("otpauth: bad label account: %w", err)
 	}
-	return strings.TrimSpace(issuer), strings.TrimSpace(acct), nil
+	return account.CleanText(issuer), account.CleanText(acct), nil
+}
+
+var errQueryEscape = errors.New("otpauth: invalid percent-encoding in query")
+
+// url.ParseQuery drops a pair with an invalid escape; the spec rejects the URI.
+func parseQuery(rawQuery string) (url.Values, error) {
+	q := url.Values{}
+	for rawQuery != "" {
+		var pair string
+		pair, rawQuery, _ = strings.Cut(rawQuery, "&")
+		if pair == "" {
+			continue
+		}
+		rawKey, rawValue, _ := strings.Cut(pair, "=")
+		key, err := url.QueryUnescape(rawKey)
+		if err != nil {
+			return nil, errQueryEscape
+		}
+		value, err := url.QueryUnescape(rawValue)
+		if err != nil {
+			return nil, errQueryEscape
+		}
+		if _, seen := q[key]; !seen {
+			q[key] = []string{value}
+		}
+	}
+	return q, nil
 }
 
 // escapeLabelPart percent-encodes one label component. url.PathEscape leaves

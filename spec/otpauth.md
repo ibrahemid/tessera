@@ -101,7 +101,7 @@ message MigrationPayload {
 Strictness (both cores MUST match; the Go core is the reference):
 - The scheme and the host `offline` are matched case-insensitively.
 - An enum value this spec does not list (`algorithm`, `digits`, `type`) rejects the entry; it is never mapped to a default. `*_UNSPECIFIED` (0) maps to SHA1, six digits and TOTP respectively.
-- `name` and `issuer` go through § Text fields. A `name` of the form `issuer:account` is split on its first `:` when `issuer` is empty or equal to that prefix.
+- `name` and `issuer` go through § Text fields. A `name` containing `:` is split on its first `:` into issuer and account; a non-empty `issuer` replaces the prefix.
 - A TOTP entry whose issuer is `Steam` (case-insensitive) becomes a Steam account. An HOTP entry never does.
 - `counter` follows the range under § HOTP; a negative or larger value rejects the entry.
 - Protobuf decoding is strict: a field with the wrong wire type, a varint longer than 10 bytes or whose tenth byte exceeds 1, and a length that runs past the end of the buffer each reject the payload. Lengths are compared as unsigned 64-bit values before any narrowing.

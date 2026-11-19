@@ -3,9 +3,13 @@ package migration
 import (
 	"bytes"
 	"encoding/base64"
+	"net/url"
 	"strings"
 	"testing"
 
+	"google.golang.org/protobuf/encoding/protowire"
+
+	"github.com/ibrahemid/tessera/go/internal/account"
 	"github.com/ibrahemid/tessera/go/internal/base32x"
 	"github.com/ibrahemid/tessera/go/internal/spectest"
 )
@@ -190,5 +194,139 @@ func TestParseErrorNeverEchoesTheURI(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "otpauth-migration://") {
 		t.Fatalf("the error echoes the URI: %v", err)
+	}
+}
+
+type wireParam struct {
+	name, issuer       string
+	alg, digits, typ   uint64
+	counter            uint64
+	hasCounter         bool
+	extraPayloadFields []byte
+}
+
+func buildURI(p wireParam) string {
+	var param []byte
+	param = protowire.AppendTag(param, paramSecret, protowire.BytesType)
+	param = protowire.AppendBytes(param, []byte("0123456789"))
+	param = protowire.AppendTag(param, paramName, protowire.BytesType)
+	param = protowire.AppendString(param, p.name)
+	param = protowire.AppendTag(param, paramIssuer, protowire.BytesType)
+	param = protowire.AppendString(param, p.issuer)
+	param = protowire.AppendTag(param, paramAlgorithm, protowire.VarintType)
+	param = protowire.AppendVarint(param, p.alg)
+	param = protowire.AppendTag(param, paramDigits, protowire.VarintType)
+	param = protowire.AppendVarint(param, p.digits)
+	param = protowire.AppendTag(param, paramType, protowire.VarintType)
+	param = protowire.AppendVarint(param, p.typ)
+	if p.hasCounter {
+		param = protowire.AppendTag(param, paramCounter, protowire.VarintType)
+		param = protowire.AppendVarint(param, p.counter)
+	}
+	var payload []byte
+	payload = protowire.AppendTag(payload, fieldOtpParameters, protowire.BytesType)
+	payload = protowire.AppendBytes(payload, param)
+	payload = append(payload, p.extraPayloadFields...)
+	return "otpauth-migration://offline?data=" + url.QueryEscape(base64.StdEncoding.EncodeToString(payload))
+}
+
+func TestParseCounterRange(t *testing.T) {
+	at := wireParam{name: "x", typ: 1, counter: uint64(account.MaxCounter), hasCounter: true}
+	got, err := Parse(buildURI(at))
+	if err != nil {
+		t.Fatalf("counter at the maximum: %v", err)
+	}
+	if got[0].Counter != account.MaxCounter {
+		t.Errorf("counter = %d", got[0].Counter)
+	}
+	above := at
+	above.counter++
+	if _, err := Parse(buildURI(above)); err == nil {
+		t.Error("counter 2^63-1 must be rejected")
+	}
+}
+
+func TestParseRejectsWrongWireTypeForPayloadField(t *testing.T) {
+	var bad []byte
+	bad = protowire.AppendTag(bad, fieldVersion, protowire.BytesType)
+	bad = protowire.AppendBytes(bad, []byte{1})
+	if _, err := Parse(buildURI(wireParam{name: "x", extraPayloadFields: bad})); err == nil {
+		t.Error("version with a bytes wire type must be rejected")
+	}
+	var ok []byte
+	ok = protowire.AppendTag(ok, fieldVersion, protowire.VarintType)
+	ok = protowire.AppendVarint(ok, 1)
+	if _, err := Parse(buildURI(wireParam{name: "x", extraPayloadFields: ok})); err != nil {
+		t.Errorf("varint version: %v", err)
+	}
+}
+
+func TestParseRejectsMalformedWire(t *testing.T) {
+	overlong := []byte{0x10, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x02}
+	elevenBytes := []byte{0x10, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x00}
+	truncated := []byte{0x0a, 0x7f, 0x0a}
+	hugeLength := []byte{0x0a, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01}
+	for name, payload := range map[string][]byte{
+		"tenth varint byte above 1": overlong,
+		"varint of 11 bytes":        elevenBytes,
+		"truncated length":          truncated,
+		"length above 2^63":         hugeLength,
+	} {
+		if _, err := Parse("otpauth-migration://offline?data=" + url.QueryEscape(base64.StdEncoding.EncodeToString(payload))); err == nil {
+			t.Errorf("%s: expected rejection", name)
+		}
+	}
+}
+
+func TestParseCleansText(t *testing.T) {
+	got, err := Parse(buildURI(wireParam{name: " \u202eEvil\u0007:\ufeffbob\u200d ", issuer: ""}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got[0].Issuer != "Evil" || got[0].Account != "bob\u200d" {
+		t.Errorf("issuer/account = %q/%q", got[0].Issuer, got[0].Account)
+	}
+	got, err = Parse(buildURI(wireParam{name: "Old:alice", issuer: "\u2066New\u2069"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got[0].Issuer != "New" || got[0].Account != "alice" {
+		t.Errorf("a non-empty issuer replaces the name prefix: %q/%q", got[0].Issuer, got[0].Account)
+	}
+}
+
+func TestParseEnums(t *testing.T) {
+	got, err := Parse(buildURI(wireParam{name: "x"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got[0].Algorithm != "SHA1" || got[0].Digits != 6 || got[0].Type != account.TOTP {
+		t.Errorf("unspecified enums: %+v", got[0])
+	}
+	for name, p := range map[string]wireParam{
+		"algorithm 5":   {name: "x", alg: 5},
+		"algorithm MD5": {name: "x", alg: 4},
+		"digits 3":      {name: "x", digits: 3},
+		"type 3":        {name: "x", typ: 3},
+	} {
+		if _, err := Parse(buildURI(p)); err == nil {
+			t.Errorf("%s: expected rejection", name)
+		}
+	}
+	steamHOTP, err := Parse(buildURI(wireParam{name: "Steam:me", typ: 1}))
+	if err != nil || steamHOTP[0].Type != account.HOTP {
+		t.Errorf("HOTP Steam entry: %v %v", steamHOTP, err)
+	}
+	steamTOTP, err := Parse(buildURI(wireParam{name: "x", issuer: "sTEAM", typ: 2}))
+	if err != nil || steamTOTP[0].Type != account.Steam {
+		t.Errorf("TOTP Steam entry: %v %v", steamTOTP, err)
+	}
+}
+
+func TestParseSchemeAndHostCaseInsensitive(t *testing.T) {
+	uri := buildURI(wireParam{name: "x"})
+	upper := "OTPAUTH-MIGRATION://OFFLINE" + strings.TrimPrefix(uri, "otpauth-migration://offline")
+	if _, err := Parse(upper); err != nil {
+		t.Errorf("upper-case scheme and host: %v", err)
 	}
 }

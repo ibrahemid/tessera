@@ -11,7 +11,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"math"
 	"net/url"
 	"strings"
 
@@ -176,7 +175,10 @@ func decodePayload(b []byte) ([]otpParams, error) {
 			}
 			out = append(out, p)
 		case fieldVersion, fieldBatchSize, fieldBatchIndex, fieldBatchID:
-			n := protowire.ConsumeFieldValue(num, typ, b)
+			if typ != protowire.VarintType {
+				return nil, fmt.Errorf("migration: payload field %d has wire type %d, want varint", num, typ)
+			}
+			_, n := protowire.ConsumeVarint(b)
 			if n < 0 {
 				return nil, fmt.Errorf("migration: malformed payload field %d: %w", num, protowire.ParseError(n))
 			}
@@ -274,8 +276,8 @@ func decodeOtpParameters(b []byte) (otpParams, error) {
 			b = b[n:]
 			// The wire type is unsigned; a value above int64 range would wrap to
 			// a negative counter and be sealed into the vault as one.
-			if v > math.MaxInt64 {
-				return p, fmt.Errorf("migration: counter %d exceeds int64 range", v)
+			if v > uint64(account.MaxCounter) {
+				return p, fmt.Errorf("migration: counter %d exceeds %d", v, account.MaxCounter)
 			}
 			p.counter = int64(v)
 		default:
@@ -311,15 +313,14 @@ func (p otpParams) toAccount() (account.Account, error) {
 	a.ID = id
 
 	// Label name may be "issuer:account"; split on the first ':'.
-	name := strings.TrimSpace(p.name)
-	if i := strings.Index(name, ":"); i >= 0 {
-		a.Issuer = strings.TrimSpace(name[:i])
-		a.Account = strings.TrimSpace(name[i+1:])
+	if before, after, ok := strings.Cut(p.name, ":"); ok {
+		a.Issuer = account.CleanText(before)
+		a.Account = account.CleanText(after)
 	} else {
-		a.Account = name
+		a.Account = account.CleanText(p.name)
 	}
 	// The explicit issuer field, when present, is authoritative.
-	if iss := strings.TrimSpace(p.issuer); iss != "" {
+	if iss := account.CleanText(p.issuer); iss != "" {
 		a.Issuer = iss
 	}
 
