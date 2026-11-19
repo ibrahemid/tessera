@@ -31,6 +31,12 @@ struct AddAccountView: View {
         self.pendingBackup = pendingBackup
     }
 
+    init(prefill: String) {
+        _input = State(initialValue: prefill)
+        keepReport = false
+        pendingBackup = nil
+    }
+
     #if DEBUG
     init(input: String, manual: Bool = false, keepReport: Bool = false) {
         _input = State(initialValue: input)

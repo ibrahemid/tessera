@@ -69,6 +69,7 @@ struct VaultView: View {
     @State private var pickedImport: [URL] = []
     @State private var promptText = ""
     @State private var scanning = false
+    @State private var linkPrefill: LinkPrefill?
     /// Density: roomy windowed layout (sidebar) vs a narrow menu-bar-friendly
     /// one (sidebar folded into a filter row). Persisted across launches.
     @AppStorage(AppModel.compactPrefKey) private var compact = false
@@ -114,6 +115,7 @@ struct VaultView: View {
 
     private var isPresenting: Bool {
         showingAdd || qrAccount != nil || editAccount != nil || exportingBackup || restoringBackup || prompt != nil
+            || linkPrefill != nil
     }
 
     private var menuContext: VaultMenuContext {
@@ -166,6 +168,11 @@ struct VaultView: View {
         .onChange(of: folders) { _, f in
             if case .folder(let name) = currentScope, !f.contains(name) { scope = .all }
         }
+        .onChange(of: model.allTags) { _, t in
+            if case .tag(let name) = currentScope, !t.contains(name) { scope = .all }
+        }
+        .onChange(of: model.pendingLink, initial: true) { _, _ in presentPendingLink() }
+        .onChange(of: isPresenting) { _, _ in presentPendingLink() }
         .onChange(of: visibleIDs) { _, ids in selection.prune(to: ids) }
         .onChange(of: query) { _, q in
             guard !q.trimmingCharacters(in: .whitespaces).isEmpty else { return }
@@ -189,7 +196,9 @@ struct VaultView: View {
         .sheet(isPresented: $showingAdd) { AddAccountView() }
         .sheet(item: $qrAccount) { QRExportView(account: $0) }
         .sheet(item: $editAccount) { EditAccountView(account: $0) }
-        .fileDropImport(isEnabled: !showingAdd && qrAccount == nil && editAccount == nil && prompt == nil,
+        .sheet(item: $linkPrefill) { AddAccountView(prefill: $0.text) }
+        .fileDropImport(isEnabled: !showingAdd && qrAccount == nil && editAccount == nil && prompt == nil
+                            && linkPrefill == nil,
                         picked: $pickedImport)
         .alert(prompt?.title ?? "", isPresented: Binding(
             get: { prompt != nil },
@@ -231,6 +240,15 @@ struct VaultView: View {
                                 model.setFolder(ids: ids, to: f)
                                 return true
                             }
+                    }
+                }
+            }
+            if !model.allTags.isEmpty {
+                Section("Tags") {
+                    ForEach(model.allTags, id: \.self) { t in
+                        Label(t, systemImage: "tag")
+                            .badge(counts.tags[t] ?? 0)
+                            .tag(VaultScope.tag(t))
                     }
                 }
             }
@@ -339,6 +357,7 @@ struct VaultView: View {
         switch currentScope {
         case .pinned: return "No pinned accounts"
         case .folder(let f): return "No accounts in \(f)"
+        case .tag(let t): return "No accounts tagged \(t)"
         case .all: return "No accounts"
         }
     }
@@ -424,8 +443,36 @@ struct VaultView: View {
                 }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
             }
+            if !model.allTags.isEmpty {
+                Menu {
+                    ForEach(model.allTags, id: \.self) { t in
+                        Button(t) { scope = .tag(t) }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(tagLabel(sel)).font(Typo.label(12.5, .medium))
+                        Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
+                    }
+                    .foregroundStyle(tagLabel(sel) != "Tags" ? Palette.accentInk : Palette.textSecondary)
+                    .padding(.horizontal, 11).padding(.vertical, 6)
+                    .background(Palette.surfaceHi, in: RoundedRectangle(cornerRadius: 9))
+                    .overlay(RoundedRectangle(cornerRadius: 9).stroke(Palette.border, lineWidth: 1))
+                }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            }
         }
         .padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 2)
+    }
+
+    private func tagLabel(_ s: VaultScope) -> String {
+        if case .tag(let t) = s { return t }
+        return "Tags"
+    }
+
+    private func presentPendingLink() {
+        guard let link = model.pendingLink, !isPresenting else { return }
+        model.pendingLink = nil
+        linkPrefill = link
     }
 
     private func isFolder(_ s: VaultScope) -> Bool { if case .folder = s { return true }; return false }

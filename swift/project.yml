@@ -46,6 +46,7 @@ targets:
         product: TesseraCore
       - package: Tessera
         product: TesseraArgon2
+      - sdk: AppIntents.framework
 
   TesseraUITests:
     type: bundle.ui-testing

@@ -48,9 +48,15 @@ struct InertTestHostApp: App {
 
 struct TesseraApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @StateObject private var model = TesseraApp.makeModel()
+    @StateObject private var model: AppModel
     @AppStorage("tessera.theme") private var theme: AppTheme = .system
     @AppStorage("tessera.compact") private var compact = false
+
+    init() {
+        let model = TesseraApp.makeModel()
+        _model = StateObject(wrappedValue: model)
+        if AppSession.isEnabled { AppSession.start(model: model) }
+    }
 
     var body: some Scene {
         // Single Window scene (not WindowGroup): lists "Tessera" in the Window
@@ -60,12 +66,12 @@ struct TesseraApp: App {
                 .environmentObject(model)
                 .preferredColorScheme(theme.colorScheme)
                 .frame(minWidth: compact ? 380 : 720, minHeight: 470)
+                .background(MainWindowBridge())
         }
         .defaultSize(width: 920, height: 620)
         .commands { VaultCommands(model: model) }
 
-        // Menu-bar quick access returns post-v1 via a stable NSStatusItem; the
-        // SwiftUI MenuBarExtra(.window) + WindowGroup combo spins the CPU.
+        // MenuBarExtra(.window) with a window scene spun the CPU; the menu bar item is an NSStatusItem.
 
         Settings {
             SettingsView()

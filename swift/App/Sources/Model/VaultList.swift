@@ -5,6 +5,7 @@ import TesseraCore
 
 enum VaultScope: Hashable {
     case all, pinned, folder(String)
+    case tag(String)
 }
 
 struct VaultSection: Equatable, Identifiable {
@@ -18,6 +19,7 @@ struct VaultCounts: Equatable {
     var all = 0
     var pinned = 0
     var folders: [String: Int] = [:]
+    var tags: [String: Int] = [:]
 }
 
 enum VaultList {
@@ -38,6 +40,7 @@ enum VaultList {
         case .all: return true
         case .pinned: return account.pinned
         case .folder(let f): return account.folder == f
+        case .tag(let t): return account.tags.contains(t)
         }
     }
 
@@ -87,6 +90,7 @@ enum VaultList {
         for a in accounts {
             if a.pinned { c.pinned += 1 }
             if !a.folder.isEmpty { c.folders[a.folder, default: 0] += 1 }
+            for t in Set(a.tags) { c.tags[t, default: 0] += 1 }
         }
         return c
     }
@@ -277,7 +281,7 @@ enum RingMotion {
 
 enum VaultEdit {
     static func normalizedTag(_ raw: String) -> String? {
-        let t = raw.trimmingCharacters(in: .whitespacesAndNewlines).drop { $0 == "#" }
+        let t = TextCleaning.clean(raw).drop { $0 == "#" }
         let tag = String(t).trimmingCharacters(in: .whitespacesAndNewlines)
         return tag.isEmpty ? nil : tag
     }

@@ -48,7 +48,7 @@ enum Screenshots {
     static let mainSize = CGSize(width: 920, height: 620)
     static let compactSize = CGSize(width: 480, height: 620)
 
-    static var shots: [Shot] { baseShots + vaultShots + sheetShots }
+    static var shots: [Shot] { baseShots + vaultShots + sheetShots + featureShots }
 
     static var baseShots: [Shot] {
         let root = { AnyView(RootView()) }

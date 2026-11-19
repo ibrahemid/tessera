@@ -41,6 +41,7 @@ final class AppModel: ObservableObject {
     @Published var vaultExists: Bool
     @Published var importReport: ImportSummary?   // per-item result of the last bulk import
     @Published var importProgress: ImportProgress?
+    @Published var pendingLink: LinkPrefill?
     @Published var requireBiometrics: Bool
     /// Whether the vault carries an argon2id passphrase wrap: the recovery path
     /// when Touch ID can't open it, and what lets the tess CLI open it too.
@@ -53,6 +54,7 @@ final class AppModel: ObservableObject {
 
     /// The 1 Hz clock. Views that render countdowns observe this, not the model.
     let ticker = Ticker()
+    let quickAccess = QuickAccessSettings()
 
     let store = VaultStore()
     let argon2 = Argon2Reference()

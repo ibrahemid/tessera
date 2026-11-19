@@ -161,12 +161,19 @@ struct SettingsView: View {
                 }
                 if let e = launchAtLogin.errorText { ErrorLine(e) }
             }
+            QuickAccessSettingsSection(settings: model.quickAccess)
+            CodeDisplaySettingsSection()
             Section {
                 LabeledContent("Version", value: Self.appVersion)
             }
         }
         .formStyle(.grouped)
-        .frame(height: 260)
+        .modifier(GeneralTabHeight(settings: model.quickAccess, base: 370 + launchAtLoginLines))
+    }
+
+    private var launchAtLoginLines: CGFloat {
+        (launchAtLogin.needsApproval ? SettingsTabHeight.infoLine : 0)
+            + (launchAtLogin.errorText == nil ? 0 : SettingsTabHeight.failureLine)
     }
 
     private var securityTab: some View {
