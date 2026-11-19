@@ -5,14 +5,11 @@ package ui
 import (
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
+	"github.com/charmbracelet/colorprofile"
 )
 
 func TestEnableConsoleLeavesColorsAlone(t *testing.T) {
-	prev := lipgloss.ColorProfile()
-	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
-	lipgloss.SetColorProfile(termenv.ANSI256)
+	pinColorProfile(t, colorprofile.ANSI256)
 
 	restore, err := EnableConsole()
 	if err != nil {
@@ -22,7 +19,7 @@ func TestEnableConsoleLeavesColorsAlone(t *testing.T) {
 		t.Fatal("EnableConsole() restore = nil")
 	}
 	restore()
-	if got := lipgloss.ColorProfile(); got != termenv.ANSI256 {
-		t.Errorf("color profile = %v, want %v", got, termenv.ANSI256)
+	if got := outputProfile(); got != colorprofile.ANSI256 {
+		t.Errorf("color profile = %v, want %v", got, colorprofile.ANSI256)
 	}
 }

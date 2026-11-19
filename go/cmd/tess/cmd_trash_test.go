@@ -9,7 +9,6 @@ import (
 
 	"github.com/ibrahemid/tessera/go/internal/account"
 	"github.com/ibrahemid/tessera/go/internal/store"
-	"github.com/ibrahemid/tessera/go/internal/tui"
 )
 
 const (
@@ -148,20 +147,15 @@ func TestImportDoesNotTreatTrashedAccountsAsDuplicates(t *testing.T) {
 	}
 }
 
-func TestWatchShowsOnlyLiveAccounts(t *testing.T) {
+func TestWatchHandsTheViewTheTrashApartFromTheLiveAccounts(t *testing.T) {
 	sealTrashVault(t)
-	var shown []account.Account
-	old := runWatchView
-	runWatchView = func(accts []account.Account, _ tui.AdvanceFunc, _ tui.ClearFunc) error {
-		shown = accts
-		return nil
-	}
-	t.Cleanup(func() { runWatchView = old })
+	opts := stubWatchView(t)
 	if err := runWatchCmd(t, ""); err != nil {
 		t.Fatalf("watch: %v", err)
 	}
-	if len(shown) != 1 || shown[0].ID != "a" {
-		t.Fatalf("watch shows %+v", shown)
+	live, trashed := account.Live(opts.Accounts), account.Trashed(opts.Accounts)
+	if len(live) != 1 || live[0].ID != "a" || len(trashed) != 2 {
+		t.Fatalf("watch hands the view %+v", opts.Accounts)
 	}
 }
 

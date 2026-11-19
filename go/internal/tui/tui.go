@@ -1,327 +1,753 @@
-// Package tui implements `tess watch`: a live, auto-refreshing authenticator
-// view with countdown bars, search, and copy-to-clipboard.
+// Package tui implements `tess watch`: the interactive terminal view of the
+// vault, with live codes, search, filters, copy, editing and the Trash.
 package tui
 
 import (
-	"fmt"
+	"errors"
+	"io"
+	"os"
 	"sort"
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
 	"github.com/ibrahemid/tessera/go/internal/account"
 	"github.com/ibrahemid/tessera/go/internal/clipboard"
-	"github.com/ibrahemid/tessera/go/internal/code"
 	"github.com/ibrahemid/tessera/go/internal/ui"
+	"golang.org/x/term"
 )
 
-// AdvanceFunc persists a new HOTP counter for one account. It names the account
-// and the value rather than handing back the view's account list, because the
-// list can be stale: the vault is re-read under lock before the write.
-type AdvanceFunc func(id string, counter int64) error
+// ErrKeyReplaced reports a vault whose key changed since the view unlocked it.
+// The view asks for the passphrase again.
+var ErrKeyReplaced = errors.New("the vault key changed; enter the passphrase again")
 
 // ClearFunc schedules the clipboard clear for a code the view just copied.
 type ClearFunc func(code string) error
 
-// detectClipboard picks the clipboard backend, replaceable in tests.
-var detectClipboard = clipboard.Detect
+// ChangeKind names one write the view asks for.
+type ChangeKind int
 
-type tickMsg time.Time
+const (
+	ChangeAdd ChangeKind = iota + 1
+	ChangeEdit
+	ChangePin
+	ChangeTrash
+	ChangeRestore
+	ChangePurge
+	ChangeAdvance
+)
+
+// Change is one write to the vault. The writer re-reads the vault under its
+// lock and applies the change to the accounts it finds there.
+type Change struct {
+	Kind ChangeKind
+	// ID is the account the change applies to; empty for ChangeAdd.
+	ID string
+	// Pinned is the new pin state for ChangePin.
+	Pinned bool
+	// Counter is the HOTP counter ChangeAdvance moves to; the write fails when
+	// the stored counter is no longer the one before it.
+	Counter int64
+	Edit    Edit
+	Add     Add
+	// Snapshot is the account as the user saw it when confirming ChangePurge;
+	// the write fails when the stored account differs.
+	Snapshot account.Account
+}
+
+// Edit holds the fields an edit changes; nil leaves a field as it is.
+type Edit struct {
+	Issuer  *string
+	Account *string
+	Alias   *string
+	Folder  *string
+	Tags    *string
+	Note    *string
+}
+
+// Add is an account to add from an otpauth link or a setup key.
+type Add struct {
+	Text    string
+	Issuer  string
+	Account string
+}
+
+// Result is the vault after a change.
+type Result struct {
+	// Accounts is every account in the vault, the Trash included.
+	Accounts []account.Account
+	// IDs are the accounts ChangeAdd added.
+	IDs []string
+	// Skipped counts accounts ChangeAdd found already in the vault.
+	Skipped int
+	// Problems describe accounts ChangeAdd could not add.
+	Problems []string
+}
+
+// Options connects the view to the vault.
+type Options struct {
+	// Accounts is every account in the vault, the Trash included.
+	Accounts []account.Account
+	// Reload returns the vault's accounts when the file changed since the last
+	// call, and changed = false otherwise.
+	Reload func() (accounts []account.Account, changed bool, err error)
+	// Mutate writes a change through the vault's locked write path.
+	Mutate func(Change) (Result, error)
+	// Unlock opens the vault with a passphrase after ErrKeyReplaced.
+	Unlock func(passphrase string) ([]account.Account, error)
+	// Copy places text on the clipboard; nil uses the detected clipboard.
+	Copy func(string) error
+	// ClearCopy, when not nil, runs after each successful copy.
+	ClearCopy ClearFunc
+	// Now is the clock; nil uses time.Now.
+	Now func() time.Time
+}
+
+const (
+	tickInterval = 250 * time.Millisecond
+	pollInterval = time.Second
+	statusFor    = 4 * time.Second
+	// freshFloor is the seconds left under which Enter copies the next code.
+	freshFloor = 3
+)
+
+type mode int
+
+const (
+	modeList mode = iota
+	modeHelp
+	modeFolders
+	modeTags
+	modeEdit
+	modeAdd
+	modeTrash
+	modeUnlock
+)
+
+type statusKind int
+
+const (
+	statusNone statusKind = iota
+	statusOK
+	statusFail
+	statusInfo
+)
+
+type confirmation struct {
+	question  string
+	cancelled string
+	change    Change
+	danger    bool
+}
+
+type picker struct {
+	items  []string
+	cursor int
+}
+
+type form struct {
+	id      string
+	fields  []field
+	initial []string
+	focus   int
+}
+
+type (
+	tickMsg       time.Time
+	pollMsg       time.Time
+	reloadDoneMsg struct {
+		gen      int
+		accounts []account.Account
+		changed  bool
+		err      error
+	}
+	mutateDoneMsg struct {
+		change Change
+		label  string
+		result Result
+		err    error
+	}
+	copyDoneMsg struct {
+		what     string
+		err      error
+		clearErr error
+	}
+	unlockDoneMsg struct {
+		accounts []account.Account
+		err      error
+	}
+)
 
 // Model is the bubbletea model for the watch view.
 type Model struct {
-	accounts    []account.Account
-	advance     AdvanceFunc
-	copy        func(string) error
-	clearCopy   ClearFunc
-	cursor      int
-	query       string
-	searching   bool
-	now         time.Time
+	opts     Options
+	clock    func() time.Time
+	schedule func(time.Duration, func(time.Time) tea.Msg) tea.Cmd
+
+	accounts []account.Account
+	theme    ui.Theme
+	now      time.Time
+	width    int
+	height   int
+
+	mode      mode
+	helpFrom  mode
+	resume    mode
+	searching bool
+	search    field
+	folder    string
+	tag       string
+	hidden    bool
+
+	cursor     int
+	offset     int
+	selectedID string
+
+	trashCursor int
+	trashOffset int
+	helpOffset  int
+
+	picker  picker
+	form    form
+	pass    field
+	confirm *confirmation
+
+	lastTrashed string
+	// gen counts the writes and unlocks this view made; a reload that started
+	// before the latest one carries stale accounts and is dropped.
+	gen       int
+	busy      bool
+	reloading bool
+	unlocking bool
+	reloadErr string
+
 	status      string
-	statusFail  bool
+	statusKind  statusKind
 	statusUntil time.Time
-	width       int
-	height      int
 }
 
-// New builds a watch model over the given accounts. clearCopy, when not nil,
-// runs after each successful copy.
-func New(accounts []account.Account, advance AdvanceFunc, clearCopy ClearFunc) Model {
-	return Model{accounts: accounts, advance: advance, copy: writeClipboard, clearCopy: clearCopy,
-		now: time.Now(), width: 72}
+// New builds the watch model.
+func New(opts Options) Model {
+	if opts.Copy == nil {
+		opts.Copy = writeClipboard
+	}
+	clock := opts.Now
+	if clock == nil {
+		clock = time.Now
+	}
+	m := Model{
+		opts:     opts,
+		clock:    clock,
+		schedule: tea.Tick,
+		accounts: opts.Accounts,
+		theme:    ui.NewTheme(true),
+		now:      clock(),
+		width:    80,
+		height:   24,
+		search:   newField("", ""),
+		pass:     field{label: "Passphrase", masked: true, verbatim: true},
+	}
+	m.syncList()
+	return m
 }
 
-// Run starts the TUI program.
-func Run(accounts []account.Account, advance AdvanceFunc, clearCopy ClearFunc) error {
-	_, err := tea.NewProgram(New(accounts, advance, clearCopy), tea.WithAltScreen()).Run()
+// ErrNoTerminal reports a view started without a terminal on stdin and stdout.
+var ErrNoTerminal = errors.New("watch needs a terminal")
+
+// Run starts the watch view and returns when the user quits.
+func Run(opts Options) error {
+	return run(opts, os.Stdin, os.Stdout, os.Environ())
+}
+
+func run(opts Options, in, out *os.File, env []string) error {
+	if !term.IsTerminal(int(in.Fd())) || !term.IsTerminal(int(out.Fd())) {
+		return ErrNoTerminal
+	}
+	_, err := tea.NewProgram(New(opts), programOptions(in, out, env)...).Run()
 	return err
 }
 
-// writeClipboard copies a code to the detected clipboard, marked sensitive.
+func programOptions(in io.Reader, out io.Writer, env []string) []tea.ProgramOption {
+	return []tea.ProgramOption{
+		tea.WithInput(in),
+		tea.WithOutput(out),
+		tea.WithEnvironment(env),
+		tea.WithColorProfile(ui.ViewProfile(out, env)),
+	}
+}
+
 func writeClipboard(text string) error {
-	b, err := detectClipboard()
+	b, err := clipboard.Detect()
 	if err != nil {
 		return err
 	}
 	return b.Write(text, true)
 }
 
-func tick() tea.Cmd {
-	return tea.Tick(250*time.Millisecond, func(t time.Time) tea.Msg { return tickMsg(t) })
+func (m Model) Init() tea.Cmd {
+	return tea.Batch(tea.RequestBackgroundColor, m.tick(), m.poll())
 }
 
-func (m Model) Init() tea.Cmd { return tick() }
-
-func (m Model) filtered() []account.Account {
-	out := make([]account.Account, 0, len(m.accounts))
-	q := strings.ToLower(m.query)
-	for _, a := range m.accounts {
-		if q == "" || strings.Contains(strings.ToLower(a.Handle+" "+a.Issuer+" "+a.Account), q) {
-			out = append(out, a)
-		}
-	}
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].Pinned != out[j].Pinned {
-			return out[i].Pinned
-		}
-		return strings.ToLower(out[i].Issuer) < strings.ToLower(out[j].Issuer)
-	})
-	return out
+func (m Model) tick() tea.Cmd {
+	return m.schedule(tickInterval, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
-func (m *Model) setStatus(s string) {
-	m.status = s
-	m.statusFail = false
-	m.statusUntil = time.Now().Add(2 * time.Second)
-}
-
-// setFailure reports an action that did not happen, so the view never claims a
-// copy or a save that failed.
-func (m *Model) setFailure(s string) {
-	m.status = s
-	m.statusFail = true
-	m.statusUntil = time.Now().Add(2 * time.Second)
-}
-
-// copyCode places a code on the clipboard and schedules its clear, reporting
-// the outcome in the status line. It returns false when the clipboard rejected
-// the write.
-func (m *Model) copyCode(c string, what string) bool {
-	write := m.copy
-	if write == nil {
-		write = writeClipboard
+func (m Model) poll() tea.Cmd {
+	if m.opts.Reload == nil {
+		return nil
 	}
-	if err := write(c); err != nil {
-		m.setFailure("Copy failed: " + ui.Sanitize(err.Error()))
-		return false
-	}
-	if m.clearCopy != nil {
-		if err := m.clearCopy(c); err != nil {
-			m.setFailure(what + "; " + ui.Sanitize(err.Error()))
-			return true
-		}
-	}
-	m.setStatus(what)
-	return true
+	return m.schedule(pollInterval, func(t time.Time) tea.Msg { return pollMsg(t) })
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		m.syncList()
+		m.syncTrash()
+	case tea.BackgroundColorMsg:
+		m.theme = ui.NewTheme(msg.IsDark())
 	case tickMsg:
-		m.now = time.Time(msg)
-		if m.status != "" && time.Now().After(m.statusUntil) {
-			m.status, m.statusFail = "", false
+		m.now = m.clock()
+		if m.status != "" && !m.now.Before(m.statusUntil) {
+			m.clearStatus()
 		}
-		return m, tick()
-	case tea.KeyMsg:
+		return m, m.tick()
+	case pollMsg:
+		if m.reloading || m.busy || m.mode == modeUnlock {
+			return m, m.poll()
+		}
+		m.reloading = true
+		return m, tea.Batch(m.reloadCmd(), m.poll())
+	case reloadDoneMsg:
+		return m.reloaded(msg)
+	case mutateDoneMsg:
+		return m.mutated(msg)
+	case copyDoneMsg:
+		m.copied(msg)
+	case unlockDoneMsg:
+		m.unlocked(msg)
+	case tea.PasteMsg:
+		m.pasted(msg.Content)
+	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 	}
 	return m, nil
 }
 
-func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	rows := m.filtered()
-	if m.searching {
-		switch msg.Type {
-		case tea.KeyEsc:
-			m.searching = false
-			m.query = ""
-		case tea.KeyEnter:
-			m.searching = false
-		case tea.KeyBackspace:
-			// Delete one character, not one byte: a byte slice corrupts any
-			// multibyte rune the user typed into the filter.
-			if r := []rune(m.query); len(r) > 0 {
-				m.query = string(r[:len(r)-1])
-			}
-		case tea.KeyRunes, tea.KeySpace:
-			m.query += string(msg.Runes)
-			m.cursor = 0
+func (m Model) reloadCmd() tea.Cmd {
+	reload, gen := m.opts.Reload, m.gen
+	return func() tea.Msg {
+		accts, changed, err := reload()
+		return reloadDoneMsg{gen: gen, accounts: accts, changed: changed, err: err}
+	}
+}
+
+func (m Model) reloaded(msg reloadDoneMsg) (tea.Model, tea.Cmd) {
+	m.reloading = false
+	if msg.gen != m.gen {
+		return m, nil
+	}
+	if msg.err != nil {
+		if errors.Is(msg.err, ErrKeyReplaced) {
+			m.openUnlock()
+			return m, nil
+		}
+		if text := msg.err.Error(); text != m.reloadErr {
+			m.reloadErr = text
+			m.fail("Could not read the vault: " + ui.Sanitize(text))
 		}
 		return m, nil
 	}
-
-	switch msg.String() {
-	case "q", "ctrl+c", "esc":
-		return m, tea.Quit
-	case "/":
-		m.searching = true
-		m.query = ""
-	case "up", "k":
-		if m.cursor > 0 {
-			m.cursor--
-		}
-	case "down", "j":
-		if m.cursor < len(rows)-1 {
-			m.cursor++
-		}
-	case "g":
-		m.cursor = 0
-	case "G":
-		m.cursor = max(len(rows)-1, 0)
-	case "enter", "c":
-		if a, ok := at(rows, m.cursor); ok {
-			c, err := code.For(a, m.now)
-			if err != nil {
-				m.setFailure("No code: " + err.Error())
-				break
-			}
-			m.copyCode(c, "Copied "+labelOf(a))
-		}
-	case "r":
-		if a, ok := at(rows, m.cursor); ok && a.Type == account.HOTP {
-			m.advanceHOTP(a.ID)
-		}
+	m.reloadErr = ""
+	if msg.changed {
+		m.setAccounts(msg.accounts)
 	}
 	return m, nil
 }
 
-// advanceHOTP bumps the counter for one account and persists it through the
-// AdvanceFunc, which re-reads the vault under lock before writing.
-func (m *Model) advanceHOTP(id string) {
-	for i := range m.accounts {
-		if m.accounts[i].ID != id {
-			continue
-		}
-		next := m.accounts[i].Counter + 1
-		if m.advance != nil {
-			if err := m.advance(id, next); err != nil {
-				m.setFailure("Save failed: " + err.Error())
-				return
-			}
-		}
-		m.accounts[i].Counter = next
-		m.accounts[i].UpdatedAt = time.Now().Unix()
-		c, err := code.For(m.accounts[i], m.now)
-		if err != nil {
-			m.setFailure("Advanced, no code: " + err.Error())
-			return
-		}
-		m.copyCode(c, "Advanced + copied "+labelOf(m.accounts[i]))
+func (m *Model) setAccounts(accts []account.Account) {
+	m.accounts = accts
+	m.syncList()
+	m.syncTrash()
+}
+
+func (m *Model) setStatus(kind statusKind, text string) {
+	m.status, m.statusKind = text, kind
+	m.statusUntil = m.now.Add(statusFor)
+}
+
+func (m *Model) clearStatus() { m.status, m.statusKind = "", statusNone }
+
+func (m *Model) ok(text string)   { m.setStatus(statusOK, text) }
+func (m *Model) fail(text string) { m.setStatus(statusFail, text) }
+func (m *Model) info(text string) { m.setStatus(statusInfo, text) }
+
+func (m *Model) openUnlock() {
+	if m.opts.Unlock == nil {
+		m.fail(ErrKeyReplaced.Error())
 		return
 	}
-}
-
-func (m Model) View() string {
-	rows := m.filtered()
-	var b strings.Builder
-
-	title := ui.TitleStyle.Render("◧ Tessera")
-	count := ui.SubtleStyle.Render(fmt.Sprintf("%d accounts", len(m.accounts)))
-	b.WriteString(title + "  " + count + "\n")
-
-	if m.searching {
-		b.WriteString(ui.AccentStyle.Render("/") + ui.Sanitize(m.query) + ui.SubtleStyle.Render("▌") + "\n")
-	} else if m.query != "" {
-		b.WriteString(ui.SubtleStyle.Render("filter: ") + ui.Sanitize(m.query) + "\n")
-	} else {
-		b.WriteString("\n")
-	}
-	b.WriteString("\n")
-
-	if len(rows) == 0 {
-		b.WriteString(ui.SubtleStyle.Render("  No accounts match.\n"))
-	}
-
-	hw := 0
-	for _, a := range rows {
-		if len(a.Handle) > hw {
-			hw = len(a.Handle)
+	if m.mode != modeUnlock {
+		m.resume = m.mode
+		if m.resume == modeHelp || m.resume == modeFolders || m.resume == modeTags {
+			m.resume = modeList
 		}
 	}
-	for i, a := range rows {
-		b.WriteString(m.renderRow(a, i == m.cursor, hw))
-	}
+	m.mode = modeUnlock
+	m.confirm = nil
+	m.searching = false
+	m.pass.set("")
+}
 
-	b.WriteString("\n")
-	switch {
-	case m.status != "" && m.statusFail:
-		b.WriteString(ui.WarnStyle.Render("✗ "+m.status) + "\n")
-	case m.status != "":
-		b.WriteString(ui.AccentStyle.Render("✓ "+m.status) + "\n")
+func (m Model) unlockCmd(pass string) tea.Cmd {
+	unlock := m.opts.Unlock
+	return func() tea.Msg {
+		accts, err := unlock(pass)
+		return unlockDoneMsg{accounts: accts, err: err}
+	}
+}
+
+func (m *Model) unlocked(msg unlockDoneMsg) {
+	m.unlocking = false
+	if msg.err != nil {
+		m.pass.set("")
+		m.fail("Not unlocked: " + ui.Sanitize(msg.err.Error()))
+		return
+	}
+	m.gen++
+	m.mode = m.resume
+	m.reloadErr = ""
+	m.setAccounts(msg.accounts)
+	if m.mode == modeEdit {
+		if _, ok := m.byID(m.form.id); !ok {
+			m.mode, m.form = modeList, form{}
+		}
+	}
+	m.ok("Unlocked")
+}
+
+func (m Model) startMutate(c Change) (tea.Model, tea.Cmd) {
+	if m.opts.Mutate == nil {
+		m.fail("This view cannot change the vault")
+		return m, nil
+	}
+	if m.busy {
+		return m, nil
+	}
+	m.busy = true
+	label := ""
+	if a, ok := m.byID(c.ID); ok {
+		label = labelOf(a)
+	}
+	mutate := m.opts.Mutate
+	return m, func() tea.Msg {
+		r, err := mutate(c)
+		return mutateDoneMsg{change: c, label: label, result: r, err: err}
+	}
+}
+
+func (m Model) mutated(msg mutateDoneMsg) (tea.Model, tea.Cmd) {
+	m.busy = false
+	if msg.err != nil {
+		if errors.Is(msg.err, ErrKeyReplaced) && m.opts.Unlock != nil {
+			m.openUnlock()
+			return m, nil
+		}
+		text := ui.Sanitize(msg.err.Error())
+		if msg.change.Kind == ChangeAdvance {
+			m.fail("No code generated: " + text)
+		} else {
+			m.fail("Not saved: " + text)
+		}
+		if m.opts.Reload != nil && !m.reloading {
+			m.reloading = true
+			return m, m.reloadCmd()
+		}
+		return m, nil
+	}
+	m.gen++
+	m.setAccounts(msg.result.Accounts)
+	c := msg.change
+	switch c.Kind {
+	case ChangeAdd:
+		m.mode = modeList
+		m.form = form{}
+		m.addedStatus(msg.result)
+	case ChangeEdit:
+		m.mode = modeList
+		m.form = form{}
+		if a, ok := m.byID(c.ID); ok {
+			m.ok("Saved " + labelOf(a))
+		}
+	case ChangePin:
+		m.selectID(c.ID)
+		if c.Pinned {
+			m.ok("Pinned " + msg.label)
+		} else {
+			m.ok("Unpinned " + msg.label)
+		}
+	case ChangeTrash:
+		m.lastTrashed = c.ID
+		m.ok("Moved " + msg.label + " to the Trash. Press u to undo.")
+	case ChangeRestore:
+		if m.lastTrashed == c.ID {
+			m.lastTrashed = ""
+		}
+		if m.mode == modeList {
+			m.selectID(c.ID)
+		}
+		m.ok("Restored " + msg.label)
+	case ChangePurge:
+		m.ok("Deleted " + msg.label + " for good")
+	case ChangeAdvance:
+		a, ok := m.byID(c.ID)
+		if !ok {
+			m.fail("No code generated: the account is no longer in the vault")
+			return m, nil
+		}
+		code, err := codeAt(a, m.now)
+		if err != nil {
+			m.fail("No code generated: " + ui.Sanitize(err.Error()))
+			return m, nil
+		}
+		return m, m.copyCmd(code, "Generated code #"+itoa(a.Counter)+" for "+labelOf(a)+" and copied it")
+	}
+	return m, nil
+}
+
+func (m *Model) addedStatus(r Result) {
+	var parts []string
+	switch len(r.IDs) {
+	case 0:
+	case 1:
+		if a, ok := m.byID(r.IDs[0]); ok {
+			parts = append(parts, "Added "+labelOf(a))
+		}
 	default:
-		b.WriteString("\n")
+		parts = append(parts, "Added "+itoa(int64(len(r.IDs)))+" accounts")
 	}
-	help := "↑/↓ move · enter/c copy · r advance HOTP · / search · q quit"
-	b.WriteString(ui.SubtleStyle.Render(help))
-	return b.String()
+	if len(r.IDs) > 0 {
+		m.selectID(r.IDs[0])
+	}
+	if r.Skipped > 0 {
+		parts = append(parts, plural(r.Skipped, "account")+" already in the vault")
+	}
+	if len(r.Problems) > 0 {
+		parts = append(parts, "not added: "+ui.Sanitize(strings.Join(r.Problems, "; ")))
+	}
+	text := capitalize(strings.Join(parts, "; "))
+	switch {
+	case len(r.IDs) > 0:
+		m.ok(text)
+	case len(r.Problems) > 0:
+		m.fail(text)
+	default:
+		m.info(text)
+	}
 }
 
-func (m Model) renderRow(a account.Account, selected bool, hw int) string {
-	cursor := "  "
-	if selected {
-		cursor = ui.AccentStyle.Render("▸ ")
+func (m Model) copyCmd(code, what string) tea.Cmd {
+	write, clear := m.opts.Copy, m.opts.ClearCopy
+	return func() tea.Msg {
+		if err := write(code); err != nil {
+			return copyDoneMsg{what: what, err: err}
+		}
+		var clearErr error
+		if clear != nil {
+			clearErr = clear(code)
+		}
+		return copyDoneMsg{what: what, clearErr: clearErr}
 	}
-	tag := ui.Handle(a.Issuer+a.Account, pad(ui.Sanitize(a.Handle), hw))
-	name := ui.IssuerStyle.Render(pad(labelOf(a), 26))
-
-	c, err := code.For(a, m.now)
-	if err != nil {
-		c = "------"
-	}
-	codeCell := ui.CodeStyle.Render(pad(ui.GroupCode(c), 9))
-
-	var meter string
-	if a.Type == account.HOTP {
-		meter = ui.SubtleStyle.Render(fmt.Sprintf("hotp #%d", a.Counter))
-	} else {
-		rem := code.Remaining(a, m.now)
-		meter = ui.Bar(rem, a.Period, 10) + ui.SubtleStyle.Render(fmt.Sprintf(" %2ds", rem))
-	}
-
-	pin := "  "
-	if a.Pinned {
-		pin = ui.AccentStyle.Render("★ ")
-	}
-	line := fmt.Sprintf("%s%s%s  %s  %s  %s", cursor, pin, tag, name, codeCell, meter)
-	if selected {
-		line = lipgloss.NewStyle().Background(lipgloss.AdaptiveColor{Light: "#F0ECE0", Dark: "#242732"}).Render(line)
-	}
-	return line + "\n"
 }
 
-func labelOf(a account.Account) string {
-	if a.Issuer != "" {
-		return ui.Sanitize(a.Issuer)
+func (m *Model) copied(msg copyDoneMsg) {
+	switch {
+	case msg.err != nil:
+		m.fail("Copy failed: " + ui.Sanitize(msg.err.Error()))
+	case msg.clearErr != nil:
+		m.fail(msg.what + "; " + ui.Sanitize(msg.clearErr.Error()))
+	default:
+		m.ok(msg.what)
 	}
-	return ui.Sanitize(a.Account)
 }
 
-func at(rows []account.Account, i int) (account.Account, bool) {
-	if i < 0 || i >= len(rows) {
+func (m *Model) pasted(text string) {
+	switch {
+	case m.mode == modeUnlock:
+		m.pass.paste(text)
+	case m.mode == modeEdit || m.mode == modeAdd:
+		m.form.fields[m.form.focus].paste(text)
+	case m.mode == modeList && m.searching:
+		m.search.paste(text)
+		m.cursor, m.offset = 0, 0
+		m.syncList()
+	}
+}
+
+func (m Model) byID(id string) (account.Account, bool) {
+	if id == "" {
 		return account.Account{}, false
 	}
-	return rows[i], true
+	for _, a := range m.accounts {
+		if a.ID == id {
+			return a, true
+		}
+	}
+	return account.Account{}, false
 }
 
-func pad(s string, n int) string {
-	r := []rune(s)
-	if len(r) > n {
-		return string(r[:n-1]) + "…"
+// liveSorted is every live account in display order, pinned first.
+func (m Model) liveSorted() []account.Account {
+	live := account.Live(m.accounts)
+	account.SortForDisplay(live)
+	sort.SliceStable(live, func(i, j int) bool { return live[i].Pinned && !live[j].Pinned })
+	return live
+}
+
+// trashSorted is the Trash, newest first.
+func (m Model) trashSorted() []account.Account {
+	trashed := account.Trashed(m.accounts)
+	account.SortForDisplay(trashed)
+	sort.SliceStable(trashed, func(i, j int) bool { return trashed[i].DeletedAt > trashed[j].DeletedAt })
+	return trashed
+}
+
+func (m Model) filtersActive() bool {
+	return m.search.String() != "" || m.folder != "" || m.tag != ""
+}
+
+// rows is the list as filtered by the search, folder and tag.
+func (m Model) rows() []account.Account {
+	live := m.liveSorted()
+	if !m.filtersActive() {
+		return live
 	}
-	return s + strings.Repeat(" ", n-len(r))
+	terms := strings.Fields(strings.ToLower(m.search.String()))
+	out := live[:0]
+	for _, a := range live {
+		if m.folder != "" && a.Folder != m.folder {
+			continue
+		}
+		if m.tag != "" && !hasTag(a, m.tag) {
+			continue
+		}
+		if !matchesTerms(a, terms) {
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
+}
+
+func hasTag(a account.Account, tag string) bool {
+	for _, t := range a.Tags {
+		if t == tag {
+			return true
+		}
+	}
+	return false
+}
+
+func matchesTerms(a account.Account, terms []string) bool {
+	if len(terms) == 0 {
+		return true
+	}
+	fields := append([]string{a.Issuer, a.Account, a.Handle, a.Folder}, a.Tags...)
+	hay := strings.ToLower(strings.Join(fields, "\n"))
+	for _, t := range terms {
+		if !strings.Contains(hay, t) {
+			return false
+		}
+	}
+	return true
+}
+
+func (m Model) selected() (account.Account, bool) {
+	rows := m.rows()
+	if m.cursor < 0 || m.cursor >= len(rows) {
+		return account.Account{}, false
+	}
+	return rows[m.cursor], true
+}
+
+func (m Model) selectedTrash() (account.Account, bool) {
+	rows := m.trashSorted()
+	if m.trashCursor < 0 || m.trashCursor >= len(rows) {
+		return account.Account{}, false
+	}
+	return rows[m.trashCursor], true
+}
+
+// syncList keeps the selected account selected after the list changes, or
+// keeps the cursor in range when it is gone, and scrolls it into view.
+func (m *Model) syncList() {
+	rows := m.rows()
+	if i := indexOf(rows, m.selectedID); i >= 0 {
+		m.cursor = i
+	}
+	m.cursor = clamp(m.cursor, 0, len(rows)-1)
+	m.selectedID = ""
+	if m.cursor < len(rows) {
+		m.selectedID = rows[m.cursor].ID
+	}
+	m.offset = scrollTo(m.cursor, m.offset, len(rows), m.bodyHeight())
+}
+
+func (m *Model) syncTrash() {
+	n := len(m.trashSorted())
+	m.trashCursor = clamp(m.trashCursor, 0, n-1)
+	m.trashOffset = scrollTo(m.trashCursor, m.trashOffset, n, m.bodyHeight())
+}
+
+func (m *Model) selectID(id string) {
+	m.selectedID = id
+	m.syncList()
+}
+
+func (m *Model) moveList(delta int) {
+	rows := m.rows()
+	m.cursor = clamp(m.cursor+delta, 0, len(rows)-1)
+	m.selectedID = ""
+	if m.cursor < len(rows) {
+		m.selectedID = rows[m.cursor].ID
+	}
+	m.offset = scrollTo(m.cursor, m.offset, len(rows), m.bodyHeight())
+}
+
+func (m *Model) moveTrash(delta int) {
+	m.trashCursor += delta
+	m.syncTrash()
+}
+
+func indexOf(accts []account.Account, id string) int {
+	if id == "" {
+		return -1
+	}
+	for i, a := range accts {
+		if a.ID == id {
+			return i
+		}
+	}
+	return -1
+}
+
+func clamp(v, lo, hi int) int {
+	if hi < lo {
+		return lo
+	}
+	return min(max(v, lo), hi)
+}
+
+// scrollTo returns the first visible row so that cursor is on screen in a
+// window of height rows over n.
+func scrollTo(cursor, offset, n, height int) int {
+	height = max(height, 1)
+	if cursor < offset {
+		offset = cursor
+	}
+	if cursor >= offset+height {
+		offset = cursor - height + 1
+	}
+	return clamp(offset, 0, max(n-height, 0))
 }

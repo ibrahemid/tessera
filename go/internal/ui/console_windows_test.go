@@ -5,17 +5,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
+	"github.com/charmbracelet/colorprofile"
 	"golang.org/x/sys/windows"
 )
-
-func pinColorProfile(t *testing.T, p termenv.Profile) {
-	t.Helper()
-	prev := lipgloss.ColorProfile()
-	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
-	lipgloss.SetColorProfile(p)
-}
 
 func fileHandle(t *testing.T) windows.Handle {
 	t.Helper()
@@ -69,7 +61,7 @@ func consoleMode(t *testing.T, h windows.Handle) uint32 {
 }
 
 func TestEnableConsoleOnNonConsoleTurnsColorsOff(t *testing.T) {
-	pinColorProfile(t, termenv.TrueColor)
+	pinColorProfile(t, colorprofile.TrueColor)
 	out, errOut := fileHandle(t), fileHandle(t)
 
 	restore, err := enableConsole(out, errOut)
@@ -81,13 +73,13 @@ func TestEnableConsoleOnNonConsoleTurnsColorsOff(t *testing.T) {
 	if !errors.As(err, &ce) || ce.Stream != "stdout" {
 		t.Fatalf("error = %v, want a *ConsoleError for stdout", err)
 	}
-	if got := lipgloss.ColorProfile(); got != termenv.Ascii {
-		t.Errorf("color profile = %v, want %v", got, termenv.Ascii)
+	if got := outputProfile(); got != colorprofile.NoTTY {
+		t.Errorf("color profile = %v, want %v", got, colorprofile.NoTTY)
 	}
 }
 
 func TestEnableConsoleTurnsOnVirtualTerminalAndRestores(t *testing.T) {
-	pinColorProfile(t, termenv.TrueColor)
+	pinColorProfile(t, colorprofile.TrueColor)
 	h := consoleOutput(t)
 	base := consoleMode(t, h) &^ windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING
 	if err := windows.SetConsoleMode(h, base); err != nil {
@@ -101,8 +93,8 @@ func TestEnableConsoleTurnsOnVirtualTerminalAndRestores(t *testing.T) {
 	if consoleMode(t, h)&windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING == 0 {
 		t.Error("virtual terminal processing is off after enableConsole")
 	}
-	if got := lipgloss.ColorProfile(); got != termenv.TrueColor {
-		t.Errorf("color profile = %v, want %v", got, termenv.TrueColor)
+	if got := outputProfile(); got != colorprofile.TrueColor {
+		t.Errorf("color profile = %v, want %v", got, colorprofile.TrueColor)
 	}
 	restore()
 	if got := consoleMode(t, h); got != base {
@@ -111,7 +103,7 @@ func TestEnableConsoleTurnsOnVirtualTerminalAndRestores(t *testing.T) {
 }
 
 func TestEnableConsoleKeepsColorsWhenOnlyStderrIsRedirected(t *testing.T) {
-	pinColorProfile(t, termenv.TrueColor)
+	pinColorProfile(t, colorprofile.TrueColor)
 	h := consoleOutput(t)
 
 	restore, err := enableConsole(h, fileHandle(t))
@@ -120,7 +112,7 @@ func TestEnableConsoleKeepsColorsWhenOnlyStderrIsRedirected(t *testing.T) {
 	if !errors.As(err, &ce) || ce.Stream != "stderr" {
 		t.Fatalf("error = %v, want a *ConsoleError for stderr", err)
 	}
-	if got := lipgloss.ColorProfile(); got != termenv.TrueColor {
-		t.Errorf("color profile = %v, want %v", got, termenv.TrueColor)
+	if got := outputProfile(); got != colorprofile.TrueColor {
+		t.Errorf("color profile = %v, want %v", got, colorprofile.TrueColor)
 	}
 }

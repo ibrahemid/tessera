@@ -4,8 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
+	"github.com/charmbracelet/colorprofile"
 	"golang.org/x/sys/windows"
 )
 
@@ -37,7 +36,7 @@ func enableConsole(stdout, stderr windows.Handle) (func(), error) {
 	restoreStdout, err := enableVirtualTerminal(stdout)
 	if err != nil {
 		errs = append(errs, &ConsoleError{Stream: "stdout", Err: err})
-		lipgloss.SetColorProfile(termenv.Ascii)
+		setOutputProfile(colorprofile.NoTTY)
 	}
 	restoreStderr, err := enableVirtualTerminal(stderr)
 	if err != nil {

@@ -12,21 +12,18 @@ import (
 	"github.com/ibrahemid/tessera/go/internal/tui"
 )
 
-// captureWatchAdvance runs tess watch and returns the counter advance it hands
-// to the view.
-func captureWatchAdvance(t *testing.T) tui.AdvanceFunc {
+// captureWatchAdvance runs tess watch and returns a counter advance through
+// the change hook it hands to the view.
+func captureWatchAdvance(t *testing.T) func(id string, counter int64) error {
 	t.Helper()
-	var advance tui.AdvanceFunc
-	old := runWatchView
-	runWatchView = func(_ []account.Account, fn tui.AdvanceFunc, _ tui.ClearFunc) error {
-		advance = fn
-		return nil
-	}
-	t.Cleanup(func() { runWatchView = old })
+	opts := stubWatchView(t)
 	if err := runWatchCmd(t, ""); err != nil {
 		t.Fatalf("watch: %v", err)
 	}
-	return advance
+	return func(id string, counter int64) error {
+		_, err := opts.Mutate(tui.Change{Kind: tui.ChangeAdvance, ID: id, Counter: counter})
+		return err
+	}
 }
 
 func TestWatchAdvanceChecksTheStoredCounter(t *testing.T) {
@@ -43,20 +40,20 @@ func TestWatchAdvanceChecksTheStoredCounter(t *testing.T) {
 	if a := ids(openVaultFile(t, path, "testpass123"))["a"]; a.Counter != 6 {
 		t.Fatalf("counter = %d", a.Counter)
 	}
-	if err := advance("a", 6); err == nil || err.Error() != "the counter changed in another tess process; restart tess watch" {
+	if err := advance("a", 6); err == nil || err.Error() != "the counter changed in another process" {
 		t.Fatalf("a stale advance: %v", err)
 	}
 	if err := advance("m", math.MaxInt64); !errors.Is(err, account.ErrCounterRange) {
 		t.Fatalf("advance past the maximum: %v", err)
 	}
-	if err := advance("zz", 1); err == nil || err.Error() != "account is no longer in the vault" {
+	if err := advance("zz", 1); err == nil || err.Error() != "the account is no longer in the vault" {
 		t.Fatalf("a missing account: %v", err)
 	}
 	if _, _, err := runRootStreams(t, "rm", "gi"); err != nil {
 		t.Fatalf("rm: %v", err)
 	}
 	before := readVaultBytes(t, path)
-	if err := advance("a", 7); err == nil || err.Error() != "account is in the Trash" {
+	if err := advance("a", 7); err == nil || err.Error() != "the account is in the Trash" {
 		t.Fatalf("a trashed account: %v", err)
 	}
 	if !bytes.Equal(before, readVaultBytes(t, path)) {

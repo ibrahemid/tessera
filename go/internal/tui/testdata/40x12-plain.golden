@@ -1,0 +1,195 @@
+=== list
+Tessera  6 accounts  1 in the Trash
+
+▸ ★ gh    GitHub me@exam…  768 147   20s
+    aws   AWS root         768 147   20s
+    bank  Bank me          338 314    #4
+    cl    Cloud ops        93444174  20s
+    nw    Northwind Trad…  768 147   20s
+    st    Steam player     KP643     20s
+
+
+
+enter copy  / search  ? keys  q quit
+=== search
+Tessera  2 of 6 accounts  1 in the Trash
+/ work 
+▸ ★ gh   GitHub me@exampl…  768 147  20s
+    aws  AWS root           768 147  20s
+
+
+
+
+
+
+
+↑↓ move  enter copy  esc clear
+=== keys
+Tessera  6 accounts  1 in the Trash
+Keys
+Moving in a list
+  ↑ ↓  j k         Move
+  pgup pgdn        Move a page
+  g G  home end    First or last
+Accounts
+  enter  c         Copy the code; under
+                   3s left, copy the
+                   next one
+
+↑↓ scroll  esc close  q quit
+=== folders
+Tessera  6 accounts  1 in the Trash
+Folder
+▸ All folders
+  Dev
+  Ops
+
+
+
+
+
+
+↑↓ move  enter choose  esc close
+=== add
+Tessera  6 accounts  1 in the Trash
+Add an account
+Link or setup key  •••••••••••••••••••• 
+Issuer             
+Account            
+
+Paste an otpauth:// link or a setup key.
+
+
+
+
+enter save  esc cancel  tab next field
+=== edit
+Tessera  6 accounts  1 in the Trash
+Edit GitHub (me@example.com)
+Issuer   GitHub
+Account  me@example.com
+Alias    gh
+Folder   Dev 
+Tags     work
+Note     
+
+
+
+enter save  esc cancel  tab next field
+=== trash
+Tessera  5 accounts  2 in the Trash
+Trash
+▸ 2027-01-15  cl  Cloud ops             
+  2027-01-13  db  Dropbox me            
+
+
+
+
+
+✓ Moved Cloud to the Trash. Press u to
+undo.
+r restore  d delete  esc back  ? keys
+=== purge
+Tessera  6 accounts  1 in the Trash
+Trash
+▸ 2027-01-13  db  Dropbox me            
+
+
+
+
+
+
+Delete Dropbox (me) for good? Its secret
+is removed from the vault. y/N
+y yes  any other key no
+=== hidden
+Tessera  6 accounts  1 in the Trash
+Codes hidden
+
+  ★ gh    GitHub me@exam…  ••• •••   20s
+▸   aws   AWS root         768 147   20s
+    bank  Bank me          ••• •••    #4
+    cl    Cloud ops        ••••••••  20s
+    nw    Northwind Trad…  ••• •••   20s
+    st    Steam player     •••••     20s
+
+
+enter copy  / search  ? keys  q quit
+=== hotp
+Tessera  6 accounts  1 in the Trash
+
+  ★ gh    GitHub me@exam…  768 147   20s
+    aws   AWS root         768 147   20s
+▸   bank  Bank me          338 314    #4
+    cl    Cloud ops        93444174  20s
+    nw    Northwind Trad…  768 147   20s
+    st    Steam player     KP643     20s
+
+Generate the next code for Bank? The
+counter moves to 5. y/N
+y yes  any other key no
+=== copied-next
+Tessera  6 accounts  1 in the Trash
+
+▸ ★ gh    GitHub me@exam…  768 147    2s
+    aws   AWS root         768 147    2s
+    bank  Bank me          338 314    #4
+    cl    Cloud ops        93444174   2s
+    nw    Northwind Trad…  768 147    2s
+    st    Steam player     KP643      2s
+
+✓ Copied the next code for GitHub; the
+current one ends in 2s
+enter copy  / search  ? keys  q quit
+=== unlock
+Tessera  6 accounts  1 in the Trash
+Unlock
+The vault key changed. Enter the
+passphrase to keep watching.
+
+Passphrase  •••• 
+
+
+
+
+
+enter unlock  esc quit
+=== error
+Tessera  6 accounts  1 in the Trash
+Edit GitHub (me@example.com)
+Issuer   
+Account   
+Alias    gh
+Folder   Dev
+Tags     work
+Note     
+
+✗ Not saved: enter an issuer or an
+account name
+enter save  esc cancel  tab next field
+=== empty
+Tessera  0 accounts
+
+No accounts yet. Press a to add one.
+
+
+
+
+
+
+
+
+a add  ? keys  q quit
+=== long
+Tessera  40 accounts
+
+    s32  Service 32 me      768 147  20s
+    s33  Service 33 me      768 147  20s
+    s34  Service 34 me      768 147  20s
+    s35  Service 35 me      768 147  20s
+    s36  Service 36 me      768 147  20s
+▸   s37  Service 37 me      768 147  20s
+    s38  Service 38 me      768 147  20s
+    s39  Service 39 me      768 147  20s
+
+enter copy  / search  ? keys  q quit
