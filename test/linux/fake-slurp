@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+if [ -n "${FAKE_SLURP_MARKER:-}" ]; then
+  : >"$FAKE_SLURP_MARKER"
+fi
+if [ -n "${FAKE_SLURP_CANCEL:-}" ]; then
+  echo "selection cancelled" >&2
+  exit 1
+fi
+if [ -z "${FAKE_SLURP_GEOMETRY:-}" ]; then
+  echo "fake-slurp: FAKE_SLURP_GEOMETRY is not set" >&2
+  exit 2
+fi
+printf '%s\n' "$FAKE_SLURP_GEOMETRY"
