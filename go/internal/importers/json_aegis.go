@@ -38,6 +38,7 @@ func parseAegis(data []byte) ([]account.Account, error) {
 	}
 	// In an encrypted export "db" is a base64 string, not an object.
 	if db := bytes.TrimSpace(f.DB); len(db) > 0 && db[0] == '"' {
+		//lint:ignore ST1005 the message starts with a product name
 		return nil, fmt.Errorf("Aegis export is encrypted; export with encryption off (Aegis: Settings > Import/Export > Export, untick encryption) and try again")
 	}
 	var db aegisDB

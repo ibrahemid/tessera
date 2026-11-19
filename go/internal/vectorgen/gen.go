@@ -146,7 +146,7 @@ func edgeAccount() account.Account {
 	return account.Account{
 		ID:      "00000000-0000-4000-8000-0000000000ff",
 		Type:    account.TOTP,
-		Issuer:  "A\"B\\C\n\tD<e>&f  é🔐",
+		Issuer:  "A\"B\\C\n\tD<e>&f\u2028\u2029\u0001é🔐",
 		Account: "user/name",
 		// spec/vault-format.md § handle test vectors: the edge case must also
 		// carry a handle so its sorted position between "folder" and "id" is

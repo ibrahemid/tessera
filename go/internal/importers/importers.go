@@ -40,6 +40,7 @@ func Parse(data []byte) (accts []account.Account, source string, ok bool, err er
 		return recognized("1Password", accts, err)
 	}
 	if IsStratumEncrypted(data) {
+		//lint:ignore ST1005 the message starts with a product name
 		return nil, "Stratum", true, errors.New("Stratum backup is encrypted; in Stratum choose Settings > Backup > Export unencrypted and try again")
 	}
 	return nil, "", false, nil
@@ -81,11 +82,13 @@ func parseJSONObjectExport(trimmed []byte) ([]account.Account, string, bool, err
 	}
 	_, hasEncryptedData := probe["encryptedData"]
 	if _, hasNonce := probe["encryptionNonce"]; hasEncryptedData && hasNonce {
+		//lint:ignore ST1005 the message starts with a product name
 		return nil, "Ente Auth", true, errors.New("Ente Auth export is encrypted; in Ente Auth choose Export > plain text (unencrypted) and try again")
 	}
 	if raw, has := probe["encrypted"]; has {
 		var encrypted bool
 		if json.Unmarshal(raw, &encrypted) == nil && encrypted {
+			//lint:ignore ST1005 the message starts with a product name
 			return nil, "Bitwarden", true, errors.New("Bitwarden export is encrypted; in Bitwarden export again as unencrypted .json (File format: .json, not 'Password protected')")
 		}
 	}
@@ -105,6 +108,7 @@ func parseJSONObjectExport(trimmed []byte) ([]account.Account, string, bool, err
 	_, hasEntries := probe["entries"]
 	_, hasSalt := probe["salt"]
 	if _, hasContent := probe["content"]; hasSalt && hasContent && !hasEntries {
+		//lint:ignore ST1005 the message starts with a product name
 		return nil, "Proton Authenticator", true, errors.New("Proton Authenticator export is encrypted; in Proton Authenticator export again without a password")
 	}
 	if raw, has := probe["entries"]; has && isJSONArray(raw) {
