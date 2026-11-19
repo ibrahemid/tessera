@@ -233,6 +233,18 @@ Rotation generates a new random DEK, reseals the payload under it, and rebuilds 
 - Rotation never proceeds if it would leave the vault with no wrap.
 - Adding an unlock method wraps the current DEK and does not rotate. Removing one deletes the wrap, and for a keychain-held Secure Enclave key also deletes the key item, which makes any copy of that wrap useless.
 
+## Automatic backups
+
+A backup folder is optional and configured per surface: `$TESSERA_BACKUP_DIR` (an absolute path) for the CLI, a folder chosen in Settings for the app. When one is set, every successful vault write is followed by a backup write. Both surfaces follow the same rules so they can share a folder.
+
+- **Content.** The envelope that was just written, with every wrap that is not a passphrase wrap removed. A Secure Enclave wrap opens on one Mac only and has no use in a backup. An envelope with no passphrase wrap is not backed up; the surface says so where backups are configured.
+- **Name.** `tessera-backup-YYYYMMDD.json`, the date in UTC. One file per day: a later write on the same day replaces it. A day on which a write went wrong still leaves the files of earlier days.
+- **Write.** Temp file in the backup folder, `fsync`, rename over the day file, mode `0600`. No lock: concurrent writers produce equivalent files.
+- **Retention.** After a backup write, keep the 30 newest files whose names match `tessera-backup-[0-9]{8}.json` exactly and delete older ones. No other file in the folder is read, changed or deleted.
+- **Rotation.** After a DEK rotation the day file is written under the new key and every other matching file is deleted: they open with the old passphrase. Copies kept by a sync provider's version history are outside Tessera's reach.
+- **Failure.** A failed backup write never undoes or fails the vault write. The CLI prints a warning on stderr; the app shows a notice.
+- **Restore.** A backup is an ordinary vault file: it opens with the passphrase it was written under, can be merged into a vault, or can replace one.
+
 ## Failure modes (negative tests, MUST reject)
 
 - Tampered ciphertext or tag (AEAD auth failure).
