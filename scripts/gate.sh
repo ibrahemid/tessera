@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck disable=SC2329
 set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -40,7 +41,7 @@ check_app_build() {
 
 check_linux() {
   docker run --rm -v "$ROOT":/src:ro -w /src/go -e GOFLAGS=-buildvcs=false \
-    -e GOCACHE=/tmp/gocache -e GOMODCACHE=/tmp/gomod golang:1.26 \
+    -e GOCACHE=/tmp/gocache -e GOMODCACHE=/tmp/gomod golang:1.27 \
     sh -c 'go vet ./... && go test ./...'
 }
 
