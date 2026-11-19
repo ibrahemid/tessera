@@ -257,8 +257,10 @@ The CLI writes other apps' import formats. The app ships no exporters. These are
 - **Aegis** — `version 1`, `header {"slots":null,"params":null}`, `db.version 3`; entries carry `type`/`uuid`/`name`/`issuer`/`note`/`favorite`/`icon`/`info`/`groups`; `info.secret` unpadded base32; `info.period` for totp and steam only; `info.counter` for hotp only.
 - **2FAS** — `schemaVersion 4`, `services[].{name,secret,updatedAt,otp{link,label,account,issuer,digits,period,algorithm,tokenType,counter,source},order{position}}`. Optional keys are emitted with an explicit `null`.
 - **Bitwarden Authenticator** — `{encrypted:false, items:[{id,name,folderId,organizationId,collectionIds,notes,type:1,favorite,login:{totp}}]}`; `totp` is always a full `otpauth://` URI (`otpauth://steam/...` for Steam).
-- **Proton Authenticator** — `{version:1, entries:[{id, content:{uri, entry_type, name}, note:null}]}`; `entry_type` is `"Totp"` or `"Steam"`; Steam entries emit `steam://<base32 secret>`.
+- **Proton Authenticator** — `{version:1, entries:[{id, content:{uri, entry_type, name}, note}]}`; `note` is the account note or `null`; `entry_type` is `"Totp"` or `"Steam"`; Steam entries emit `steam://<base32 secret>`.
 - **andOTP** — top-level array; `period` for TOTP and STEAM only, `counter` for HOTP only; `tags: []`, `thumbnail: "Default"`, `last_used: 0`, `used_frequency: 0`.
-- **Apple Passwords CSV** — header `Title,URL,Username,Password,Notes,OTPAuth`, one row per account; `Title` = issuer, `Username` = account, `URL`/`Password`/`Notes` empty, `OTPAuth` = the emitted otpauth URI.
+- **Apple Passwords CSV** — header `Title,URL,Username,Password,Notes,OTPAuth`, one row per account; `Title` = issuer, `Username` = account, `URL`/`Password` empty, `Notes` = the account note, `OTPAuth` = the emitted otpauth URI. A note that starts with `=`, `+`, `-` or `@` is left out and reported, because a spreadsheet would run it as a formula.
+
+Notes: Aegis `note`, Bitwarden `notes` (`null` when empty), Proton `note` and Apple `Notes` carry the account note; the other formats have no field for it. Trashed accounts are left out of every format here; the encrypted vault copy (`export --file`) is a vault and keeps its Trash.
 
 Ids and uuids are derived from the account id (its 32 hex characters formatted as a dashed UUID) so re-exporting an unchanged vault is byte-identical.

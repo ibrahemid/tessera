@@ -80,7 +80,7 @@ func newRootCmd() *cobra.Command {
 		id   string
 		cmds []*cobra.Command
 	}{
-		{"codes", []*cobra.Command{newCodeCmd(), newWatchCmd()}},
+		{"codes", []*cobra.Command{newCodeCmd(), newVerifyCmd(), newWatchCmd()}},
 		{"accounts", []*cobra.Command{
 			newAddCmd(), newListCmd(), newShowCmd(), newRenameCmd(),
 			newAliasCmd(), newMoveCmd(), newTagCmd(), newNoteCmd(),
