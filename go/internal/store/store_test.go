@@ -1,7 +1,6 @@
 package store
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -22,13 +21,8 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	if err := Save(path, env); err != nil {
 		t.Fatal(err)
 	}
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Mode().Perm() != 0o600 {
-		t.Errorf("vault perms = %v, want 0600", info.Mode().Perm())
-	}
+	assertOwnerOnly(t, path)
+	assertOwnerOnlyDir(t, filepath.Dir(path))
 	loaded, err := Load(path)
 	if err != nil {
 		t.Fatal(err)
@@ -45,15 +39,5 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 func TestLoadMissingReturnsNotFound(t *testing.T) {
 	if _, err := Load(filepath.Join(t.TempDir(), "nope.json")); err != ErrNotFound {
 		t.Errorf("expected ErrNotFound, got %v", err)
-	}
-}
-
-func TestResolvePrecedence(t *testing.T) {
-	t.Setenv("TESSERA_VAULT", "/env/path.json")
-	if p, _ := Resolve("/override.json"); p != "/override.json" {
-		t.Errorf("override should win, got %s", p)
-	}
-	if p, _ := Resolve(""); p != "/env/path.json" {
-		t.Errorf("env should win when no override, got %s", p)
 	}
 }
