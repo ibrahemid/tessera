@@ -45,6 +45,7 @@ func (bitwardenExporter) Render(accts []account.Account) ([]File, []Skipped, err
 		out.Items = append(out.Items, bitwardenItem{
 			ID:       exportID(a.ID),
 			Name:     displayName(a),
+			Notes:    optionalStr(a.Note),
 			Type:     1, // Bitwarden cipher type 1 = login
 			Login:    bitwardenLogin{TOTP: otpauth.Format(a)},
 			Favorite: a.Pinned,

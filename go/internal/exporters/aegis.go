@@ -62,6 +62,7 @@ func (aegisExporter) Render(accts []account.Account) ([]File, []Skipped, error) 
 			UUID:     exportID(a.ID),
 			Name:     a.Account,
 			Issuer:   a.Issuer,
+			Note:     a.Note,
 			Favorite: a.Pinned,
 			Groups:   []string{},
 			Info: aegisInfo{

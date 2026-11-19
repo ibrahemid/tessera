@@ -11,10 +11,13 @@ import (
 	"image/png"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/makiuchi-d/gozxing"
 	multiqr "github.com/makiuchi-d/gozxing/multi/qrcode"
 	"github.com/makiuchi-d/gozxing/qrcode"
+	"github.com/makiuchi-d/gozxing/qrcode/decoder"
+	"github.com/makiuchi-d/gozxing/qrcode/encoder"
 
 	_ "image/jpeg"
 
@@ -23,8 +26,12 @@ import (
 	_ "golang.org/x/image/webp"
 )
 
+// ErrNoQRCode reports an image in which no QR code could be read.
+var ErrNoQRCode = errors.New("no QR code found")
+
 // DecodeImage decodes a single QR code from an in-memory image and returns its
-// payload string. It returns an error if no QR code can be read.
+// payload string. It returns an error matching ErrNoQRCode if no QR code can be
+// read.
 func DecodeImage(img image.Image) (string, error) {
 	if img == nil {
 		return "", fmt.Errorf("qr: nil image")
@@ -35,7 +42,7 @@ func DecodeImage(img image.Image) (string, error) {
 	}
 	result, err := qrcode.NewQRCodeReader().Decode(bmp, nil)
 	if err != nil {
-		return "", fmt.Errorf("qr: decode: %w", err)
+		return "", fmt.Errorf("qr: decode: %w: %w", ErrNoQRCode, err)
 	}
 	return result.GetText(), nil
 }
@@ -43,7 +50,8 @@ func DecodeImage(img image.Image) (string, error) {
 // DecodeAll decodes every QR code in an in-memory image and returns their
 // payloads in detection order. It tries the multi-QR reader first (TRY_HARDER,
 // QR-only), then falls back to the single-QR reader so images the multi
-// detector cannot segment still decode. It errors only when no QR is found.
+// detector cannot segment still decode. It errors only when no QR is found,
+// with an error matching ErrNoQRCode.
 func DecodeAll(img image.Image) ([]string, error) {
 	if img == nil {
 		return nil, fmt.Errorf("qr: nil image")
@@ -65,7 +73,7 @@ func DecodeAll(img image.Image) ([]string, error) {
 	}
 	result, err := qrcode.NewQRCodeReader().Decode(bmp, hints)
 	if err != nil {
-		return nil, fmt.Errorf("qr: decode: %w", err)
+		return nil, fmt.Errorf("qr: decode: %w: %w", ErrNoQRCode, err)
 	}
 	return []string{result.GetText()}, nil
 }
@@ -124,6 +132,74 @@ func EncodePNG(text, path string, size int) error {
 	}
 	if _, err := f.Write(data); err != nil {
 		return fmt.Errorf("qr: write %q: %w", path, err)
+	}
+	return nil
+}
+
+// Matrix encodes text as a QR code at error correction level M and returns its
+// modules row by row, true for dark, without a quiet zone.
+func Matrix(text string) ([][]bool, error) {
+	if text == "" {
+		return nil, fmt.Errorf("qr: empty payload")
+	}
+	code, err := encoder.Encoder_encode(text, decoder.ErrorCorrectionLevel_M, nil)
+	if err != nil {
+		return nil, fmt.Errorf("qr: encode: %w", err)
+	}
+	m := code.GetMatrix()
+	rows := make([][]bool, m.GetHeight())
+	for y := range rows {
+		rows[y] = make([]bool, m.GetWidth())
+		for x := range rows[y] {
+			rows[y][x] = m.Get(x, y) == 1
+		}
+	}
+	return rows, nil
+}
+
+// TerminalQuietZone is the light border, in modules, WriteTerminal draws
+// around the code.
+const TerminalQuietZone = 4
+
+const (
+	terminalColors = "\x1b[38;5;16;48;5;231m"
+	terminalReset  = "\x1b[0m"
+)
+
+// WriteTerminal draws text as a QR code for a terminal: two module rows per
+// line in Unicode half blocks, black on white set explicitly on every line so
+// a dark color scheme cannot invert it, inside a TerminalQuietZone border.
+func WriteTerminal(w io.Writer, text string) error {
+	rows, err := Matrix(text)
+	if err != nil {
+		return err
+	}
+	n := len(rows)
+	size := n + 2*TerminalQuietZone
+	dark := func(x, y int) bool {
+		x, y = x-TerminalQuietZone, y-TerminalQuietZone
+		return y >= 0 && y < n && x >= 0 && x < len(rows[y]) && rows[y][x]
+	}
+	var b strings.Builder
+	for y := 0; y < size; y += 2 {
+		b.WriteString(terminalColors)
+		for x := 0; x < size; x++ {
+			switch top, bottom := dark(x, y), dark(x, y+1); {
+			case top && bottom:
+				b.WriteRune('█')
+			case top:
+				b.WriteRune('▀')
+			case bottom:
+				b.WriteRune('▄')
+			default:
+				b.WriteByte(' ')
+			}
+		}
+		b.WriteString(terminalReset)
+		b.WriteByte('\n')
+	}
+	if _, err := io.WriteString(w, b.String()); err != nil {
+		return fmt.Errorf("qr: write: %w", err)
 	}
 	return nil
 }

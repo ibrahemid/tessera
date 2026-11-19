@@ -25,8 +25,8 @@ type File struct {
 	Data []byte
 }
 
-// Skipped names one account a format cannot represent, with the reason. Label
-// never contains a secret.
+// Skipped names one account, or one field of it, that a format cannot carry,
+// with the reason. Label never contains a secret.
 type Skipped struct {
 	Label  string
 	Reason string
@@ -149,3 +149,11 @@ func tokenType(t account.Type) string {
 func intPtr(v int) *int       { return &v }
 func int64Ptr(v int64) *int64 { return &v }
 func strPtr(v string) *string { return &v }
+
+// optionalStr is nil for an empty string, so a format's null stays null.
+func optionalStr(v string) *string {
+	if v == "" {
+		return nil
+	}
+	return &v
+}
