@@ -28,6 +28,13 @@ const (
 
 const MaxCounter int64 = math.MaxInt64 - 1
 
+// MaxNesting is the deepest array or object a payload or an envelope may hold,
+// the top-level value being level 1 (spec/vault-format.md, canonical JSON rule 7).
+const MaxNesting = 64
+
+// extensionLevel is where an extension value sits: array, account, value.
+const extensionLevel = 3
+
 var (
 	ErrDuplicateKey       = errors.New("account: duplicate key")
 	ErrNonCanonicalNumber = errors.New("account: number is not a canonical int64 integer")
@@ -217,7 +224,7 @@ func encodeCanonical(v any) ([]byte, error) {
 }
 
 func canonicalValue(raw []byte) ([]byte, error) {
-	if err := checkStrictJSON(raw); err != nil {
+	if err := checkStrictJSON(raw, extensionLevel); err != nil {
 		return nil, err
 	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
@@ -231,7 +238,7 @@ func canonicalValue(raw []byte) ([]byte, error) {
 
 // ParseCanonicalJSON decodes payload bytes under canonical JSON rules 4 and 6, keeping undefined keys in Extra.
 func ParseCanonicalJSON(data []byte) ([]Account, error) {
-	if err := checkStrictJSON(data); err != nil {
+	if err := checkStrictJSON(data, 1); err != nil {
 		return nil, err
 	}
 	var elems []json.RawMessage
@@ -426,10 +433,10 @@ func isCanonicalInt(s string) bool {
 	return err == nil
 }
 
-func checkStrictJSON(data []byte) error {
+func checkStrictJSON(data []byte, level int) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.UseNumber()
-	if err := walk(dec); err != nil {
+	if err := walk(dec, level); err != nil {
 		if errors.Is(err, ErrDuplicateKey) || errors.Is(err, ErrNonCanonicalNumber) {
 			return err
 		}
@@ -441,7 +448,7 @@ func checkStrictJSON(data []byte) error {
 	return nil
 }
 
-func walk(dec *json.Decoder) error {
+func walk(dec *json.Decoder, level int) error {
 	tok, err := dec.Token()
 	if err != nil {
 		return err
@@ -453,6 +460,9 @@ func walk(dec *json.Decoder) error {
 		}
 		return nil
 	case json.Delim:
+		if level > MaxNesting {
+			return fmt.Errorf("nesting deeper than %d levels", MaxNesting)
+		}
 		switch v {
 		case '{':
 			seen := map[string]bool{}
@@ -469,7 +479,7 @@ func walk(dec *json.Decoder) error {
 					return fmt.Errorf("%w %q in object", ErrDuplicateKey, key)
 				}
 				seen[key] = true
-				if err := walk(dec); err != nil {
+				if err := walk(dec, level+1); err != nil {
 					return err
 				}
 			}
@@ -477,7 +487,7 @@ func walk(dec *json.Decoder) error {
 			return err
 		case '[':
 			for dec.More() {
-				if err := walk(dec); err != nil {
+				if err := walk(dec, level+1); err != nil {
 					return err
 				}
 			}

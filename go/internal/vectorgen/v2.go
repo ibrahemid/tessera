@@ -311,6 +311,11 @@ func foundationStyle(o object) string {
 	return strings.ReplaceAll(s, `": `, `" : `)
 }
 
+// nest is n arrays inside one another.
+func nest(n int) rawValue {
+	return rawValue(strings.Repeat("[", n) + strings.Repeat("]", n))
+}
+
 func unknownWrap(i int) object {
 	return object{{"type", "hardware-key"}, {"slot", i}, {"blob", pattern(8, byte(i))}}
 }
@@ -462,6 +467,7 @@ func envelopeStrictBlock() object {
 		vcase("unknown-top-level-key", base.with("x_future", future)),
 		vcase("sixteen-wraps", env(append(unknownWraps(15), good)...)),
 		{{"name", "escaped-slashes-indented"}, {"envelope_json", foundationStyle(base)}},
+		vcase("nesting-64", base.with("x_deep", nest(account.MaxNesting-1))),
 	}
 
 	inv := func(name, envelopeJSON, code string) object {
@@ -470,6 +476,7 @@ func envelopeStrictBlock() object {
 	invEnv := func(name string, o object, code string) object { return inv(name, text(o), code) }
 	invalid := []object{
 		inv("truncated", baseText[:len(baseText)/2], "corrupt"),
+		invEnv("nesting-65", base.with("x_deep", nest(account.MaxNesting)), "corrupt"),
 		inv("not-an-object", "["+baseText+"]", "corrupt"),
 		inv("trailing-data", baseText+"{}", "corrupt"),
 		invEnv("payload-ct-tamper", withPayload("ct", flip(pct, 0)), "auth_failed"),
@@ -536,7 +543,11 @@ func payloadStrictBlock() object {
 	inv := func(name, payload, code string) object {
 		return object{{"name", name}, {"payload", payload}, {"error", code}}
 	}
-	return object{{"invalid", []object{
+	valid := []object{
+		{{"name", "extension-nesting-64"}, {"payload", ext(string(nest(account.MaxNesting - 2)))}},
+	}
+	return object{{"valid", valid}, {"invalid", []object{
+		inv("extension-nesting-65", ext(string(nest(account.MaxNesting-1))), "malformed_payload"),
 		inv("extension-float", ext("1.5"), "non_canonical_number"),
 		inv("extension-exponent", ext("1e3"), "non_canonical_number"),
 		inv("extension-negative-zero", ext("-0"), "non_canonical_number"),

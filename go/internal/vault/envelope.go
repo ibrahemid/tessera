@@ -8,9 +8,9 @@ import (
 	"math"
 	"sort"
 	"strconv"
-)
 
-const maxJSONDepth = 10000
+	"github.com/ibrahemid/tessera/go/internal/account"
+)
 
 var envelopeKeys = map[string]bool{"version": true, "aead": true, "wraps": true, "payload": true}
 
@@ -448,7 +448,7 @@ func parseCanonicalInt(raw json.RawMessage) (int64, bool) {
 
 func checkEnvelopeJSON(data []byte) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
-	if err := walkEnvelope(dec, 0); err != nil {
+	if err := walkEnvelope(dec, 1); err != nil {
 		return err
 	}
 	if _, err := dec.Token(); err != io.EOF {
@@ -457,10 +457,7 @@ func checkEnvelopeJSON(data []byte) error {
 	return nil
 }
 
-func walkEnvelope(dec *json.Decoder, depth int) error {
-	if depth > maxJSONDepth {
-		return corruptf("nesting deeper than %d", maxJSONDepth)
-	}
+func walkEnvelope(dec *json.Decoder, level int) error {
 	tok, err := dec.Token()
 	if err != nil {
 		return corruptf("%v", err)
@@ -468,6 +465,9 @@ func walkEnvelope(dec *json.Decoder, depth int) error {
 	d, ok := tok.(json.Delim)
 	if !ok {
 		return nil
+	}
+	if level > account.MaxNesting {
+		return corruptf("nesting deeper than %d levels", account.MaxNesting)
 	}
 	switch d {
 	case '{':
@@ -485,13 +485,13 @@ func walkEnvelope(dec *json.Decoder, depth int) error {
 				return corruptf("duplicate key %q", key)
 			}
 			seen[key] = true
-			if err := walkEnvelope(dec, depth+1); err != nil {
+			if err := walkEnvelope(dec, level+1); err != nil {
 				return err
 			}
 		}
 	case '[':
 		for dec.More() {
-			if err := walkEnvelope(dec, depth+1); err != nil {
+			if err := walkEnvelope(dec, level+1); err != nil {
 				return err
 			}
 		}

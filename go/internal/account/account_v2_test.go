@@ -383,3 +383,31 @@ func TestAssignHandlesLargeCollisionChain(t *testing.T) {
 		t.Fatalf("chain: %q %q %q", accts[0].Handle, accts[1].Handle, accts[n-1].Handle)
 	}
 }
+
+func TestExtensionNestingLimit(t *testing.T) {
+	nest := func(n int) json.RawMessage {
+		return json.RawMessage(strings.Repeat("[", n) + strings.Repeat("]", n))
+	}
+	a := Account{
+		ID: "n", Type: TOTP, Secret: []byte("12345678901234567890"),
+		Algorithm: "SHA1", Digits: 6, Period: 30,
+		Extra: map[string]json.RawMessage{"x_deep": nest(MaxNesting - 2)},
+	}
+	if err := a.Validate(); err != nil {
+		t.Fatalf("an extension value reaching level %d must validate: %v", MaxNesting, err)
+	}
+	payload, err := CanonicalJSON([]Account{a})
+	if err != nil {
+		t.Fatalf("CanonicalJSON: %v", err)
+	}
+	if _, err := ParseCanonicalJSON(payload); err != nil {
+		t.Fatalf("a payload that validated must parse: %v", err)
+	}
+	a.Extra["x_deep"] = nest(MaxNesting - 1)
+	if err := a.Validate(); !errors.Is(err, ErrMalformedPayload) {
+		t.Fatalf("Validate = %v, want ErrMalformedPayload for level %d", err, MaxNesting+1)
+	}
+	if _, err := CanonicalJSON([]Account{a}); !errors.Is(err, ErrMalformedPayload) {
+		t.Fatalf("CanonicalJSON = %v, want ErrMalformedPayload", err)
+	}
+}

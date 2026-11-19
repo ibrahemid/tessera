@@ -23,6 +23,10 @@ type v2AccountVectors struct {
 		} `json:"canonical"`
 	} `json:"vault_v2"`
 	PayloadStrict struct {
+		Valid []struct {
+			Name    string `json:"name"`
+			Payload string `json:"payload"`
+		} `json:"valid"`
 		Invalid []struct {
 			Name    string `json:"name"`
 			Payload string `json:"payload"`
@@ -149,6 +153,24 @@ func TestV2VectorsPayloadStrict(t *testing.T) {
 	v := loadV2AccountVectors(t)
 	if len(v.PayloadStrict.Invalid) == 0 {
 		t.Fatal("payload_strict.invalid is empty")
+	}
+	if len(v.PayloadStrict.Valid) == 0 {
+		t.Fatal("payload_strict.valid is empty")
+	}
+	for _, c := range v.PayloadStrict.Valid {
+		t.Run(c.Name, func(t *testing.T) {
+			accounts, err := ParseCanonicalJSON([]byte(c.Payload))
+			if err != nil {
+				t.Fatalf("ParseCanonicalJSON: %v", err)
+			}
+			got, err := CanonicalJSON(accounts)
+			if err != nil {
+				t.Fatalf("CanonicalJSON: %v", err)
+			}
+			if string(got) != c.Payload {
+				t.Fatalf("round trip changed the payload:\n got %s\nwant %s", got, c.Payload)
+			}
+		})
 	}
 	for _, c := range v.PayloadStrict.Invalid {
 		t.Run(c.Name, func(t *testing.T) {

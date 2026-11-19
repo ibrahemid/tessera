@@ -35,6 +35,7 @@ The envelope is untrusted input until the payload authenticates. Both cores MUST
 - `wraps` holds 1 to 16 entries. Zero or more than 16 is rejected.
 - Every `b64` field is canonical standard base64 (see *Base64*): the decoded bytes MUST re-encode to the same string. Whitespace and line breaks inside a value are rejected.
 - Nonces are exactly 24 bytes.
+- Arrays and objects nest at most 64 levels, the envelope object being level 1. A deeper file is rejected as corrupt before anything else is read from it.
 - Keys the implementation does not recognize, at the top level or inside a wrap, and wraps whose `type` it does not recognize, are kept and written back unchanged. A writer replaces or removes only the wraps it owns.
 
 - `wraps` MUST be non-empty on disk (and at most 16). An implementation may hold a zero-wrap envelope in memory while assembling one (Swift `Envelope.createUnwrapped`), but MUST attach at least one wrap before persisting; a zero-wrap file is permanently unopenable.
@@ -103,6 +104,7 @@ All `b64` fields are **base64 standard alphabet (RFC 4648 §4, `+/`), WITH `=` p
 4. Numbers: integers only, base-10, no leading zeros, no `+`, no exponent, no decimal point, no `-0`. Every integer fits `int64`. Readers MUST reject any other number form anywhere in the payload (`6.0`, `1e3`), and MUST reject a non-boolean `pinned` or a non-integer where an integer field is defined.
 5. Secrets are RAW key bytes, base64-standard with padding (see above). Google-migration secrets arrive as raw bytes; Steam secrets are base64-decoded to raw bytes; otpauth secrets are base32-decoded to raw bytes. The payload normalizes ALL to raw-bytes-then-base64.
 6. Parsers MUST reject duplicate keys, compared as byte strings after unescaping.
+7. Arrays and objects nest at most 64 levels: the account array is level 1, an account object level 2, an extension value starts at level 3. Parsers MUST reject a deeper payload, and writers MUST refuse to produce one.
 
 This canonical form is the SEALED-BEFORE-ENCRYPTION bytes. It is NOT a stable on-disk artifact: AEAD output differs every write (fresh nonce), so two encrypted files of the same accounts are NOT equal. Interop CI diffs the DECRYPTED canonical bytes, never the encrypted file.
 
@@ -267,3 +269,4 @@ Rotation generates a new random DEK, reseals the payload under it, and rebuilds 
 - An envelope with an unknown top-level key and a wrap of unknown type: both survive a load and save.
 - An envelope as Foundation's `JSONEncoder` writes it (indented, ` : ` after keys, `/` escaped as `\/`): every Tessera app release writes this form, and both cores MUST open it.
 - `\b` and `\f` in a string value, written as two-character escapes.
+- Nesting at level 64 accepted and level 65 rejected, in an unknown envelope key and in an extension value.
