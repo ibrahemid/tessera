@@ -6,6 +6,7 @@ require (
 	github.com/atotto/clipboard v0.1.4
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
+	github.com/godbus/dbus/v5 v5.2.4
 	github.com/makiuchi-d/gozxing v0.1.1
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/crypto v0.59.0
