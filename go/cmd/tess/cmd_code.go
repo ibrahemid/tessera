@@ -69,7 +69,7 @@ var (
 	errAllWithNext  = errors.New("--all never advances a counter; advance one with `tess code <query> --next`")
 	errAllWithCopy  = errors.New("--all never copies; copy one code with `tess code <query> -c`")
 	errAtNoQuery    = errors.New("--at needs an account: `tess code <query> --at <time>`")
-	errAtWithNext   = errors.New("--at works only for time-based accounts, which have no counter to advance")
+	errAtWithNext   = errors.New("--at already picks the time; drop --next")
 	errAtWithCopy   = errors.New("--at never copies; drop -c")
 	errAtTime       = errors.New("--at takes an RFC 3339 time such as 2026-01-02T15:04:05Z, or unix seconds")
 	errAtCounter    = errors.New("--at works only for time-based accounts, and this one counts codes (HOTP)")
@@ -149,7 +149,8 @@ keeps the code.`,
 // options.
 func bindCodeFlags(cmd *cobra.Command, opts *codeOptions) {
 	f := cmd.Flags()
-	f.BoolVar(&opts.next, "next", false, "for HOTP, advance and persist the counter")
+	f.BoolVar(&opts.next, "next", false,
+		"for TOTP and Steam, the code of the following time step; for HOTP, advance and persist the counter")
 	f.BoolVar(&opts.noCopy, "no-copy", false, "print the code without touching the clipboard")
 	f.BoolVar(&opts.asJSON, "json", false, "output JSON (never copies)")
 	f.BoolVar(&opts.nowOnly, "now", false, "print the current code instead of waiting for the next one")
@@ -217,6 +218,8 @@ func printAmbiguousCodes(cmd *cobra.Command, accts []account.Account, idxs []int
 }
 
 // printOneCode generates, prints and (by default) copies a single account's code.
+// With --next a time-based account's printed and copied code is the following
+// step's, without the freshness wait; the JSON row stays the current one.
 func printOneCode(cmd *cobra.Command, s *session, idx int, opts *codeOptions) error {
 	willCopy := opts.shouldCopy()
 	var wipe clipClearPlan
@@ -227,6 +230,7 @@ func printOneCode(cmd *cobra.Command, s *session, idx int, opts *codeOptions) er
 		}
 	}
 	a := &s.accounts[idx]
+	upcoming := opts.next && a.Type != account.HOTP
 	if a.Type == account.HOTP && opts.next {
 		next, err := account.NextCounter(a.Counter)
 		if err != nil {
@@ -237,17 +241,21 @@ func printOneCode(cmd *cobra.Command, s *session, idx int, opts *codeOptions) er
 		a.UpdatedAt = now().Unix()
 	}
 	t := now()
-	if !opts.asJSON && !opts.nowOnly {
+	if !opts.asJSON && !opts.nowOnly && !upcoming {
 		t = waitForFreshCode(cmd, *a, t)
 	}
-	c, err := genCode(*a, t)
+	at := t
+	if upcoming {
+		at = t.Add(time.Duration(a.Period) * time.Second)
+	}
+	c, err := genCode(*a, at)
 	if err != nil {
 		return err
 	}
 	if opts.asJSON {
 		out(cmd, "%s", mustJSON(newCodeRow(*a, t)))
 	} else {
-		printCodeLine(cmd, c, code.Remaining(*a, t), a.Type, willCopy)
+		printCodeLine(cmd, c, code.Remaining(*a, t), a.Type, willCopy, upcoming)
 	}
 	// Persist the advanced counter before reporting the copy: a failed
 	// clipboard must not roll back a counter the user already saw.
@@ -316,7 +324,8 @@ func printCodeAt(cmd *cobra.Command, s *session, query string, t time.Time, asJS
 
 // printCodeLine renders the code for a human on a terminal, and the bare digits
 // for anything else so `tess code x | pbcopy` and `$(tess code x)` stay usable.
-func printCodeLine(cmd *cobra.Command, c string, remaining int, typ account.Type, copied bool) {
+// An upcoming code is the following time step's, valid once remaining runs out.
+func printCodeLine(cmd *cobra.Command, c string, remaining int, typ account.Type, copied, upcoming bool) {
 	if !stdoutIsTTY() {
 		out(cmd, "%s", c)
 		return
@@ -325,7 +334,11 @@ func printCodeLine(cmd *cobra.Command, c string, remaining int, typ account.Type
 	if copied {
 		meta = append(meta, "copied")
 	}
-	if typ != account.HOTP {
+	switch {
+	case typ == account.HOTP:
+	case upcoming:
+		meta = append(meta, fmt.Sprintf("valid in %ds", remaining))
+	default:
 		meta = append(meta, fmt.Sprintf("%ds", remaining))
 	}
 	if len(meta) == 0 {

@@ -31,6 +31,8 @@ Presence:
 
 Display order is the order `tess list` uses: pinned accounts first, then accounts with a manual order, then issuer and account name. Trashed accounts appear only in `tess trash --json`.
 
+A `<query>` equal to an account's full `id` (case-sensitive) selects that account before any handle, issuer or account match, so `tess code --json -- <id>` names one account.
+
 ## Code row
 
 | Field | Type | Presence | Meaning |
@@ -45,6 +47,8 @@ Display order is the order `tess list` uses: pinned accounts first, then account
 | `expires_in` | integer | `totp` and `steam` | seconds until `code` stops being current |
 
 For `hotp`, `code` is the code at the stored counter. `tess code <query> --next --json` advances and saves the counter first; `--all` and `--at` never advance it. `--at` takes RFC 3339 (`2026-03-01T09:00:00Z`) or unix seconds, and refuses `hotp` accounts.
+
+`tess code <query> --json -c` copies `code`. For `totp` and `steam`, `--next` leaves the row unchanged and `-c --next` copies `next_code`.
 
 ## List row
 

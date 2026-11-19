@@ -385,12 +385,12 @@ func (s *session) resolveMatches(query string) ([]int, error) {
 
 // resolveIn applies the spec account-resolution precedence to the live accounts,
 // or to the trashed ones when trashed is set, and returns the indices matched by
-// the first stage that matches anything: exact handle, then exact
+// the first stage that matches anything: exact id, then exact handle, then exact
 // issuer/account (case-insensitive), then substring over handle/issuer/account.
 // A single index is a unique resolution; more than one means the caller must
 // disambiguate. Zero total matches is an error.
 func (s *session) resolveIn(query string, trashed bool) ([]int, error) {
-	q := strings.ToLower(strings.TrimSpace(query))
+	q := strings.TrimSpace(query)
 	if q == "" {
 		return nil, fmt.Errorf("empty query")
 	}
@@ -415,9 +415,12 @@ func (s *session) resolveIn(query string, trashed bool) ([]int, error) {
 }
 
 // matchStages returns the indices of the accounts in the chosen state matched by
-// the first resolution stage that matches any; q is lowercased and trimmed.
-func matchStages(accts []account.Account, q string, trashed bool) []int {
+// the first resolution stage that matches any; query is trimmed. Only the id
+// stage compares it case-sensitively.
+func matchStages(accts []account.Account, query string, trashed bool) []int {
+	q := strings.ToLower(query)
 	stages := []func(account.Account) bool{
+		func(a account.Account) bool { return a.ID != "" && a.ID == query },
 		func(a account.Account) bool { return a.Handle != "" && a.Handle == q },
 		func(a account.Account) bool {
 			return strings.ToLower(a.Issuer) == q || strings.ToLower(a.Account) == q
@@ -493,7 +496,7 @@ func (s *session) singleScoped(cmd *cobra.Command, query string, sc resolveScope
 	case trashScope:
 		return s.singleIn(cmd, query, true)
 	case liveThenTrashScope:
-		q := strings.ToLower(strings.TrimSpace(query))
+		q := strings.TrimSpace(query)
 		if q != "" && len(matchStages(s.accounts, q, false)) == 0 && len(matchStages(s.accounts, q, true)) > 0 {
 			return s.singleIn(cmd, query, true)
 		}

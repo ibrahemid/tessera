@@ -197,9 +197,10 @@ Examples: issuer `ACME` → `ac`; issuer `GitHub` (single word, first two chars)
 
 When the user references an account by a text query, both the CLI and the app resolve it by this precedence:
 
-1. **Exact handle** match (handles are always lowercase; compare against the lowercased query).
-2. **Exact `issuer` or `account`** match, case-insensitive.
-3. **Unique substring** match against `handle`, `issuer`, or `account`, case-insensitive.
+1. **Exact `id`** match: the trimmed query equals the full account `id`, case-sensitive.
+2. **Exact handle** match (handles are always lowercase; compare against the lowercased query).
+3. **Exact `issuer` or `account`** match, case-insensitive.
+4. **Unique substring** match against `handle`, `issuer`, or `account`, case-insensitive.
 
 The first stage that yields exactly one account resolves. If a stage yields more than one match, the interface MUST present the matching accounts (each shown with its handle) so the user can pick, rather than failing with a bare "not found" / "ambiguous" error. Only when no stage matches anything is it an unresolved-account error.
 
