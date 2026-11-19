@@ -11,14 +11,101 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
+	"github.com/ibrahemid/tessera/go/internal/clipboard"
 	"github.com/ibrahemid/tessera/go/internal/procenv"
 	"github.com/spf13/cobra"
 )
 
+// clipClearDefault is the delay, in seconds, before a code copied on a
+// terminal is cleared. The Mac app uses the same interval.
+const clipClearDefault = 30
+
+// clipClearEnv names the variable that sets the clear delay in seconds.
+const clipClearEnv = "TESSERA_CLIP_CLEAR"
+
+// errClipClearUnsupported reports a clipboard tess cannot read back, so it
+// cannot tell its own code from text copied since and leaves it in place.
+var errClipClearUnsupported = errors.New("this clipboard cannot be read back, so tess will not clear the code")
+
+// clipClearDelayError reports a clear delay that is not a whole number of
+// seconds.
+type clipClearDelayError struct {
+	// source is "--clear" or the environment variable name.
+	source string
+	value  string
+}
+
+func (e *clipClearDelayError) Error() string {
+	return fmt.Sprintf("%s %q is not a number of seconds; use 0 to keep the code on the clipboard, or a positive number", e.source, e.value)
+}
+
+// clipClearPlan is when a copied code leaves the clipboard.
+type clipClearPlan struct {
+	seconds int
+	// explicit is true when --clear or $TESSERA_CLIP_CLEAR set the delay, and
+	// false for the terminal default.
+	explicit bool
+}
+
+// resolveClipClear picks the delay: --clear when given, then a non-empty
+// $TESSERA_CLIP_CLEAR, then the 30-second default when the copy happens on a
+// terminal. Zero keeps the code.
+func resolveClipClear(flag int, flagSet, terminal bool) (clipClearPlan, error) {
+	if flagSet {
+		if flag < 0 {
+			return clipClearPlan{}, &clipClearDelayError{source: "--clear", value: strconv.Itoa(flag)}
+		}
+		return clipClearPlan{seconds: flag, explicit: true}, nil
+	}
+	if raw := os.Getenv(clipClearEnv); strings.TrimSpace(raw) != "" {
+		n, err := strconv.Atoi(strings.TrimSpace(raw))
+		if err != nil || n < 0 {
+			return clipClearPlan{}, &clipClearDelayError{source: clipClearEnv, value: raw}
+		}
+		return clipClearPlan{seconds: n, explicit: true}, nil
+	}
+	if terminal {
+		return clipClearPlan{seconds: clipClearDefault}, nil
+	}
+	return clipClearPlan{}, nil
+}
+
+// schedule arranges the clear of codeText, which was just copied. A clipboard
+// that cannot be read back is never cleared blind: the default is dropped
+// without a word, and an explicit delay returns errClipClearUnsupported.
+func (p clipClearPlan) schedule(codeText string) error {
+	if p.seconds <= 0 {
+		return nil
+	}
+	if _, err := readClipboard(); errors.Is(err, clipboard.ErrReadUnsupported) {
+		if p.explicit {
+			return errClipClearUnsupported
+		}
+		return nil
+	}
+	if err := startClipClear(p.seconds, codeText); err != nil {
+		return fmt.Errorf("schedule clipboard clear: %w", err)
+	}
+	return nil
+}
+
 // startClipClear schedules the clipboard wipe, replaceable in tests.
 var startClipClear = spawnClipClear
+
+// startProcess starts one child, replaceable in tests.
+var startProcess = (*exec.Cmd).Start
+
+// clearClipboard empties the clipboard, replaceable in tests.
+var clearClipboard = func() error {
+	b, err := detectClipboard()
+	if err != nil {
+		return err
+	}
+	return b.Clear()
+}
 
 // spawnClipClear launches a detached `tess __clip-clear` so the shell gets its
 // prompt back while the wipe waits out its delay. The digest travels down the
@@ -42,11 +129,30 @@ func spawnClipClear(seconds int, codeText string) error {
 	if err := w.Close(); err != nil {
 		return fmt.Errorf("write digest: %w", err)
 	}
-	child := exec.Command(exe, "__clip-clear", strconv.Itoa(seconds))
-	child.Env = procenv.Child()
-	child.Stdin, child.Stdout, child.Stderr = r, nil, nil
-	child.SysProcAttr = detachedProcAttr()
-	return child.Start()
+	build := func(attr *syscall.SysProcAttr) *exec.Cmd {
+		child := exec.Command(exe, "__clip-clear", strconv.Itoa(seconds))
+		child.Env = procenv.Child()
+		child.Stdin, child.Stdout, child.Stderr = r, nil, nil
+		child.SysProcAttr = attr
+		return child
+	}
+	return startDetached(build, detachedProcAttrs(), spawnRetryable)
+}
+
+// startDetached starts a child built with each attribute set in turn, moving
+// to the next only when retryable accepts the previous failure.
+func startDetached(build func(*syscall.SysProcAttr) *exec.Cmd, attrs []*syscall.SysProcAttr, retryable func(error) bool) error {
+	if len(attrs) == 0 {
+		attrs = []*syscall.SysProcAttr{nil}
+	}
+	var err error
+	for i, attr := range attrs {
+		err = startProcess(build(attr))
+		if err == nil || i == len(attrs)-1 || !retryable(err) {
+			break
+		}
+	}
+	return err
 }
 
 // digestCode fingerprints a code so the waiting child can tell "the clipboard
@@ -107,7 +213,7 @@ func clearClipboardIfUnchanged(digest string) error {
 	if digestCode(current) != digest {
 		return nil
 	}
-	if err := copyToClipboard(""); err != nil {
+	if err := clearClipboard(); err != nil {
 		return fmt.Errorf("clear clipboard: %w", err)
 	}
 	return nil

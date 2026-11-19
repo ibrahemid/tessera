@@ -1,7 +1,9 @@
-//go:build !unix
+//go:build !unix && !windows
 
 package main
 
 import "syscall"
 
-func detachedProcAttr() *syscall.SysProcAttr { return nil }
+func detachedProcAttrs() []*syscall.SysProcAttr { return []*syscall.SysProcAttr{nil} }
+
+func spawnRetryable(error) bool { return false }

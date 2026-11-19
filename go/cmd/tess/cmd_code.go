@@ -2,25 +2,42 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/atotto/clipboard"
 	"github.com/ibrahemid/tessera/go/internal/account"
+	"github.com/ibrahemid/tessera/go/internal/clipboard"
 	"github.com/ibrahemid/tessera/go/internal/code"
 	"github.com/ibrahemid/tessera/go/internal/ui"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
 
-// copyToClipboard is the clipboard writer, replaceable in tests.
-var copyToClipboard = clipboard.WriteAll
+// detectClipboard picks the clipboard backend, replaceable in tests.
+var detectClipboard = clipboard.Detect
+
+// copyToClipboard is the clipboard writer, replaceable in tests. Codes are
+// written as sensitive, which keeps them out of clipboard history where the
+// platform allows.
+var copyToClipboard = func(text string) error {
+	b, err := detectClipboard()
+	if err != nil {
+		return err
+	}
+	return b.Write(text, true)
+}
 
 // readClipboard is the clipboard reader, replaceable in tests.
-var readClipboard = clipboard.ReadAll
+var readClipboard = func() (string, error) {
+	b, err := detectClipboard()
+	if err != nil {
+		return "", err
+	}
+	return b.Read()
+}
 
 // stdoutIsTTY reports whether stdout is a terminal, replaceable in tests.
 var stdoutIsTTY = func() bool { return term.IsTerminal(int(os.Stdout.Fd())) }
@@ -58,6 +75,12 @@ func (o codeOptions) shouldCopy() bool {
 	return !o.asJSON && stdoutIsTTY()
 }
 
+// clipClear resolves when this run's copy leaves the clipboard. The terminal
+// default covers a run that prints for a person, which --json does not.
+func (o codeOptions) clipClear(cmd *cobra.Command) (clipClearPlan, error) {
+	return resolveClipClear(o.clearAfter, cmd.Flags().Changed("clear"), !o.asJSON && stdoutIsTTY())
+}
+
 func newCodeCmd() *cobra.Command {
 	opts := &codeOptions{}
 	cmd := &cobra.Command{
@@ -71,7 +94,11 @@ func newCodeCmd() *cobra.Command {
   tess code                 # every account's code
 
 The code is copied on a terminal. Piped or with --json, tess prints the raw
-digits and leaves the clipboard alone unless you pass -c.`,
+digits and leaves the clipboard alone unless you pass -c.
+
+On a terminal, tess clears the copied code after 30 seconds if the clipboard
+still holds it. --clear sets the delay; --clear 0 or TESSERA_CLIP_CLEAR=0
+keeps the code.`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeFirstArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -91,20 +118,10 @@ func bindCodeFlags(cmd *cobra.Command, opts *codeOptions) {
 	f.BoolVar(&opts.noCopy, "no-copy", false, "print the code without touching the clipboard")
 	f.BoolVar(&opts.asJSON, "json", false, "output JSON (never copies)")
 	f.BoolVar(&opts.nowOnly, "now", false, "print the current code instead of waiting for the next one")
-	f.IntVar(&opts.clearAfter, "clear", defaultClipClear(),
-		"clear the clipboard after this many seconds, 0 to keep (default $TESSERA_CLIP_CLEAR)")
+	f.IntVar(&opts.clearAfter, "clear", 0,
+		"clear the clipboard after this many seconds, 0 to keep (default $TESSERA_CLIP_CLEAR, else 30 on a terminal)")
 	f.BoolVarP(&opts.forceCopy, "copy", "c", false,
 		"copy the code to the clipboard (the default on a terminal; -c copies even when piped)")
-}
-
-// defaultClipClear reads the --clear default from $TESSERA_CLIP_CLEAR. Anything
-// that is not a positive integer leaves the clipboard untouched.
-func defaultClipClear() int {
-	n, err := strconv.Atoi(strings.TrimSpace(os.Getenv("TESSERA_CLIP_CLEAR")))
-	if err != nil || n <= 0 {
-		return 0
-	}
-	return n
 }
 
 func runCode(cmd *cobra.Command, args []string, opts *codeOptions) error {
@@ -150,6 +167,14 @@ func printAmbiguousCodes(cmd *cobra.Command, accts []account.Account, idxs []int
 
 // printOneCode generates, prints and (by default) copies a single account's code.
 func printOneCode(cmd *cobra.Command, s *session, idx int, opts *codeOptions) error {
+	willCopy := opts.shouldCopy()
+	var wipe clipClearPlan
+	if willCopy {
+		var err error
+		if wipe, err = opts.clipClear(cmd); err != nil {
+			return err
+		}
+	}
 	a := &s.accounts[idx]
 	if a.Type == account.HOTP && opts.next {
 		a.Counter++
@@ -163,7 +188,6 @@ func printOneCode(cmd *cobra.Command, s *session, idx int, opts *codeOptions) er
 	if err != nil {
 		return err
 	}
-	willCopy := opts.shouldCopy()
 	if opts.asJSON {
 		fields := map[string]any{
 			"issuer": a.Issuer, "account": a.Account, "code": c, "type": string(a.Type),
@@ -188,10 +212,12 @@ func printOneCode(cmd *cobra.Command, s *session, idx int, opts *codeOptions) er
 	if err := copyToClipboard(c); err != nil {
 		return fmt.Errorf("copy to clipboard: %w", err)
 	}
-	if opts.clearAfter > 0 {
-		if err := startClipClear(opts.clearAfter, c); err != nil {
-			return fmt.Errorf("schedule clipboard clear: %w", err)
+	if err := wipe.schedule(c); err != nil {
+		if errors.Is(err, errClipClearUnsupported) {
+			errOut(cmd, "warning: %s", err)
+			return nil
 		}
+		return err
 	}
 	return nil
 }

@@ -7,11 +7,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// runWatchView starts the watch view, replaceable in tests.
+var runWatchView = tui.Run
+
 func newWatchCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "watch",
 		Short: "Live, auto-refreshing view with countdown bars and copy",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			wipe, err := resolveClipClear(0, false, true)
+			if err != nil {
+				return err
+			}
 			s, err := openSession()
 			if err != nil {
 				return err
@@ -30,7 +37,7 @@ func newWatchCmd() *cobra.Command {
 					return nil
 				})
 			}
-			return tui.Run(s.accounts, advance)
+			return runWatchView(s.accounts, advance, wipe.schedule)
 		},
 	}
 }

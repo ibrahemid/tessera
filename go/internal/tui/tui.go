@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/ibrahemid/tessera/go/internal/account"
+	"github.com/ibrahemid/tessera/go/internal/clipboard"
 	"github.com/ibrahemid/tessera/go/internal/code"
 	"github.com/ibrahemid/tessera/go/internal/ui"
 )
@@ -21,6 +21,12 @@ import (
 // list can be stale: the vault is re-read under lock before the write.
 type AdvanceFunc func(id string, counter int64) error
 
+// ClearFunc schedules the clipboard clear for a code the view just copied.
+type ClearFunc func(code string) error
+
+// detectClipboard picks the clipboard backend, replaceable in tests.
+var detectClipboard = clipboard.Detect
+
 type tickMsg time.Time
 
 // Model is the bubbletea model for the watch view.
@@ -28,6 +34,7 @@ type Model struct {
 	accounts    []account.Account
 	advance     AdvanceFunc
 	copy        func(string) error
+	clearCopy   ClearFunc
 	cursor      int
 	query       string
 	searching   bool
@@ -39,16 +46,26 @@ type Model struct {
 	height      int
 }
 
-// New builds a watch model over the given accounts.
-func New(accounts []account.Account, advance AdvanceFunc) Model {
-	return Model{accounts: accounts, advance: advance, copy: clipboard.WriteAll,
+// New builds a watch model over the given accounts. clearCopy, when not nil,
+// runs after each successful copy.
+func New(accounts []account.Account, advance AdvanceFunc, clearCopy ClearFunc) Model {
+	return Model{accounts: accounts, advance: advance, copy: writeClipboard, clearCopy: clearCopy,
 		now: time.Now(), width: 72}
 }
 
 // Run starts the TUI program.
-func Run(accounts []account.Account, advance AdvanceFunc) error {
-	_, err := tea.NewProgram(New(accounts, advance), tea.WithAltScreen()).Run()
+func Run(accounts []account.Account, advance AdvanceFunc, clearCopy ClearFunc) error {
+	_, err := tea.NewProgram(New(accounts, advance, clearCopy), tea.WithAltScreen()).Run()
 	return err
+}
+
+// writeClipboard copies a code to the detected clipboard, marked sensitive.
+func writeClipboard(text string) error {
+	b, err := detectClipboard()
+	if err != nil {
+		return err
+	}
+	return b.Write(text, true)
 }
 
 func tick() tea.Cmd {
@@ -88,16 +105,23 @@ func (m *Model) setFailure(s string) {
 	m.statusUntil = time.Now().Add(2 * time.Second)
 }
 
-// copyCode places a code on the clipboard, reporting the outcome in the status
-// line. It returns false when the clipboard rejected the write.
+// copyCode places a code on the clipboard and schedules its clear, reporting
+// the outcome in the status line. It returns false when the clipboard rejected
+// the write.
 func (m *Model) copyCode(c string, what string) bool {
 	write := m.copy
 	if write == nil {
-		write = clipboard.WriteAll
+		write = writeClipboard
 	}
 	if err := write(c); err != nil {
-		m.setFailure("Copy failed: " + err.Error())
+		m.setFailure("Copy failed: " + ui.Sanitize(err.Error()))
 		return false
+	}
+	if m.clearCopy != nil {
+		if err := m.clearCopy(c); err != nil {
+			m.setFailure(what + "; " + ui.Sanitize(err.Error()))
+			return true
+		}
 	}
 	m.setStatus(what)
 	return true

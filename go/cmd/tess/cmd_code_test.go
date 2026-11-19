@@ -54,9 +54,14 @@ func runCodeCmd(t *testing.T, args ...string) (string, error) {
 // runCodeCmdStreams runs `tess code` and returns stdout and stderr separately.
 func runCodeCmdStreams(t *testing.T, args ...string) (string, string, error) {
 	t.Helper()
-	// An inherited $TESSERA_CLIP_CLEAR would make the suite schedule real
-	// clipboard wipes, so every code test runs with the feature off.
-	t.Setenv("TESSERA_CLIP_CLEAR", "")
+	return runCodeCmdWithClearEnv(t, "", args...)
+}
+
+// runCodeCmdWithClearEnv runs `tess code` with $TESSERA_CLIP_CLEAR set to env,
+// so an inherited value never changes what a test expects.
+func runCodeCmdWithClearEnv(t *testing.T, env string, args ...string) (string, string, error) {
+	t.Helper()
+	t.Setenv(clipClearEnv, env)
 	c := newCodeCmd()
 	var stdout, stderr bytes.Buffer
 	c.SetOut(&stdout)
@@ -426,33 +431,190 @@ func TestCodeClearSchedulesTheWipe(t *testing.T) {
 	}
 }
 
-// TestCodeWithoutClearSchedulesNothing: the clipboard is the user's, and tess
-// only takes it back when asked.
-func TestCodeWithoutClearSchedulesNothing(t *testing.T) {
+// TestCodeOnATerminalClearsAfterThirtySeconds pins the default for a code
+// copied where a person reads it.
+func TestCodeOnATerminalClearsAfterThirtySeconds(t *testing.T) {
 	path := withVault(t)
 	sealVault(t, path, []account.Account{totp("a", "ACME", "x", 1)})
 	stubTTY(t, true)
-	stubClipboard(t, func(string) error { return nil })
-	stubClipClear(t, func(int, string) error {
-		t.Error("no --clear and no $TESSERA_CLIP_CLEAR must schedule no wipe")
-		return nil
-	})
+	fake := stubBackend(t, &fakeClipboard{})
+	calls := recordClipClear(t)
 
 	if _, err := runCodeCmd(t, "acme"); err != nil {
 		t.Fatalf("code: %v", err)
 	}
+	if len(*calls) != 1 || (*calls)[0] != (clipClearCall{30, fake.text}) {
+		t.Errorf("scheduled %+v, want one clear of %q after 30s", *calls, fake.text)
+	}
+	if !fake.sensitive {
+		t.Error("the code must be written as sensitive")
+	}
 }
 
-func TestDefaultClipClearReadsTheEnvironment(t *testing.T) {
+// TestCodeOffATerminalKeepsTheCode: piped and --json runs copy only on -c, and
+// a script that asks for the copy keeps it unless it sets a delay.
+func TestCodeOffATerminalKeepsTheCode(t *testing.T) {
 	for _, tc := range []struct {
-		env  string
-		want int
+		name string
+		tty  bool
+		args []string
 	}{
-		{"", 0}, {"15", 15}, {" 30 ", 30}, {"0", 0}, {"-5", 0}, {"soon", 0},
+		{"piped", false, []string{"acme", "-c"}},
+		{"json on a terminal", true, []string{"acme", "--json", "-c"}},
 	} {
-		t.Setenv("TESSERA_CLIP_CLEAR", tc.env)
-		if got := defaultClipClear(); got != tc.want {
-			t.Errorf("defaultClipClear() with %q = %d, want %d", tc.env, got, tc.want)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			path := withVault(t)
+			sealVault(t, path, []account.Account{totp("a", "ACME", "x", 1)})
+			stubTTY(t, tc.tty)
+			fake := stubBackend(t, &fakeClipboard{})
+			calls := recordClipClear(t)
+
+			if _, err := runCodeCmd(t, tc.args...); err != nil {
+				t.Fatalf("code: %v", err)
+			}
+			if fake.writes != 1 {
+				t.Fatalf("writes = %d, want the code copied", fake.writes)
+			}
+			if len(*calls) != 0 {
+				t.Errorf("scheduled %+v, want nothing", *calls)
+			}
+		})
+	}
+}
+
+func TestCodeClearZeroKeepsTheCode(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		env  string
+		args []string
+	}{
+		{"flag", "", []string{"acme", "--clear", "0"}},
+		{"environment", "0", []string{"acme"}},
+		{"flag over environment", "15", []string{"acme", "--clear", "0"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := withVault(t)
+			sealVault(t, path, []account.Account{totp("a", "ACME", "x", 1)})
+			stubTTY(t, true)
+			stubBackend(t, &fakeClipboard{})
+			calls := recordClipClear(t)
+
+			if _, _, err := runCodeCmdWithClearEnv(t, tc.env, tc.args...); err != nil {
+				t.Fatalf("code: %v", err)
+			}
+			if len(*calls) != 0 {
+				t.Errorf("scheduled %+v, want nothing", *calls)
+			}
+		})
+	}
+}
+
+func TestCodeClearEnvironmentSetsTheDelay(t *testing.T) {
+	path := withVault(t)
+	sealVault(t, path, []account.Account{totp("a", "ACME", "x", 1)})
+	stubTTY(t, false)
+	fake := stubBackend(t, &fakeClipboard{})
+	calls := recordClipClear(t)
+
+	if _, _, err := runCodeCmdWithClearEnv(t, "15", "acme", "-c"); err != nil {
+		t.Fatalf("code: %v", err)
+	}
+	if len(*calls) != 1 || (*calls)[0] != (clipClearCall{15, fake.text}) {
+		t.Errorf("scheduled %+v, want one clear after 15s", *calls)
+	}
+}
+
+// TestCodeExplicitClearOnAnUnreadableClipboardWarns: OSC 52 takes the copy but
+// cannot be read back, so an asked-for clear becomes a one-line warning.
+func TestCodeExplicitClearOnAnUnreadableClipboardWarns(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		env  string
+		args []string
+	}{
+		{"flag", "", []string{"acme", "--clear", "20"}},
+		{"environment", "20", []string{"acme"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := withVault(t)
+			sealVault(t, path, []account.Account{totp("a", "ACME", "x", 1)})
+			stubTTY(t, true)
+			fake := stubBackend(t, unreadableClipboard())
+			calls := recordClipClear(t)
+
+			_, stderr, err := runCodeCmdWithClearEnv(t, tc.env, tc.args...)
+			if err != nil {
+				t.Fatalf("code: %v", err)
+			}
+			if fake.writes != 1 || fake.text == "" {
+				t.Error("the code must still be copied")
+			}
+			if len(*calls) != 0 {
+				t.Errorf("scheduled %+v, want no spawn", *calls)
+			}
+			want := "warning: " + errClipClearUnsupported.Error() + "\n"
+			if stderr != want {
+				t.Errorf("stderr = %q, want %q", stderr, want)
+			}
+		})
+	}
+}
+
+func TestCodeDefaultClearOnAnUnreadableClipboardIsSilent(t *testing.T) {
+	path := withVault(t)
+	sealVault(t, path, []account.Account{totp("a", "ACME", "x", 1)})
+	stubTTY(t, true)
+	fake := stubBackend(t, unreadableClipboard())
+	calls := recordClipClear(t)
+
+	_, stderr, err := runCodeCmdStreams(t, "acme")
+	if err != nil {
+		t.Fatalf("code: %v", err)
+	}
+	if fake.writes != 1 {
+		t.Error("the code must still be copied")
+	}
+	if len(*calls) != 0 || stderr != "" {
+		t.Errorf("scheduled %+v, stderr %q; want neither", *calls, stderr)
+	}
+}
+
+// TestCodeBadClearDelayFailsBeforeCopying pins that a delay tess cannot honor
+// stops the run before the code reaches the clipboard.
+func TestCodeBadClearDelayFailsBeforeCopying(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		env  string
+		args []string
+	}{
+		{"negative flag", "", []string{"acme", "--clear", "-5"}},
+		{"words in the environment", "soon", []string{"acme"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := withVault(t)
+			sealVault(t, path, []account.Account{totp("a", "ACME", "x", 1)})
+			stubTTY(t, true)
+			fake := stubBackend(t, &fakeClipboard{})
+			calls := recordClipClear(t)
+
+			stdout, _, err := runCodeCmdWithClearEnv(t, tc.env, tc.args...)
+			var delayErr *clipClearDelayError
+			if !errors.As(err, &delayErr) {
+				t.Fatalf("err = %v, want a clipClearDelayError", err)
+			}
+			if fake.writes != 0 || strings.Contains(stdout, "copied") || len(*calls) != 0 {
+				t.Errorf("writes = %d, stdout = %q, scheduled %+v; want no code printed or copied", fake.writes, stdout, *calls)
+			}
+		})
+	}
+}
+
+func TestCodeHelpStatesTheClearDefault(t *testing.T) {
+	c := newCodeCmd()
+	if !strings.Contains(c.Long, "30 seconds") {
+		t.Error("help must state the 30-second default")
+	}
+	if !strings.Contains(c.Flags().Lookup("clear").Usage, "30 on a terminal") {
+		t.Error("--clear usage must state the terminal default")
 	}
 }
