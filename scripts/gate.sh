@@ -89,8 +89,23 @@ gate_swift() {
   run_check swift-test sh -c "cd '$ROOT/swift' && swift test"
 }
 
+check_app_unit() {
+  unit_log="$LOG_DIR/xcodebuild-unit.log"
+  cd "$ROOT/swift" || return 1
+  xcodebuild -project Tessera.xcodeproj -scheme Tessera -configuration Debug \
+    -derivedDataPath "$LOG_DIR/dd" CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="-" \
+    DEVELOPMENT_TEAM= SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
+    test -only-testing:TesseraAppTests >"$unit_log" 2>&1 || {
+    grep -E "error:|failed|\.swift:[0-9]+: " "$unit_log" | sort -u | head -n 40
+    tail -n 5 "$unit_log"
+    return 1
+  }
+  grep -E "Executed [0-9]+ tests" "$unit_log" | tail -n 1
+}
+
 gate_app() {
   run_check app-build check_app_build
+  run_check app-unit check_app_unit
 }
 
 gate_shell() {
