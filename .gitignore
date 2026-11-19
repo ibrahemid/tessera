@@ -20,3 +20,6 @@ worktrees/
 
 # goreleaser build output
 go/dist/
+
+.status/
+*.tmp.mjs
