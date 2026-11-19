@@ -5,9 +5,11 @@ package qr
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"image"
 	"image/png"
+	"io"
 	"os"
 
 	"github.com/makiuchi-d/gozxing"
@@ -140,17 +142,64 @@ func DecodeFile(path string) (string, error) {
 	return text, nil
 }
 
+// MaxImagePixels and MaxImageFileBytes are the spec/otpauth.md § Supported
+// image formats limits: an image over either is refused before any pixel
+// buffer is allocated.
+const (
+	MaxImagePixels    = 40_000_000
+	MaxImageFileBytes = 32 << 20
+)
+
+// ErrTooManyPixels and ErrImageFileTooLarge report an image refused by the
+// limits above.
+var (
+	ErrTooManyPixels     = errors.New("image is larger than 40,000,000 pixels")
+	ErrImageFileTooLarge = errors.New("image file is larger than 32 MiB")
+)
+
 // openImage decodes an image file in any registered format (PNG, JPEG, WebP,
-// TIFF, BMP). Errors are wrapped with the file path.
+// TIFF, BMP) after checking its file size and declared dimensions. Errors are
+// wrapped with the file path.
 func openImage(path string) (image.Image, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("qr: open %q: %w", path, err)
 	}
 	defer f.Close()
-	img, _, err := image.Decode(f)
+	info, err := f.Stat()
 	if err != nil {
+		return nil, fmt.Errorf("qr: open %q: %w", path, err)
+	}
+	if info.Size() > MaxImageFileBytes {
+		return nil, fmt.Errorf("qr: %q: %w", path, ErrImageFileTooLarge)
+	}
+	img, err := decodeLimited(f)
+	if err != nil {
+		if errors.Is(err, ErrTooManyPixels) || errors.Is(err, ErrImageFileTooLarge) {
+			return nil, fmt.Errorf("qr: %q: %w", path, err)
+		}
 		return nil, fmt.Errorf("qr: decode image %q: %w", path, err)
 	}
 	return img, nil
+}
+
+// decodeLimited reads at most MaxImageFileBytes from r, rejects an image whose
+// header declares more than MaxImagePixels, and only then decodes the pixels.
+func decodeLimited(r io.Reader) (image.Image, error) {
+	data, err := io.ReadAll(io.LimitReader(r, MaxImageFileBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > MaxImageFileBytes {
+		return nil, ErrImageFileTooLarge
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	if int64(cfg.Width)*int64(cfg.Height) > MaxImagePixels {
+		return nil, ErrTooManyPixels
+	}
+	img, _, err := image.Decode(bytes.NewReader(data))
+	return img, err
 }
