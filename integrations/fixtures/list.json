@@ -1,0 +1,55 @@
+[
+  {
+    "id": "49abdd291b36981883aafdd2e47ced39",
+    "handle": "gi",
+    "issuer": "GitHub",
+    "account": "alice@example.com",
+    "type": "totp",
+    "folder": "Work",
+    "tags": [
+      "prod",
+      "dev"
+    ],
+    "pinned": true,
+    "has_note": true
+  },
+  {
+    "id": "41aa70b0495f48cf592db959684fcea0",
+    "handle": "ac",
+    "issuer": "Acme Corp",
+    "account": "ops@acme.io",
+    "type": "totp",
+    "pinned": false,
+    "has_note": false
+  },
+  {
+    "id": "e79ef49cdf1b1bcd260e363fdaf921cd",
+    "handle": "ba",
+    "issuer": "Bank",
+    "account": "bob",
+    "type": "hotp",
+    "pinned": false,
+    "has_note": false,
+    "order": 2,
+    "color": "teal"
+  },
+  {
+    "id": "04acf1e4bab8cfa2a7dce2564cfb225b",
+    "handle": "ex",
+    "issuer": "",
+    "account": "bare",
+    "type": "totp",
+    "pinned": false,
+    "has_note": false
+  },
+  {
+    "id": "d8db694d88f80749163b421a5489f884",
+    "handle": "st",
+    "issuer": "Steam",
+    "account": "gamer",
+    "type": "steam",
+    "folder": "Work",
+    "pinned": false,
+    "has_note": false
+  }
+]

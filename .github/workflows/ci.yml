@@ -254,6 +254,32 @@ jobs:
             printf '::endgroup::\n'
           done
 
+  integrations:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: integrations/raycast/package-lock.json
+      - name: Gate
+        run: GATE_LOG_DIR="$RUNNER_TEMP/gate" scripts/gate.sh integrations
+      - name: Gate logs
+        if: failure()
+        run: |
+          find "$RUNNER_TEMP/gate" -maxdepth 2 -type f -name '*.log' | sort | while IFS= read -r log; do
+            printf '::group::%s\n' "${log#"$RUNNER_TEMP/gate/"}"
+            cat "$log"
+            printf '::endgroup::\n'
+          done
+
   shell:
     runs-on: ubuntu-26.04
     steps:

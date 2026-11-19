@@ -1,0 +1,5 @@
+{
+  "locked": "error: set $TESSERA_PASSPHRASE or run on a terminal to enter the vault passphrase\n",
+  "no_vault": "error: no vault at /Users/me/.local/share/tessera/vault.json. Create one with `tess vault init`, or pass --vault to use another file.\n",
+  "no_match": "error: no account matches \"gi\"\n"
+}

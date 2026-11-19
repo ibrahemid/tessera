@@ -1,0 +1,22 @@
+{
+  "path": "/Users/me/.local/share/tessera/vault.json",
+  "exists": true,
+  "size": 2453,
+  "modified": "2026-11-19T22:38:38Z",
+  "version": 2,
+  "wraps": [
+    "passphrase"
+  ],
+  "argon2": [
+    {
+      "m": 131072,
+      "t": 3,
+      "p": 4,
+      "below_default": false
+    }
+  ],
+  "remembered_in": [
+    "login keychain"
+  ],
+  "locked_in": []
+}

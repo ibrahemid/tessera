@@ -1,0 +1,22 @@
+[
+  {
+    "id": "41aa70b0495f48cf592db959684fcea0",
+    "handle": "ac",
+    "issuer": "Acme Corp",
+    "account": "ops@acme.io",
+    "type": "totp",
+    "code": "104223",
+    "next_code": "550913",
+    "expires_in": 7
+  },
+  {
+    "id": "04acf1e4bab8cfa2a7dce2564cfb225b",
+    "handle": "ex",
+    "issuer": "",
+    "account": "bare",
+    "type": "totp",
+    "code": "781204",
+    "next_code": "093317",
+    "expires_in": 7
+  }
+]

@@ -110,12 +110,63 @@ gate_app() {
 
 gate_shell() {
   run_check shellcheck shellcheck "$ROOT/install.sh" "$ROOT/test/install_test.sh" "$ROOT/scripts/gate.sh" \
-    "$ROOT/scripts/release-check.sh" "$ROOT/test/linux/run.sh" "$ROOT/test/linux/fake-slurp"
+    "$ROOT/scripts/release-check.sh" "$ROOT/test/linux/run.sh" "$ROOT/test/linux/fake-slurp" \
+    "$ROOT/integrations/alfred/build.sh"
   run_check install-test "$ROOT/test/install_test.sh"
 }
 
 gate_site() {
   run_check site-build sh -c "cd '$ROOT/site' && npm run build --silent"
+}
+
+check_raycast_deps() (
+  cd "$ROOT/integrations/raycast" || exit 1
+  [ -d node_modules ] || npm ci --no-audit --no-fund
+)
+
+check_integrations_real_tess() (
+  dir="$LOG_DIR/integrations-tess"
+  rm -rf "$dir"
+  mkdir -p "$dir/home" "$dir/xdg" || exit 1
+  go -C "$ROOT/go" build -o "$dir/tess" ./cmd/tess || exit 1
+  HOME="$dir/home"
+  XDG_DATA_HOME="$dir/xdg"
+  TESSERA_VAULT="$dir/vault.json"
+  TESSERA_PASSPHRASE=test-passphrase-1
+  TESS_TEST_BINARY="$dir/tess"
+  export HOME XDG_DATA_HOME TESSERA_VAULT TESSERA_PASSPHRASE TESS_TEST_BINARY
+  "$dir/tess" vault init </dev/null || exit 1
+  printf '%s\n' \
+    'otpauth://totp/GitHub:alice@example.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=GitHub' \
+    'otpauth://hotp/Bank:bob?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=Bank&counter=3' \
+    'otpauth://totp/Steam:gamer?secret=JBSWY3DPEHPK3PXP&issuer=Steam&encoder=steam' |
+    "$dir/tess" add - || exit 1
+  (cd "$ROOT/integrations/raycast" && ./node_modules/.bin/vitest run test/real-tess.test.ts) >"$dir/raycast.out" 2>&1
+  raycast_status=$?
+  cat "$dir/raycast.out"
+  [ "$raycast_status" -eq 0 ] || exit 1
+  if grep -q skipped "$dir/raycast.out"; then exit 1; fi
+  (cd "$ROOT/integrations/alfred" && node --test --test-reporter=tap test/real-tess.test.mjs) >"$dir/alfred.out" 2>&1
+  alfred_status=$?
+  cat "$dir/alfred.out"
+  [ "$alfred_status" -eq 0 ] || exit 1
+  grep -q '^# skipped 0$' "$dir/alfred.out"
+)
+
+gate_integrations() {
+  raycast="$ROOT/integrations/raycast"
+  alfred="$ROOT/integrations/alfred"
+  unit_env="env -u TESS_TEST_BINARY -u TESSERA_VAULT -u TESSERA_PASSPHRASE"
+  run_check raycast-deps check_raycast_deps
+  run_check raycast-eslint sh -c "cd '$raycast' && ./node_modules/.bin/eslint src test"
+  run_check raycast-prettier sh -c "cd '$raycast' && ./node_modules/.bin/prettier --check src test package.json README.md"
+  run_check raycast-tsc sh -c "cd '$raycast' && ./node_modules/.bin/tsc --noEmit"
+  run_check raycast-vitest sh -c "cd '$raycast' && $unit_env ./node_modules/.bin/vitest run"
+  run_check raycast-build sh -c "cd '$raycast' && ./node_modules/.bin/ray build --output dist"
+  run_check alfred-test sh -c "cd '$alfred' && $unit_env node --test 'test/*.test.mjs'"
+  run_check alfred-plist plutil -lint "$alfred/workflow/info.plist"
+  run_check alfred-build "$alfred/build.sh"
+  run_check integrations-real-tess check_integrations_real_tess
 }
 
 gate_release() {
@@ -140,9 +191,10 @@ for target in "$@"; do
     app) gate_app ;;
     shell) gate_shell ;;
     site) gate_site ;;
+    integrations) gate_integrations ;;
     release) gate_release ;;
     linux) gate_linux ;;
-    all) gate_go; gate_swift; gate_app; gate_shell; gate_site; gate_release; gate_linux ;;
+    all) gate_go; gate_swift; gate_app; gate_shell; gate_site; gate_integrations; gate_release; gate_linux ;;
     *) printf 'unknown target: %s\n' "$target"; exit 2 ;;
   esac
 done
