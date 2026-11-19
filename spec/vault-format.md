@@ -203,7 +203,7 @@ The first stage that yields exactly one account resolves. If a stage yields more
 
 ## Vault path
 
-Canonical shared path: `$XDG_DATA_HOME/tessera/vault.json` (default `~/.local/share/tessera/vault.json`; on Windows `%LOCALAPPDATA%\tessera\vault.json`), overridable by `--vault` / `$TESSERA_VAULT`. The Mac app keeps its own vault in its sandbox container until the user points it at a shared one. For a shared vault the app obtains a user-granted **security-scoped bookmark** to the folder that holds the vault (for the default path, `~/.local/share/tessera/`) and persists it; it does not relocate the vault. Folder access is what lets the app use the lock and backup files below. A bookmark to the vault file alone (granted by app versions before 1.2.0) still opens the vault, without the lock.
+Canonical shared path: `$XDG_DATA_HOME/tessera/vault.json` (default `~/.local/share/tessera/vault.json`; on Windows `%LOCALAPPDATA%\Tessera\vault.json`), overridable by `--vault` / `$TESSERA_VAULT`. The Mac app keeps its own vault in its sandbox container until the user points it at a shared one. For a shared vault the app obtains a user-granted **security-scoped bookmark** to the folder that holds the vault (for the default path, `~/.local/share/tessera/`) and persists it; it does not relocate the vault. Folder access is what lets the app use the lock and backup files below. A bookmark to the vault file alone (granted by app versions before 1.2.0) still opens the vault, without the lock.
 
 ## Writing the vault
 
