@@ -3,6 +3,8 @@
 set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PATH="$PATH:$(go env GOPATH 2>/dev/null)/bin"
+export PATH
 LOG_DIR="${GATE_LOG_DIR:-$ROOT/.status/gate}"
 mkdir -p "$LOG_DIR"
 FAILED=0
