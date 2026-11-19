@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,6 +26,7 @@ func newExportCmd() *cobra.Command {
 		qrDir    string
 		format   string
 		outPath  string
+		force    bool
 	)
 	cmd := &cobra.Command{
 		Use:   "export [query]",
@@ -39,6 +42,9 @@ func newExportCmd() *cobra.Command {
   tess export --format aegis        # the vault in another app's export format, on stdout
   tess export --format aegis --out aegis.json          # ... or written to a file
   tess export --format google-migration --out ./qr     # transfer QR codes for Google Authenticator
+
+Trashed accounts are left out. Files are written readable by you only, and an
+existing file is replaced only with --force.
 
 Formats for --format:
 `,
@@ -68,10 +74,10 @@ Formats for --format:
 				accts = s.accounts[idx : idx+1]
 			}
 			if format != "" {
-				return exportFormat(cmd, accts, format, outPath)
+				return exportFormat(cmd, accts, format, outPath, force)
 			}
 			if qrDir != "" {
-				return exportQR(cmd, accts, qrDir)
+				return exportQR(cmd, accts, qrDir, force)
 			}
 			for _, a := range accts {
 				if asSecret {
@@ -90,7 +96,50 @@ Formats for --format:
 	cmd.Flags().StringVar(&filePath, "file", "", "write an encrypted copy of the vault to this path")
 	cmd.Flags().StringVar(&format, "format", "", "rewrite the vault as another app's export: "+strings.Join(exporters.Names(), ", "))
 	cmd.Flags().StringVar(&outPath, "out", "", "where --format writes: a file, or a directory for multi-file formats (default stdout)")
+	cmd.Flags().BoolVar(&force, "force", false, "replace files that already exist (--qr and --out)")
 	return cmd
+}
+
+// exportExistsError reports an export destination that already exists.
+type exportExistsError struct {
+	path string
+}
+
+func (e *exportExistsError) Error() string {
+	return fmt.Sprintf("%s already exists; pass --force to replace it", e.path)
+}
+
+func (e *exportExistsError) Unwrap() error { return fs.ErrExist }
+
+// exportFile is one cleartext file an export writes.
+type exportFile struct {
+	path string
+	data []byte
+}
+
+// writeSecretFiles writes every file owner-only through a temporary file.
+// Without force, it checks every destination first so a refused run writes
+// nothing.
+func writeSecretFiles(cmd *cobra.Command, files []exportFile, force bool) error {
+	if !force {
+		for _, f := range files {
+			if _, err := os.Lstat(f.path); err == nil {
+				return &exportExistsError{path: f.path}
+			} else if !errors.Is(err, fs.ErrNotExist) {
+				return fmt.Errorf("check %q: %w", f.path, err)
+			}
+		}
+	}
+	for _, f := range files {
+		if err := store.WriteSecretFile(f.path, f.data, force); err != nil {
+			if errors.Is(err, fs.ErrExist) {
+				return &exportExistsError{path: f.path}
+			}
+			return fmt.Errorf("write %q: %w", f.path, err)
+		}
+		out(cmd, "Wrote %s", ui.Sanitize(f.path))
+	}
+	return nil
 }
 
 // formatHelpLines renders one help line per registered export format so the
@@ -126,7 +175,7 @@ func checkExportModes(asURI, asSecret bool, qrDir, filePath, format string) erro
 // exportFormat renders accounts in another app's export format. Everything is
 // rendered and checked before anything is written, so a rejected run leaves no
 // partial file behind.
-func exportFormat(cmd *cobra.Command, accts []account.Account, format, outPath string) error {
+func exportFormat(cmd *cobra.Command, accts []account.Account, format, outPath string, force bool) error {
 	e, ok := exporters.Lookup(format)
 	if !ok {
 		return fmt.Errorf("unknown format %q: use one of %s", format, strings.Join(exporters.Names(), ", "))
@@ -151,7 +200,7 @@ func exportFormat(cmd *cobra.Command, accts []account.Account, format, outPath s
 		reportSkipped(cmd, skipped)
 		return nil
 	}
-	if err := writeExportFiles(cmd, files, outPath, e.MultiFile()); err != nil {
+	if err := writeExportFiles(cmd, files, outPath, e.MultiFile(), force); err != nil {
 		return err
 	}
 	reportSkipped(cmd, skipped)
@@ -164,30 +213,23 @@ func exportFormat(cmd *cobra.Command, accts []account.Account, format, outPath s
 // multi is a property of the format rather than of this run: a batching format
 // that happened to render one file still writes into a directory, so a small
 // vault does not turn --out ./qr into an extensionless PNG.
-func writeExportFiles(cmd *cobra.Command, files []exporters.File, outPath string, multi bool) error {
+func writeExportFiles(cmd *cobra.Command, files []exporters.File, outPath string, multi, force bool) error {
 	asDir := multi || strings.HasSuffix(outPath, string(os.PathSeparator))
 	if info, err := os.Stat(outPath); err == nil && info.IsDir() {
 		asDir = true
 	}
 	if !asDir {
-		if err := os.WriteFile(outPath, files[0].Data, 0o600); err != nil {
-			return fmt.Errorf("write %q: %w", outPath, err)
-		}
-		out(cmd, "Wrote %s", ui.Sanitize(outPath))
-		return nil
+		return writeSecretFiles(cmd, []exportFile{{path: outPath, data: files[0].Data}}, force)
 	}
 	dir := strings.TrimSuffix(outPath, string(os.PathSeparator))
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create %q: %w", dir, err)
 	}
-	for _, f := range files {
-		path := filepath.Join(dir, f.Name)
-		if err := os.WriteFile(path, f.Data, 0o600); err != nil {
-			return fmt.Errorf("write %q: %w", path, err)
-		}
-		out(cmd, "Wrote %s", ui.Sanitize(path))
+	dst := make([]exportFile, len(files))
+	for i, f := range files {
+		dst[i] = exportFile{path: filepath.Join(dir, f.Name), data: f.Data}
 	}
-	return nil
+	return writeSecretFiles(cmd, dst, force)
 }
 
 // reportSkipped lists the accounts the format could not carry. It goes to
@@ -202,19 +244,19 @@ func isBinaryFile(name string) bool {
 	return imageExts[strings.ToLower(filepath.Ext(name))]
 }
 
-func exportQR(cmd *cobra.Command, accts []account.Account, dir string) error {
+func exportQR(cmd *cobra.Command, accts []account.Account, dir string, force bool) error {
+	files := make([]exportFile, len(accts))
+	for i, a := range accts {
+		png, err := qr.EncodePNGBytes(otpauth.Format(a), 512)
+		if err != nil {
+			return err
+		}
+		files[i] = exportFile{path: filepath.Join(dir, qrFileName(a, i)), data: png}
+	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create %q: %w", dir, err)
 	}
-	for i, a := range accts {
-		name := qrFileName(a, i)
-		path := filepath.Join(dir, name)
-		if err := qr.EncodePNG(otpauth.Format(a), path, 512); err != nil {
-			return err
-		}
-		out(cmd, "Wrote %s", ui.Sanitize(path))
-	}
-	return nil
+	return writeSecretFiles(cmd, files, force)
 }
 
 // qrFileName builds a filesystem-safe PNG name from an account, falling back to

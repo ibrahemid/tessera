@@ -16,6 +16,7 @@ import (
 const trashDateLayout = "2006-01-02"
 
 func newTrashCmd() *cobra.Command {
+	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "trash",
 		Short: "List the accounts in the Trash",
@@ -30,6 +31,14 @@ tess trash empty deletes them for good.`,
 			}
 			defer s.close()
 			trashed := trashedNewestFirst(s.accounts)
+			if asJSON {
+				rows := make([]trashRow, 0, len(trashed))
+				for _, a := range trashed {
+					rows = append(rows, trashRow{a.ID, a.Handle, a.Issuer, a.Account, string(a.Type), a.DeletedAt})
+				}
+				out(cmd, "%s", mustJSON(rows))
+				return nil
+			}
 			if len(trashed) == 0 {
 				out(cmd, "%s", ui.SubtleStyle.Render("The Trash is empty."))
 				return nil
@@ -38,8 +47,20 @@ tess trash empty deletes them for good.`,
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&asJSON, "json", false, "output JSON")
 	cmd.AddCommand(newTrashEmptyCmd())
 	return cmd
+}
+
+// trashRow is the JSON shape of one account in `tess trash --json`;
+// docs/CLI-JSON.md is its contract.
+type trashRow struct {
+	ID        string `json:"id"`
+	Handle    string `json:"handle"`
+	Issuer    string `json:"issuer"`
+	Account   string `json:"account"`
+	Type      string `json:"type"`
+	DeletedAt int64  `json:"deleted_at"`
 }
 
 // trashedNewestFirst returns the trashed accounts, most recently trashed first

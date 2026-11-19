@@ -140,7 +140,7 @@ func TestImportDoesNotTreatTrashedAccountsAsDuplicates(t *testing.T) {
 	sealVault(t, path, []account.Account{trashedAt(totp("c", "Dropbox", "me", 1), dropboxTrashedAt)})
 	stdout, _, err := runRootStreams(t, "import", "--otpauth",
 		"otpauth://totp/Dropbox:me?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=Dropbox")
-	if err != nil || stdout != "Imported 1\n" {
+	if err != nil || !strings.HasPrefix(stdout, "Added Dropbox (me) as ") || !strings.HasSuffix(stdout, "\nImported 1\n") {
 		t.Fatalf("err = %v stdout = %q", err, stdout)
 	}
 	if got := openVaultFile(t, path, "testpass123"); len(account.Live(got)) != 1 || len(account.Trashed(got)) != 1 {

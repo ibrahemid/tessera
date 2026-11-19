@@ -23,18 +23,9 @@ func newListCmd() *cobra.Command {
 			defer s.close()
 			accts := filterAccounts(s.accounts, folder, tag)
 			if asJSON {
-				type row struct {
-					ID      string   `json:"id"`
-					Issuer  string   `json:"issuer"`
-					Account string   `json:"account"`
-					Type    string   `json:"type"`
-					Folder  string   `json:"folder,omitempty"`
-					Tags    []string `json:"tags,omitempty"`
-					Pinned  bool     `json:"pinned"`
-				}
-				rows := make([]row, 0, len(accts))
+				rows := make([]listRow, 0, len(accts))
 				for _, a := range accts {
-					rows = append(rows, row{a.ID, a.Issuer, a.Account, string(a.Type), a.Folder, a.Tags, a.Pinned})
+					rows = append(rows, newListRow(a))
 				}
 				out(cmd, "%s", mustJSON(rows))
 				return nil
@@ -71,6 +62,29 @@ func newListCmd() *cobra.Command {
 	cmd.Flags().StringVar(&tag, "tag", "", "filter by tag")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output JSON")
 	return cmd
+}
+
+// listRow is the JSON shape of one account in `tess list --json`;
+// docs/CLI-JSON.md is its contract. It carries whether a note exists, never
+// the note.
+type listRow struct {
+	ID      string   `json:"id"`
+	Handle  string   `json:"handle"`
+	Issuer  string   `json:"issuer"`
+	Account string   `json:"account"`
+	Type    string   `json:"type"`
+	Folder  string   `json:"folder,omitempty"`
+	Tags    []string `json:"tags,omitempty"`
+	Pinned  bool     `json:"pinned"`
+	HasNote bool     `json:"has_note"`
+	Order   int      `json:"order,omitempty"`
+}
+
+func newListRow(a account.Account) listRow {
+	return listRow{
+		ID: a.ID, Handle: a.Handle, Issuer: a.Issuer, Account: a.Account, Type: string(a.Type),
+		Folder: a.Folder, Tags: a.Tags, Pinned: a.Pinned, HasNote: a.Note != "", Order: a.Order,
+	}
 }
 
 func filterAccounts(in []account.Account, folder, tag string) []account.Account {

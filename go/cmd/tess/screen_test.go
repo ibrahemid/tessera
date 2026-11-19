@@ -95,9 +95,9 @@ func TestAddScreenRemovesTheCapture(t *testing.T) {
 		wantErr string
 	}{
 		{name: "scratch capture decodes", write: writeQR},
-		{name: "scratch capture does not decode", write: writeJunk, wantErr: "capture.png"},
+		{name: "scratch capture does not decode", write: writeJunk, wantErr: errScreenUnreadable.Error()},
 		{name: "portal capture decodes", outside: true, write: writeQR},
-		{name: "portal capture does not decode", outside: true, write: writeJunk, wantErr: "capture.png"},
+		{name: "portal capture does not decode", outside: true, write: writeJunk, wantErr: errScreenUnreadable.Error()},
 		{name: "cancelled", write: writeJunk, err: screenshot.ErrCancelled, wantErr: "capture cancelled"},
 	}
 	for _, tc := range cases {

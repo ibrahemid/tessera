@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -58,7 +59,39 @@ type codeOptions struct {
 	forceCopy  bool
 	asJSON     bool
 	nowOnly    bool
+	all        bool
+	at         string
 	clearAfter int
+}
+
+var (
+	errAllWithQuery = errors.New("--all prints every account; drop the query or drop --all")
+	errAllWithNext  = errors.New("--all never advances a counter; advance one with `tess code <query> --next`")
+	errAllWithCopy  = errors.New("--all never copies; copy one code with `tess code <query> -c`")
+	errAtNoQuery    = errors.New("--at needs an account: `tess code <query> --at <time>`")
+	errAtWithNext   = errors.New("--at works only for time-based accounts, which have no counter to advance")
+	errAtWithCopy   = errors.New("--at never copies; drop -c")
+	errAtTime       = errors.New("--at takes an RFC 3339 time such as 2026-01-02T15:04:05Z, or unix seconds")
+	errAtCounter    = errors.New("--at works only for time-based accounts, and this one counts codes (HOTP)")
+)
+
+// validate rejects flag combinations that ask for something the run would not do.
+func (o codeOptions) validate(hasQuery bool) error {
+	switch {
+	case o.all && hasQuery:
+		return errAllWithQuery
+	case o.all && o.next:
+		return errAllWithNext
+	case o.all && o.forceCopy:
+		return errAllWithCopy
+	case o.at != "" && !hasQuery:
+		return errAtNoQuery
+	case o.at != "" && o.next:
+		return errAtWithNext
+	case o.at != "" && o.forceCopy:
+		return errAtWithCopy
+	}
+	return nil
 }
 
 // shouldCopy reports whether this run puts the code on the clipboard.
@@ -91,7 +124,9 @@ func newCodeCmd() *cobra.Command {
   tess code acme            # print and copy
   tess code acme --no-copy  # print only
   tess code acme --json     # machine-readable, never copies
-  tess code                 # every account's code
+  tess code --all           # every account's code; same as tess code
+  tess code acme --at 2026-01-02T15:04:05Z
+                            # the code at another time, never copies
 
 The code is copied on a terminal. Piped or with --json, tess prints the raw
 digits and leaves the clipboard alone unless you pass -c.
@@ -118,6 +153,9 @@ func bindCodeFlags(cmd *cobra.Command, opts *codeOptions) {
 	f.BoolVar(&opts.noCopy, "no-copy", false, "print the code without touching the clipboard")
 	f.BoolVar(&opts.asJSON, "json", false, "output JSON (never copies)")
 	f.BoolVar(&opts.nowOnly, "now", false, "print the current code instead of waiting for the next one")
+	f.BoolVar(&opts.all, "all", false, "print the code of every account; never copies or advances a counter")
+	f.StringVar(&opts.at, "at", "",
+		"print the code at this time, RFC 3339 or unix seconds (time-based accounts; never copies)")
 	f.IntVar(&opts.clearAfter, "clear", 0,
 		"clear the clipboard after this many seconds, 0 to keep (default $TESSERA_CLIP_CLEAR, else 30 on a terminal)")
 	f.BoolVarP(&opts.forceCopy, "copy", "c", false,
@@ -125,14 +163,27 @@ func bindCodeFlags(cmd *cobra.Command, opts *codeOptions) {
 }
 
 func runCode(cmd *cobra.Command, args []string, opts *codeOptions) error {
+	if err := opts.validate(len(args) > 0); err != nil {
+		return err
+	}
 	if len(args) == 0 {
 		return runCodeAll(cmd, opts.asJSON)
+	}
+	var at time.Time
+	if opts.at != "" {
+		var err error
+		if at, err = parseCodeTime(opts.at); err != nil {
+			return err
+		}
 	}
 	s, err := openSession()
 	if err != nil {
 		return err
 	}
 	defer s.close()
+	if opts.at != "" {
+		return printCodeAt(cmd, s, args[0], at, opts.asJSON)
+	}
 	idxs, err := s.resolveMatches(args[0])
 	if err != nil {
 		return err
@@ -194,13 +245,7 @@ func printOneCode(cmd *cobra.Command, s *session, idx int, opts *codeOptions) er
 		return err
 	}
 	if opts.asJSON {
-		fields := map[string]any{
-			"issuer": a.Issuer, "account": a.Account, "code": c, "type": string(a.Type),
-		}
-		if a.Type != account.HOTP {
-			fields["expires_in"] = code.Remaining(*a, t)
-		}
-		out(cmd, "%s", mustJSON(fields))
+		out(cmd, "%s", mustJSON(newCodeRow(*a, t)))
 	} else {
 		printCodeLine(cmd, c, code.Remaining(*a, t), a.Type, willCopy)
 	}
@@ -223,6 +268,48 @@ func printOneCode(cmd *cobra.Command, s *session, idx int, opts *codeOptions) er
 			return nil
 		}
 		return err
+	}
+	return nil
+}
+
+// parseCodeTime reads an --at value: unix seconds, or an RFC 3339 time.
+func parseCodeTime(s string) (time.Time, error) {
+	s = strings.TrimSpace(s)
+	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+		if n < 0 {
+			return time.Time{}, errAtTime
+		}
+		return time.Unix(n, 0), nil
+	}
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil || t.Unix() < 0 {
+		return time.Time{}, errAtTime
+	}
+	return t, nil
+}
+
+// printCodeAt prints one time-based account's code at t. It never copies and
+// never waits for a fresh code: t is the time asked for, not now.
+func printCodeAt(cmd *cobra.Command, s *session, query string, t time.Time, asJSON bool) error {
+	idx, err := s.single(cmd, query)
+	if err != nil {
+		return err
+	}
+	a := s.accounts[idx]
+	if a.Type == account.HOTP {
+		return fmt.Errorf("%s: %w", label(a), errAtCounter)
+	}
+	c, err := genCode(a, t)
+	if err != nil {
+		return err
+	}
+	switch {
+	case asJSON:
+		out(cmd, "%s", mustJSON(newCodeRow(a, t)))
+	case stdoutIsTTY():
+		out(cmd, "%s", ui.CodeStyle.Render(ui.GroupCode(c)))
+	default:
+		out(cmd, "%s", c)
 	}
 	return nil
 }
@@ -265,20 +352,35 @@ func waitForFreshCode(cmd *cobra.Command, a account.Account, t time.Time) time.T
 	return now()
 }
 
-// codeRow is the JSON shape of one account's current code.
+// codeRow is the JSON shape of one account's code; docs/CLI-JSON.md is its
+// contract. NextCode and Expires apply to time-based accounts only.
 type codeRow struct {
-	Issuer  string `json:"issuer"`
-	Account string `json:"account"`
-	Type    string `json:"type"`
-	Code    string `json:"code"`
-	Expires int    `json:"expires_in,omitempty"`
+	ID       string `json:"id"`
+	Handle   string `json:"handle"`
+	Issuer   string `json:"issuer"`
+	Account  string `json:"account"`
+	Type     string `json:"type"`
+	Code     string `json:"code"`
+	NextCode string `json:"next_code,omitempty"`
+	Expires  int    `json:"expires_in,omitempty"`
+}
+
+// newCodeRow is a's code at t; an HOTP account's is the code at its stored
+// counter.
+func newCodeRow(a account.Account, t time.Time) codeRow {
+	c, _ := genCode(a, t)
+	row := codeRow{ID: a.ID, Handle: a.Handle, Issuer: a.Issuer, Account: a.Account, Type: string(a.Type), Code: c}
+	if a.Type != account.HOTP {
+		row.NextCode, _ = genCode(a, t.Add(time.Duration(a.Period)*time.Second))
+		row.Expires = code.Remaining(a, t)
+	}
+	return row
 }
 
 func codeRows(accts []account.Account, t time.Time) []codeRow {
 	rows := make([]codeRow, 0, len(accts))
 	for _, a := range accts {
-		c, _ := genCode(a, t)
-		rows = append(rows, codeRow{a.Issuer, a.Account, string(a.Type), c, code.Remaining(a, t)})
+		rows = append(rows, newCodeRow(a, t))
 	}
 	return rows
 }
