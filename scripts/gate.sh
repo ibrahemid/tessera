@@ -94,7 +94,8 @@ gate_app() {
 }
 
 gate_shell() {
-  run_check shellcheck shellcheck "$ROOT/install.sh" "$ROOT/test/install_test.sh" "$ROOT/scripts/gate.sh"
+  run_check shellcheck shellcheck "$ROOT/install.sh" "$ROOT/test/install_test.sh" "$ROOT/scripts/gate.sh" \
+    "$ROOT/scripts/release-check.sh" "$ROOT/test/linux/run.sh" "$ROOT/test/linux/fake-slurp"
   run_check install-test "$ROOT/test/install_test.sh"
 }
 
@@ -102,8 +103,18 @@ gate_site() {
   run_check site-build sh -c "cd '$ROOT/site' && npm run build --silent"
 }
 
+gate_release() {
+  "$ROOT/scripts/release-check.sh" || FAILED=1
+}
+
 gate_linux() {
   run_check linux-test check_linux
+  dist="$LOG_DIR/release/tree-a/go/dist"
+  if [ -d "$dist" ]; then
+    GATE_LINUX_DIST="$dist" "$ROOT/test/linux/run.sh" || FAILED=1
+  else
+    "$ROOT/test/linux/run.sh" || FAILED=1
+  fi
 }
 
 [ "$#" -gt 0 ] || set -- go swift app shell
@@ -114,8 +125,9 @@ for target in "$@"; do
     app) gate_app ;;
     shell) gate_shell ;;
     site) gate_site ;;
+    release) gate_release ;;
     linux) gate_linux ;;
-    all) gate_go; gate_swift; gate_app; gate_shell; gate_site; gate_linux ;;
+    all) gate_go; gate_swift; gate_app; gate_shell; gate_site; gate_release; gate_linux ;;
     *) printf 'unknown target: %s\n' "$target"; exit 2 ;;
   esac
 done
