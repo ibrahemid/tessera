@@ -103,7 +103,7 @@ func openWatchVault() (*watchVault, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer s.close()
+	defer s.releaseLock()
 	s.passphrase = ""
 	info, err := os.Stat(s.path)
 	if err != nil {
