@@ -524,6 +524,9 @@ if let testdataDir {
 }
 
 runOTPChecks(V, check)
+runExportChecks(vectorRoot, check)
+runMergeChecks(vectorRoot, check)
+runEnvelopeChecks(vectorRoot, check)
 
 print("")
 if failures == 0 { print("ALL SWIFT INTEROP CHECKS PASSED") } else { print("\(failures) CHECK(S) FAILED") }

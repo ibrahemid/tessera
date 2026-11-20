@@ -39,8 +39,9 @@ public enum InputDetect {
     }
 
     /// One item that failed to parse in a batch. Carries the line index, a
-    /// redacted preview of the offending input (never a full secret), and a
-    /// factual reason. Recorded per item so a batch never aborts.
+    /// redacted preview of the offending input (never a full secret), the
+    /// Go core's reason text, and the kind of failure. Recorded per item so a
+    /// batch never aborts.
     public struct ItemError: Error, Equatable, Sendable {
         /// 1-based line number within the input.
         public let line: Int
@@ -49,11 +50,39 @@ public enum InputDetect {
         public let display: String
         /// Factual reason the item was not imported.
         public let reason: String
+        /// What kind of failure `reason` describes.
+        public let kind: Kind
 
-        public init(line: Int, display: String, reason: String) {
+        public init(line: Int, display: String, reason: String, kind: Kind) {
             self.line = line
             self.display = display
             self.reason = reason
+            self.kind = kind
+        }
+
+        /// Why an item was not imported.
+        public enum Kind: Sendable, Equatable {
+            /// The input is larger than `Importers.maxInputBytes`.
+            case tooLarge
+            /// A recognized app export that is encrypted.
+            case encryptedExport(Importers.EncryptedSource)
+            /// A recognized app export that could not be imported.
+            case malformedExport(Importers.MalformedKind)
+            /// JSON, CSV or binary input that is no supported app's export.
+            case unrecognizedExport
+            /// An `otpauth-migration://` link that does not parse.
+            case invalidMigrationLink
+            /// An `otpauth://` link that does not parse.
+            case invalidLink
+            /// A line that is none of the supported inputs.
+            case unrecognizedInput
+
+            init(_ error: Importers.ImporterError) {
+                switch error {
+                case .encrypted(let source, _): self = .encryptedExport(source)
+                case .malformed(let kind, _): self = .malformedExport(kind)
+                }
+            }
         }
     }
 
@@ -97,7 +126,7 @@ public enum InputDetect {
     /// independently by the same precedence as `classify`.
     public static func parseText(_ input: String) -> (accounts: [Account], errors: [ItemError]) {
         if input.utf8.count > Importers.maxInputBytes {
-            return ([], [ItemError(line: 1, display: "", reason: Importers.inputTooLarge)])
+            return ([], [ItemError(line: 1, display: "", reason: Importers.inputTooLarge, kind: .tooLarge)])
         }
         let trimmed = GoText.trimSpace(input)
         if trimmed.isEmpty { return ([], []) }
@@ -107,9 +136,11 @@ public enum InputDetect {
             case .success(let found)?:
                 return (found.accounts, [])
             case .failure(let source, let error)?:
-                return ([], [ItemError(line: 1, display: redact(blobKind, source), reason: error.description)])
+                return ([], [ItemError(line: 1, display: redact(blobKind, source), reason: error.description,
+                                      kind: ItemError.Kind(error))])
             case nil:
-                return ([], [ItemError(line: 1, display: redact(.invalid, trimmed), reason: "unrecognized export")])
+                return ([], [ItemError(line: 1, display: redact(.invalid, trimmed), reason: "unrecognized export",
+                                      kind: .unrecognizedExport)])
             }
         }
 
@@ -146,23 +177,32 @@ public enum InputDetect {
             switch kind {
             case .migration:
                 do { accounts.append(contentsOf: try Migration.parse(line)) }
-                catch { errors.append(ItemError(line: lineNo, display: redact(kind, line), reason: Importers.message(error))) }
+                catch {
+                    errors.append(ItemError(line: lineNo, display: redact(kind, line), reason: Importers.message(error),
+                                            kind: .invalidMigrationLink))
+                }
             case .otpauth:
                 do { accounts.append(try OTPAuth.parse(line)) }
-                catch { errors.append(ItemError(line: lineNo, display: redact(kind, line), reason: Importers.message(error))) }
+                catch {
+                    errors.append(ItemError(line: lineNo, display: redact(kind, line), reason: Importers.message(error),
+                                            kind: .invalidLink))
+                }
             case .exportJSON, .exportCSV, .exportBinary:
                 switch Importers.detect(Array(line.utf8)) {
                 case .success(let found)?:
                     accounts.append(contentsOf: found.accounts)
                 case .failure(let source, let error)?:
-                    errors.append(ItemError(line: lineNo, display: redact(kind, source), reason: error.description))
+                    errors.append(ItemError(line: lineNo, display: redact(kind, source), reason: error.description,
+                                            kind: ItemError.Kind(error)))
                 case nil:
-                    errors.append(ItemError(line: lineNo, display: redact(.invalid, line), reason: "unrecognized export"))
+                    errors.append(ItemError(line: lineNo, display: redact(.invalid, line), reason: "unrecognized export",
+                                            kind: .unrecognizedExport))
                 }
             case .setupKey:
                 accounts.append(setupKeyAccount(line))
             case .invalid:
-                errors.append(ItemError(line: lineNo, display: redact(.invalid, line), reason: "unrecognized input"))
+                errors.append(ItemError(line: lineNo, display: redact(.invalid, line), reason: "unrecognized input",
+                                        kind: .unrecognizedInput))
             }
         }
         return (accounts, errors)

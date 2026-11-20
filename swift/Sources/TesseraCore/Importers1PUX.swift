@@ -118,7 +118,7 @@ extension Importers {
                             let parsed: Account?
                             do { parsed = try parseOTPValue(totp, item.title, username) }
                             catch {
-                                throw ImporterError.malformed("1password item \(GoText.quote(item.title)): \(message(error))")
+                                throw entryError("1password item \(GoText.quote(item.title)): ", error)
                             }
                             guard var a = parsed else { continue }
                             a.note = TextClean.note(item.notesPlain)

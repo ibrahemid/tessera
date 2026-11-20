@@ -42,10 +42,10 @@ extension Importers {
             let name = GoText.quote(e.content.name)
             let parsed: Account?
             do { parsed = try parseOTPValue(e.content.uri, "", e.content.name) }
-            catch { throw ImporterError.malformed("proton entry \(name): \(message(error))") }
+            catch { throw entryError("proton entry \(name): ", error) }
             guard var a = parsed else { continue }
             if GoText.equalFold(e.content.entryType, ascii: "Steam") && a.type != .steam {
-                throw ImporterError.malformed("proton entry \(name): marked Steam but its uri is not a Steam secret")
+                throw ImporterError.malformed(.invalidSecret, "proton entry \(name): marked Steam but its uri is not a Steam secret")
             }
             a.note = TextClean.note(e.note)
             out.append(a)

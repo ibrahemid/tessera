@@ -8,7 +8,7 @@ extension Importers {
                              digits: Int, period: Int, counter: Int64) throws -> Account {
         let secret: Data
         do { secret = try Base32.decode(secretB32) }
-        catch { throw ImporterError.malformed("decode secret: \(message(error))") }
+        catch { throw ImporterError.malformed(.invalidSecret, "decode secret: \(message(error))") }
         return try buildAccountRaw(type: type, issuer: issuer, acct: acct, secret: secret,
                                    algo: algo, digits: digits, period: period, counter: counter)
     }
@@ -43,13 +43,13 @@ extension Importers {
         let lower = GoText.toLower(v)
         if GoText.hasPrefix(lower, "otpauth://") {
             do { return try OTPAuth.parse(v) }
-            catch { throw ImporterError.malformed(message(error)) }
+            catch { throw ImporterError.malformed(.invalidLink, message(error)) }
         }
         if GoText.hasPrefix(lower, "steam://") {
             var body = String(String.UnicodeScalarView(v.unicodeScalars.dropFirst("steam://".count)))
             if body.utf8.last == UInt8(ascii: "/") { body.unicodeScalars.removeLast() }
             guard let secret = try? Base32.decode(body) else {
-                throw ImporterError.malformed("unsupported Steam secret encoding")
+                throw ImporterError.malformed(.invalidSecret, "unsupported Steam secret encoding")
             }
             var acct = TextClean.text(accountFallback)
             if acct.isEmpty { acct = TextClean.text(issuerFallback) }
@@ -58,7 +58,7 @@ extension Importers {
         }
         let secret: Data
         do { secret = try Base32.decode(v) }
-        catch { throw ImporterError.malformed("decode secret: \(message(error))") }
+        catch { throw ImporterError.malformed(.invalidSecret, "decode secret: \(message(error))") }
         return Account(id: "", type: .totp,
                        issuer: TextClean.text(issuerFallback),
                        account: TextClean.text(accountFallback),
@@ -72,7 +72,7 @@ extension Importers {
         case "", "totp": return .totp
         case "hotp": return .hotp
         case "steam", "steam_totp", "steamtotp": return .steam
-        default: throw ImporterError.malformed("unsupported account type \(GoText.quote(s))")
+        default: throw ImporterError.malformed(.unsupportedType, "unsupported account type \(GoText.quote(s))")
         }
     }
 
@@ -81,7 +81,7 @@ extension Importers {
         case "", "SHA1": return "SHA1"
         case "SHA256": return "SHA256"
         case "SHA512": return "SHA512"
-        default: throw ImporterError.malformed("unsupported algorithm \(GoText.quote(s))")
+        default: throw ImporterError.malformed(.unsupportedAlgorithm, "unsupported algorithm \(GoText.quote(s))")
         }
     }
 
@@ -89,7 +89,7 @@ extension Importers {
         let t = GoText.trimSpace(s)
         if t.isEmpty { return def }
         guard let n = GoText.atoi(t) else {
-            throw ImporterError.malformed("not a number: \(GoText.quote(t))")
+            throw ImporterError.malformed(.invalidNumber, "not a number: \(GoText.quote(t))")
         }
         return n
     }
@@ -100,11 +100,26 @@ extension Importers {
         do { return try body() }
         catch let e as ImporterError {
             switch e {
-            case .encrypted(let m): throw ImporterError.encrypted(prefix + m)
-            case .malformed(let m): throw ImporterError.malformed(prefix + m)
+            case .encrypted(let s, let m): throw ImporterError.encrypted(s, prefix + m)
+            case .malformed(let k, let m): throw ImporterError.malformed(k, prefix + m)
             }
         } catch {
-            throw ImporterError.malformed(prefix + message(error))
+            throw ImporterError.malformed(kind(of: error), prefix + message(error))
+        }
+    }
+
+    /// A failed entry as a malformed-export error: `prefix` followed by Go's
+    /// message for `error`, keeping the kind the entry failed with.
+    static func entryError(_ prefix: String, _ error: Error) -> ImporterError {
+        .malformed(kind(of: error), prefix + message(error))
+    }
+
+    /// The kind a non-encrypted import failure maps to.
+    static func kind(of error: Error) -> MalformedKind {
+        switch error {
+        case let e as ImporterError: return e.kind ?? .invalidEntry
+        case is GoJSONTypeError: return .invalidJSON
+        default: return .invalidEntry
         }
     }
 
@@ -126,7 +141,7 @@ extension Importers {
                               _ decode: (GoJSONDecoder, Int, inout T) throws -> Void) throws {
         let decoder = GoJSONDecoder(doc, root: root)
         do { try decode(decoder, node ?? doc.root, &value) }
-        catch let e as GoJSONTypeError { throw ImporterError.malformed(e.message) }
+        catch let e as GoJSONTypeError { throw ImporterError.malformed(.invalidJSON, e.message) }
     }
 }
 

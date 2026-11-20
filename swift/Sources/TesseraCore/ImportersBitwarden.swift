@@ -45,7 +45,7 @@ extension Importers {
             guard let login = it.login else { continue }
             let parsed: Account?
             do { parsed = try parseOTPValue(login.totp, it.name, login.username) }
-            catch { throw ImporterError.malformed("bitwarden item \(GoText.quote(it.name)): \(message(error))") }
+            catch { throw entryError("bitwarden item \(GoText.quote(it.name)): ", error) }
             guard var a = parsed else { continue }
             a.note = TextClean.note(it.notes)
             out.append(a)

@@ -78,9 +78,9 @@ extension Importers {
     /// Converts Gson's byte[] rendering — a JSON array of Java signed bytes,
     /// -128..127 — into raw key bytes.
     static func javaSignedBytes(_ vals: [Int]) throws -> Data {
-        if vals.isEmpty { throw ImporterError.malformed("missing secret") }
+        if vals.isEmpty { throw ImporterError.malformed(.missingSecret, "missing secret") }
         if vals.contains(where: { $0 < -128 || $0 > 255 }) {
-            throw ImporterError.malformed("secret byte out of range")
+            throw ImporterError.malformed(.invalidSecret, "secret byte out of range")
         }
         return Data(vals.map { UInt8(truncatingIfNeeded: $0) })
     }

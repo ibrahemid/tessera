@@ -30,11 +30,11 @@ extension Importers {
             }
         }
         guard let dbNode = db else {
-            throw ImporterError.malformed("aegis db: unexpected end of JSON input")
+            throw ImporterError.malformed(.invalidJSON, "aegis db: unexpected end of JSON input")
         }
         // In an encrypted export "db" is a base64 string, not an object.
         if doc.kind(dbNode) == .string {
-            throw ImporterError.encrypted("Aegis export is encrypted; export with encryption off (Aegis: Settings > Import/Export > Export, untick encryption) and try again")
+            throw ImporterError.encrypted(.aegis, "Aegis export is encrypted; export with encryption off (Aegis: Settings > Import/Export > Export, untick encryption) and try again")
         }
         var entries = GoSlice<AegisEntry>()
         try wrapping("aegis db: ") {
@@ -72,7 +72,7 @@ extension Importers {
                     type: e.type, issuer: e.issuer, acct: e.name, secretB32: e.info.secret,
                     algo: e.info.algo, digits: e.info.digits, period: e.info.period, counter: e.info.counter)
             } catch {
-                throw ImporterError.malformed("aegis entry \(GoText.quote(e.name)): \(message(error))")
+                throw entryError("aegis entry \(GoText.quote(e.name)): ", error)
             }
             a.note = TextClean.note(e.note)
             out.append(a)

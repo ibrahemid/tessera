@@ -190,7 +190,8 @@ final class InputDetectTests: XCTestCase {
         let big = String(repeating: "a", count: Importers.maxInputBytes + 1)
         let (accounts, errors) = InputDetect.parseText(big)
         XCTAssertTrue(accounts.isEmpty)
-        XCTAssertEqual(errors, [InputDetect.ItemError(line: 1, display: "", reason: "input is larger than 64 MiB")])
+        XCTAssertEqual(errors, [InputDetect.ItemError(line: 1, display: "", reason: "input is larger than 64 MiB",
+                                                       kind: .tooLarge)])
     }
 
     func testParseTextExportBlobReportsSource() {
@@ -200,11 +201,13 @@ final class InputDetectTests: XCTestCase {
         XCTAssertEqual(errors.count, 1)
         XCTAssertEqual(errors.first?.line, 1)
         XCTAssertEqual(errors.first?.display, "export-json Aegi…")
+        XCTAssertEqual(errors.first?.kind, .encryptedExport(.aegis))
 
         let unknown = #"{ "hello": "world" }"#
         let (a2, e2) = InputDetect.parseText(unknown)
         XCTAssertTrue(a2.isEmpty)
-        XCTAssertEqual(e2, [InputDetect.ItemError(line: 1, display: "invalid { \"h…", reason: "unrecognized export")])
+        XCTAssertEqual(e2, [InputDetect.ItemError(line: 1, display: "invalid { \"h…", reason: "unrecognized export",
+                                                   kind: .unrecognizedExport)])
     }
 
     func testParseTextReportsEachBadLineAndKeepsTheRest() {
@@ -219,6 +222,27 @@ final class InputDetectTests: XCTestCase {
         XCTAssertEqual(errors.first?.line, 2)
         XCTAssertEqual(errors.first?.display, "otpauth otpa…")
         XCTAssertEqual(errors.first?.reason.hasPrefix("otpauth:"), true)
+        XCTAssertEqual(errors.first?.kind, .invalidLink)
+    }
+
+    func testParseTextNamesEachItemErrorKind() {
+        let input = [
+            "otpauth-migration://offline?data=%%%",
+            "not a code",
+            #"{"encrypted":true,"items":[]}"#,
+            #"{"encrypted":false,"items":[]}"#,
+            #"{"hello":"world"}"#,
+        ].joined(separator: "\n")
+        let (accounts, errors) = InputDetect.parseText(input)
+        XCTAssertTrue(accounts.isEmpty)
+        XCTAssertEqual(errors.map(\.line), [1, 2, 3, 4, 5])
+        XCTAssertEqual(errors.map(\.kind), [
+            .invalidMigrationLink,
+            .unrecognizedInput,
+            .encryptedExport(.bitwarden),
+            .malformedExport(.noEntries),
+            .unrecognizedExport,
+        ])
     }
 
     func testRedactKeepsFourScalars() {
@@ -303,7 +327,7 @@ final class InputDetectTests: XCTestCase {
         let stratum = Data(Array("AUTHENTICATORPRO".utf8) + invalidUTF8)
         XCTAssertNil(String(data: stratum, encoding: .utf8))
         XCTAssertThrowsError(try Importers.parse(stratum)) { error in
-            guard let e = error as? Importers.ImporterError, case .encrypted(let m) = e else {
+            guard let e = error as? Importers.ImporterError, case .encrypted(.stratum, let m) = e else {
                 XCTFail("expected .encrypted, got \(error)")
                 return
             }
@@ -313,7 +337,7 @@ final class InputDetectTests: XCTestCase {
         let pux = Data([0x50, 0x4b, 0x03, 0x04] + invalidUTF8)
         XCTAssertNil(String(data: pux, encoding: .utf8))
         XCTAssertThrowsError(try Importers.parse(pux)) { error in
-            guard let e = error as? Importers.ImporterError, case .malformed(let m) = e else {
+            guard let e = error as? Importers.ImporterError, case .malformed(.archive, let m) = e else {
                 XCTFail("expected .malformed, got \(error)")
                 return
             }

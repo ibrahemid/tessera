@@ -43,7 +43,7 @@ extension Importers {
         var reader = GoCSVReader(Array(trimBOM(data)))
         let rows: [[String]]
         do { rows = try reader.readAll() }
-        catch { throw ImporterError.malformed("\(format.name) csv: \(message(error))") }
+        catch { throw ImporterError.malformed(.invalidCSV, "\(format.name) csv: \(message(error))") }
         var out: [Account] = []
         out.reserveCapacity(rows.count)
         for (i, row) in rows.enumerated() {
@@ -52,7 +52,7 @@ extension Importers {
             let user = format.userCol < row.count ? row[format.userCol] : ""
             let parsed: Account?
             do { parsed = try parseOTPValue(row[format.otpCol], title, user) }
-            catch { throw ImporterError.malformed("\(format.name) row \(i + 1): \(message(error))") }
+            catch { throw entryError("\(format.name) row \(i + 1): ", error) }
             guard var a = parsed else { continue }
             if format.noteCol < row.count { a.note = TextClean.note(row[format.noteCol]) }
             out.append(a)

@@ -27,6 +27,9 @@ public enum EnvelopeError: Error, Equatable, Sendable, CustomStringConvertible, 
     case tooManyWraps
     case appOnlyVault
     case invalidSecureEnclaveWrap
+    /// The envelope has no passphrase wrap, so a copy keeping only passphrase
+    /// wraps would open nowhere.
+    case backupNeedsPassphrase
 
     public var description: String {
         switch self {
@@ -35,6 +38,8 @@ public enum EnvelopeError: Error, Equatable, Sendable, CustomStringConvertible, 
         case .appOnlyVault:
             return "vault: openable only by the Tessera app on the Mac that created it (Secure Enclave); use the app's Settings > Export encrypted backup for a file the CLI can open"
         case .invalidSecureEnclaveWrap: return "vault: secure-enclave wrap is malformed"
+        case .backupNeedsPassphrase:
+            return "store: the vault has no passphrase unlock; only a vault that opens with a passphrase is backed up"
         }
     }
 
@@ -479,6 +484,17 @@ public struct Envelope: Sendable {
     /// Whether the envelope carries an argon2id passphrase wrap — the wrap the
     /// tess CLI opens, and the app's fallback when a Secure Enclave key is gone.
     public var hasPassphraseWrap: Bool { wraps.contains { Self.bytesEqual($0.type, Self.passphraseType) } }
+
+    /// A copy keeping only the argon2id passphrase wraps, with the payload and
+    /// unknown top-level keys unchanged: the envelope a backup file carries, as
+    /// the Go core's `store.WriteBackup` builds it. Throws
+    /// `EnvelopeError.backupNeedsPassphrase` when there is no passphrase wrap.
+    public func passphraseWrapsOnly() throws -> Envelope {
+        guard hasPassphraseWrap else { throw EnvelopeError.backupNeedsPassphrase }
+        var copy = self
+        copy.wraps = wraps.filter { Self.bytesEqual($0.type, Self.passphraseType) }
+        return copy
+    }
 
     /// Add (or replace) the argon2id passphrase wrap for a DEK the caller already
     /// holds, leaving every other wrap and the payload untouched. This is how the

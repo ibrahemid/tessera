@@ -145,4 +145,70 @@ final class EnvelopeVectorTests: XCTestCase {
             }
         }
     }
+
+    /// A rotation of an envelope with a second passphrase wrap removes it with
+    /// the hardware wraps.
+    func testRotationWithAnExtraPassphraseVector() throws {
+        let r = try VectorNode.root().get("rotation_extra_passphrase")
+        let passphrase = try r.get("passphrase").text
+        let newPassphrase = try r.get("new_passphrase").text
+        let oldDEK = try XCTUnwrap(Data(base64Encoded: r.get("old_dek_b64").text))
+        let original = try r.get("envelope").raw
+        let expected = try r.get("expected_canonical_json").data
+        XCTAssertEqual(try envelopeWraps(original, ofType: "passphrase").count, 2)
+
+        for name in ["passwd", "rekey"] {
+            var env = try Envelope.decode(Data(original))
+            let removed: [String]
+            let opener: String
+            if name == "passwd" {
+                removed = try env.rotatePassphrase(old: passphrase, new: newPassphrase, argon2: argon2)
+                opener = newPassphrase
+            } else {
+                removed = try env.rekey(passphrase: passphrase, argon2: argon2)
+                opener = passphrase
+            }
+            XCTAssertEqual(removed, try r.get("expected_removed").texts, name)
+            XCTAssertEqual(env.wrapTypes, try r.get("expected_wrap_types").texts, name)
+
+            let out = [UInt8](try env.encoded())
+            for key in try r.get("kept_top_level").texts {
+                XCTAssertEqual(try envelopeMember(out, key), try envelopeMember(original, key), "\(name) \(key)")
+            }
+            let reopened = try Envelope.decode(Data(out))
+            XCTAssertEqual(CanonicalJSON.encode(try reopened.open(passphrase: opener, argon2: argon2)), expected, name)
+            XCTAssertEqual(reopened.version, Int(try r.get("expected_version").int()), name)
+            XCTAssertThrowsError(try reopened.open(dek: oldDEK)) { error in
+                XCTAssertEqual(envelopeErrorClass(error), "auth_failed", name)
+            }
+        }
+    }
+
+    func testBackupCopyKeepsOnlyThePassphraseWraps() throws {
+        let r = try VectorNode.root().get("rotation_extra_passphrase")
+        let original = try r.get("envelope").raw
+        let env = try Envelope.decode(Data(original))
+        let copy = try env.passphraseWrapsOnly()
+        XCTAssertEqual(copy.wrapTypes, ["passphrase", "passphrase"])
+
+        let out = [UInt8](try copy.encoded())
+        XCTAssertEqual(try envelopeWraps(out, ofType: "passphrase"), try envelopeWraps(original, ofType: "passphrase"))
+        for key in ["version", "aead", "payload", "x_future"] {
+            XCTAssertEqual(try envelopeMember(out, key), try envelopeMember(original, key), key)
+        }
+        let reopened = try Envelope.decode(Data(out))
+        XCTAssertEqual(CanonicalJSON.encode(try reopened.open(passphrase: r.get("passphrase").text, argon2: argon2)),
+                       try r.get("expected_canonical_json").data)
+        XCTAssertEqual(env.wrapTypes, ["passphrase", "passphrase", "secure-enclave", "hardware-key"])
+    }
+
+    func testBackupCopyRefusesAnEnvelopeWithoutAPassphraseWrap() throws {
+        var env = try Envelope.decode(Data(VectorNode.root().get("rotation_extra_passphrase").get("envelope").raw))
+        env.wraps = env.wraps.filter { $0.type != "passphrase" }
+        XCTAssertThrowsError(try env.passphraseWrapsOnly()) { error in
+            XCTAssertEqual(error as? EnvelopeError, .backupNeedsPassphrase)
+            XCTAssertEqual(error.localizedDescription,
+                           "store: the vault has no passphrase unlock; only a vault that opens with a passphrase is backed up")
+        }
+    }
 }

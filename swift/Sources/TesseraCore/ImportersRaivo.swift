@@ -38,7 +38,7 @@ extension Importers {
         for e in entries.items {
             // Raivo stores numbers as strings.
             let label = "raivo entry \(GoText.quote(e.issuer))"
-            if e.secret.isEmpty { throw ImporterError.malformed("\(label): missing secret") }
+            if e.secret.isEmpty { throw ImporterError.malformed(.missingSecret, "\(label): missing secret") }
             let digits = try wrapping("\(label): digits: ") { try atoiDefault(e.digits, 6) }
             let period = try wrapping("\(label): timer: ") { try atoiDefault(e.timer, 30) }
             let counter = try wrapping("\(label): counter: ") { try atoiDefault(e.counter, 0) }

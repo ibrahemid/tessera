@@ -41,7 +41,7 @@ extension Importers {
                     type: e.type, issuer: e.issuer, acct: e.label, secretB32: e.secret,
                     algo: e.algorithm, digits: e.digits, period: e.period, counter: e.counter))
             } catch {
-                throw ImporterError.malformed("andotp entry \(GoText.quote(e.issuer)): \(message(error))")
+                throw entryError("andotp entry \(GoText.quote(e.issuer)): ", error)
             }
         }
         return out

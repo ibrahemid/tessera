@@ -58,7 +58,7 @@ extension Importers {
                     type: s.otp.tokenType, issuer: issuer, acct: s.otp.account, secretB32: s.secret,
                     algo: s.otp.algorithm, digits: s.otp.digits, period: s.otp.period, counter: s.otp.counter))
             } catch {
-                throw ImporterError.malformed("2fas service \(GoText.quote(s.name)): \(message(error))")
+                throw entryError("2fas service \(GoText.quote(s.name)): ", error)
             }
         }
         return out

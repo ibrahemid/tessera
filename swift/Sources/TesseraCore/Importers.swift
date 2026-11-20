@@ -9,21 +9,71 @@ import Foundation
 /// logged.
 public enum Importers {
 
-    /// An error from a recognized-but-unusable export. `description` /
-    /// `errorDescription` carry the user-facing message (the app surfaces errors
-    /// via string interpolation, like `AccountError`).
-    public enum ImporterError: Error, LocalizedError, CustomStringConvertible {
-        /// A recognized export that is encrypted.
-        case encrypted(String)
+    /// An error from a recognized-but-unusable export. The case and its kind
+    /// say what went wrong for code; `description` / `errorDescription` carry
+    /// the Go core's text.
+    public enum ImporterError: Error, Equatable, Sendable, LocalizedError, CustomStringConvertible {
+        /// A recognized export that is encrypted, and the app that wrote it.
+        case encrypted(EncryptedSource, String)
         /// A recognized export with a malformed or unsupported entry.
-        case malformed(String)
+        case malformed(MalformedKind, String)
+
+        /// The app that wrote an encrypted export; nil for a malformed one.
+        public var source: EncryptedSource? {
+            if case .encrypted(let s, _) = self { return s }
+            return nil
+        }
+
+        /// What was wrong with a malformed export; nil for an encrypted one.
+        public var kind: MalformedKind? {
+            if case .malformed(let k, _) = self { return k }
+            return nil
+        }
 
         public var description: String {
             switch self {
-            case .encrypted(let m), .malformed(let m): return m
+            case .encrypted(_, let m), .malformed(_, let m): return m
             }
         }
         public var errorDescription: String? { description }
+    }
+
+    /// The app whose encrypted export was recognized.
+    public enum EncryptedSource: Sendable, Equatable, CaseIterable {
+        case aegis
+        case twoFAS
+        case enteAuth
+        case bitwarden
+        case protonAuthenticator
+        case stratum
+    }
+
+    /// Why a recognized export could not be imported.
+    public enum MalformedKind: Sendable, Equatable, CaseIterable {
+        /// The input is larger than `maxInputBytes`.
+        case tooLarge
+        /// A 1Password `.1pux` archive, which only the tess CLI unpacks.
+        case archive
+        /// The export parsed but holds no item with a one-time password.
+        case noEntries
+        /// A JSON value has the wrong type or the document ends early.
+        case invalidJSON
+        /// The CSV text does not parse.
+        case invalidCSV
+        /// A numeric field holds something other than a number.
+        case invalidNumber
+        /// An entry has no secret.
+        case missingSecret
+        /// An entry's secret does not decode.
+        case invalidSecret
+        /// An entry's OTP type is one Tessera cannot generate.
+        case unsupportedType
+        /// An entry's hash algorithm is one Tessera cannot use.
+        case unsupportedAlgorithm
+        /// An entry's otpauth link does not parse.
+        case invalidLink
+        /// An entry is invalid for another reason.
+        case invalidEntry
     }
 
     /// The largest text, JSON, CSV or archive input accepted
@@ -45,7 +95,7 @@ public enum Importers {
     /// backup and a `.1pux` archive are not valid UTF-8, so a text-first path
     /// would never reach their messages.
     public static func parse(_ data: Data) throws -> (accounts: [Account], source: String)? {
-        if data.count > maxInputBytes { throw ImporterError.malformed(inputTooLarge) }
+        if data.count > maxInputBytes { throw ImporterError.malformed(.tooLarge, inputTooLarge) }
         guard let outcome = detect([UInt8](data)) else { return nil }
         switch outcome {
         case .success(let found): return found
@@ -78,10 +128,10 @@ public enum Importers {
             // Foundation has no zip reader and TesseraCore takes no new
             // dependencies. The shared interop contract is the inner
             // export.data document, which both cores parse.
-            return .failure(source: "1Password", .malformed("1Password .1pux archives are read by the tess CLI; in the app, unzip it and import export.data"))
+            return .failure(source: "1Password", .malformed(.archive, "1Password .1pux archives are read by the tess CLI; in the app, unzip it and import export.data"))
         }
         if isStratumEncrypted(data) {
-            return .failure(source: "Stratum", .encrypted("Stratum backup is encrypted; in Stratum choose Settings > Backup > Export unencrypted and try again"))
+            return .failure(source: "Stratum", .encrypted(.stratum, "Stratum backup is encrypted; in Stratum choose Settings > Backup > Export unencrypted and try again"))
         }
         return nil
     }
@@ -94,13 +144,13 @@ public enum Importers {
         do {
             let accounts = try body()
             if accounts.isEmpty {
-                return .failure(source: source, .malformed("\(source) export has no one-time-password entries; only items with a 2FA code are imported"))
+                return .failure(source: source, .malformed(.noEntries, "\(source) export has no one-time-password entries; only items with a 2FA code are imported"))
             }
             return .success((accounts, source))
         } catch let e as ImporterError {
             return .failure(source: source, e)
         } catch {
-            return .failure(source: source, .malformed(message(error)))
+            return .failure(source: source, .malformed(kind(of: error), message(error)))
         }
     }
 
@@ -122,16 +172,16 @@ public enum Importers {
         // Encrypted 2FAS backups carry BOTH an empty "services" array and the
         // ciphertext in "servicesEncrypted" — check the ciphertext first.
         if let enc = raw("servicesEncrypted"), doc.kind(enc) == .string, !doc.unquotedBytes(enc).isEmpty {
-            return .failure(source: "2FAS", .encrypted("2FAS export is encrypted; in 2FAS turn off the backup password (or decrypt) and export again"))
+            return .failure(source: "2FAS", .encrypted(.twoFAS, "2FAS export is encrypted; in 2FAS turn off the backup password (or decrypt) and export again"))
         }
         if has(probe, "services") {
             return recognized("2FAS") { try parse2FAS(doc) }
         }
         if has(probe, "encryptedData"), has(probe, "encryptionNonce") {
-            return .failure(source: "Ente Auth", .encrypted("Ente Auth export is encrypted; in Ente Auth choose Export > plain text (unencrypted) and try again"))
+            return .failure(source: "Ente Auth", .encrypted(.enteAuth, "Ente Auth export is encrypted; in Ente Auth choose Export > plain text (unencrypted) and try again"))
         }
         if let enc = raw("encrypted"), doc.kind(enc) == .trueValue {
-            return .failure(source: "Bitwarden", .encrypted("Bitwarden export is encrypted; in Bitwarden export again as unencrypted .json (File format: .json, not 'Password protected')"))
+            return .failure(source: "Bitwarden", .encrypted(.bitwarden, "Bitwarden export is encrypted; in Bitwarden export again as unencrypted .json (File format: .json, not 'Password protected')"))
         }
         if let items = raw("items"), doc.kind(items) == .array {
             // A password-manager export always carries folders or collections; an
@@ -142,7 +192,7 @@ public enum Importers {
             return recognized(source) { try parseBitwardenItems(doc) }
         }
         if has(probe, "salt"), has(probe, "content"), !has(probe, "entries") {
-            return .failure(source: "Proton Authenticator", .encrypted("Proton Authenticator export is encrypted; in Proton Authenticator export again without a password"))
+            return .failure(source: "Proton Authenticator", .encrypted(.protonAuthenticator, "Proton Authenticator export is encrypted; in Proton Authenticator export again without a password"))
         }
         if let entries = raw("entries"), doc.kind(entries) == .array {
             return recognized("Proton Authenticator") { try parseProton(doc) }

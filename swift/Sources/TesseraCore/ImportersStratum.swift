@@ -52,10 +52,10 @@ extension Importers {
         switch t {
         case 1: return "hotp"
         case 2: return "totp"
-        case 3: throw ImporterError.malformed("unsupported account type mOTP")
+        case 3: throw ImporterError.malformed(.unsupportedType, "unsupported account type mOTP")
         case 4: return "steam"
-        case 5: throw ImporterError.malformed("unsupported account type Yandex OTP")
-        default: throw ImporterError.malformed("unsupported account type \(t)")
+        case 5: throw ImporterError.malformed(.unsupportedType, "unsupported account type Yandex OTP")
+        default: throw ImporterError.malformed(.unsupportedType, "unsupported account type \(t)")
         }
     }
 
@@ -64,7 +64,7 @@ extension Importers {
         case 0: return "SHA1"
         case 1: return "SHA256"
         case 2: return "SHA512"
-        default: throw ImporterError.malformed("unsupported algorithm \(a)")
+        default: throw ImporterError.malformed(.unsupportedAlgorithm, "unsupported algorithm \(a)")
         }
     }
 }
