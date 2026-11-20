@@ -114,3 +114,12 @@ extension AppModel {
         return copyCode(account, at: time, to: pasteboard) != nil
     }
 }
+
+extension VaultPersisting {
+    func copyConfirmed(_ account: Account, at time: Date,
+                       to pasteboard: any SecretPasteboard = NSPasteboard.general) async -> Bool {
+        guard !isLocked else { return false }
+        if account.type == .hotp { return await advanceHOTP(account, to: pasteboard)?.value ?? false }
+        return copyCode(account, at: time, to: pasteboard) != nil
+    }
+}

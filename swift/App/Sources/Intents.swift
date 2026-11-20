@@ -52,7 +52,7 @@ protocol CodeCopyTarget: AnyObject {
     var isLocked: Bool { get }
     func openForIntent() async -> Bool
     func account(withID id: String) -> Account?
-    func copyCodeForIntent(_ account: Account) -> Bool
+    func copyCodeForIntent(_ account: Account) async -> Bool
 }
 
 enum CopyCodeGate {
@@ -65,7 +65,7 @@ enum CopyCodeGate {
             guard await target.openForIntent(), !target.isLocked else { throw CopyCodeError.vaultUnavailable }
         }
         guard let account = target.account(withID: accountID) else { throw CopyCodeError.accountMissing }
-        guard target.copyCodeForIntent(account) else { throw CopyCodeError.copyFailed }
+        guard await target.copyCodeForIntent(account) else { throw CopyCodeError.copyFailed }
         return account.displayName
     }
 }
@@ -86,8 +86,8 @@ extension AppModel: CodeCopyTarget {
         accounts.first { $0.id == id }
     }
 
-    func copyCodeForIntent(_ account: Account) -> Bool {
-        copyFromQuickAccess(account, at: Date())
+    func copyCodeForIntent(_ account: Account) async -> Bool {
+        await copyConfirmed(account, at: Date())
     }
 
     private func waitUntilOpened() async {

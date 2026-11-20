@@ -77,29 +77,87 @@ final class PersistFacadeTests: XCTestCase {
         XCTAssertTrue(host.accounts.isEmpty)
     }
 
-    func testLockDuringACommitDoesNotRepopulateAccounts() async throws {
-        let (host, file, _) = try makeHost()
+    func testEditsStagedBeforeALockLandOnDiskWithoutRepopulatingAccounts() async throws {
+        let (host, file, dek) = try makeHost()
         file.hold()
         host.mutate(adding(VaultFixture.account("b", issuer: "Beta")))
+        host.mutate(adding(VaultFixture.account("c", issuer: "Gamma")))
         await waitForHeldCommit(file)
         host.lock(reason: .manual)
+        let lockedAt = host.history.count
         file.release()
         await host.settlePendingCommits()
 
+        XCTAssertEqual(ids(try file.accounts(dek: dek)), ["a", "b", "c"])
         XCTAssertTrue(host.isLocked)
         XCTAssertTrue(host.accounts.isEmpty)
+        XCTAssertEqual(host.history.count, lockedAt)
         XCTAssertNil(host.envelope)
         XCTAssertNil(host.dek)
+        XCTAssertNil(host.notice)
         XCTAssertEqual(host.lockReasons, [.manual])
     }
 
-    func testEditWhileLockedIsRefusedWithANotice() throws {
+    func testEditWhileLockedIsRefusedAsAClosedVault() throws {
         let (host, file, dek) = try makeHost()
         host.lock(reason: .manual)
+
+        XCTAssertThrowsError(try host.stage(adding(VaultFixture.account("b", issuer: "Beta")))) { error in
+            XCTAssertEqual(error as? VaultEditError, .vaultClosed)
+        }
         XCTAssertFalse(host.mutate(adding(VaultFixture.account("b", issuer: "Beta"))))
-        if case .failure = host.notice {} else { XCTFail("no failure notice") }
+        XCTAssertEqual(host.notice, .failure("The vault is locked, so this change wasn’t saved."))
+        XCTAssertEqual(UserMessage.text(for: VaultEditError.vaultClosed, context: .save),
+                       UserMessage.text(for: VaultEditError.vaultClosed))
         XCTAssertFalse(host.persistence.hasPendingCommits)
         XCTAssertEqual(ids(try file.accounts(dek: dek)), ["a"])
+    }
+
+    func testEditWithoutAHeldKeyIsRefusedAsAClosedVault() throws {
+        let (host, file, dek) = try makeHost()
+        host.dek = nil
+
+        XCTAssertThrowsError(try host.stage(adding(VaultFixture.account("b", issuer: "Beta")))) { error in
+            XCTAssertEqual(error as? VaultEditError, .vaultClosed)
+        }
+        XCTAssertEqual(ids(host.accounts), ["a"])
+        XCTAssertFalse(host.persistence.hasPendingCommits)
+        XCTAssertEqual(ids(try file.accounts(dek: dek)), ["a"])
+    }
+
+    func testReloadRequestedDuringCommitsRunsOnceAfterTheLastSettles() async throws {
+        let (host, file, dek) = try makeHost()
+        let reloads = ReloadLog()
+        let reload: @MainActor () -> Void = { [unowned host] in
+            let disk = (try? file.accounts(dek: dek)) ?? []
+            reloads.entries.append((host.persistence.hasPendingCommits, Set(disk.map(\.id))))
+            host.accounts = disk
+        }
+        file.hold()
+        host.mutate(adding(VaultFixture.account("b", issuer: "Beta")))
+        host.whenCommitsSettle(reload)
+        host.mutate(adding(VaultFixture.account("c", issuer: "Gamma")))
+        host.whenCommitsSettle(reload)
+        await waitForHeldCommit(file)
+        XCTAssertTrue(reloads.entries.isEmpty)
+        file.release()
+        await host.settlePendingCommits()
+
+        XCTAssertEqual(reloads.entries.count, 1)
+        XCTAssertEqual(reloads.entries.first?.pending, false)
+        XCTAssertEqual(reloads.entries.first?.onDisk, ["a", "b", "c"])
+        let afterBoth = try XCTUnwrap(host.history.firstIndex { ids($0) == ["a", "b", "c"] })
+        for state in host.history[afterBoth...] { XCTAssertEqual(ids(state), ["a", "b", "c"]) }
+    }
+
+    func testReloadWithNothingPendingRunsAtOnce() throws {
+        let (host, _, _) = try makeHost()
+        let reloads = ReloadLog()
+
+        host.whenCommitsSettle { reloads.entries.append((false, [])) }
+
+        XCTAssertEqual(reloads.entries.count, 1)
+        XCTAssertNil(host.persistence.whenSettled)
     }
 
     func testHOTPCodeIsCopiedOnlyAfterTheCounterCommits() async throws {
@@ -228,6 +286,111 @@ final class PersistFacadeTests: XCTestCase {
         XCTAssertEqual(host.persistence.issued, 1)
         XCTAssertFalse(try XCTUnwrap(try file.accounts(dek: dek).first).handle.isEmpty)
         XCTAssertEqual(host.accounts.first?.handle, try file.accounts(dek: dek).first?.handle)
+    }
+}
+
+@MainActor
+private final class ReloadLog {
+    var entries: [(pending: Bool, onDisk: Set<String>)] = []
+}
+
+@MainActor
+private final class HostCopyTarget: CodeCopyTarget {
+    let host: PersistHost
+
+    init(host: PersistHost) { self.host = host }
+
+    var isLocked: Bool { host.isLocked }
+
+    func openForIntent() async -> Bool { !host.isLocked }
+
+    func account(withID id: String) -> Account? { host.accounts.first { $0.id == id } }
+
+    func copyCodeForIntent(_ account: Account) async -> Bool {
+        await host.copyConfirmed(account, at: Date(), to: DiscardingPasteboard())
+    }
+}
+
+private struct PassingAuthenticator: IntentAuthenticating {
+    func authenticate(reason: String) async throws {}
+}
+
+@MainActor
+final class CopyIntentOutcomeTests: XCTestCase {
+    private let hotp = VaultFixture.account("h", issuer: "Bank", type: .hotp, period: 0)
+
+    private func makeTarget() throws -> (HostCopyTarget, InMemoryVaultFile, Data) {
+        let (envelope, dek) = try VaultFiles.makeEnvelope(accounts: [hotp])
+        let file = InMemoryVaultFile(envelope: envelope)
+        return (HostCopyTarget(host: try PersistHost(file: file, dek: dek)), file, dek)
+    }
+
+    private func run(_ target: HostCopyTarget) async -> Result<String, CopyCodeError> {
+        do {
+            return .success(try await CopyCodeGate.run(accountID: "h", target: target,
+                                                       authenticator: PassingAuthenticator()))
+        } catch {
+            return .failure(error as? CopyCodeError ?? .vaultUnavailable)
+        }
+    }
+
+    func testIntentReportsSuccessOnlyAfterTheCounterCommits() async throws {
+        let (target, file, dek) = try makeTarget()
+        file.hold()
+        let outcome = Task { await run(target) }
+        for _ in 0..<2_000 where file.waitingCommits == 0 { try? await Task.sleep(for: .milliseconds(1)) }
+        XCTAssertEqual(file.waitingCommits, 1)
+        XCTAssertTrue(target.host.copied.isEmpty)
+        file.release()
+        let result = await outcome.value
+
+        XCTAssertEqual(result, .success("Bank"))
+        XCTAssertEqual(target.host.copied.count, 1)
+        XCTAssertEqual(try file.accounts(dek: dek).first?.counter, 1)
+    }
+
+    func testIntentReportsFailureWhenTheCounterCommitFails() async throws {
+        let (target, file, dek) = try makeTarget()
+        file.failNextCommit(with: VaultWriteError.concurrentChange(file.location.fileURL))
+
+        let result = await run(target)
+
+        XCTAssertEqual(result, .failure(.copyFailed))
+        XCTAssertTrue(target.host.copied.isEmpty)
+        XCTAssertEqual(try file.accounts(dek: dek).first?.counter, 0)
+    }
+
+    func testIntentReportsFailureWhenTheCopyFails() async throws {
+        let (target, file, dek) = try makeTarget()
+        target.host.copySucceeds = false
+
+        let result = await run(target)
+
+        XCTAssertEqual(result, .failure(.copyFailed))
+        XCTAssertEqual(target.host.notice, .failure(UserMessage.copyFailed))
+        XCTAssertEqual(try file.accounts(dek: dek).first?.counter, 1)
+    }
+
+    func testTimeBasedCopyIsConfirmedAtOnce() async throws {
+        let totp = VaultFixture.account("t", issuer: "Mail")
+        let (envelope, dek) = try VaultFiles.makeEnvelope(accounts: [totp])
+        let host = try PersistHost(file: InMemoryVaultFile(envelope: envelope), dek: dek)
+
+        let copied = await host.copyConfirmed(totp, at: Date(), to: DiscardingPasteboard())
+
+        XCTAssertTrue(copied)
+        XCTAssertFalse(host.persistence.hasPendingCommits)
+        XCTAssertEqual(host.copied.count, 1)
+    }
+
+    func testCopyIsRefusedWhileLocked() async throws {
+        let (target, _, _) = try makeTarget()
+        target.host.lock(reason: .manual)
+
+        let copied = await target.host.copyConfirmed(hotp, at: Date(), to: DiscardingPasteboard())
+
+        XCTAssertFalse(copied)
+        XCTAssertFalse(target.host.persistence.hasPendingCommits)
     }
 }
 

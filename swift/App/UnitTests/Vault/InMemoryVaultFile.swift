@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import os
 import TesseraCore
+import XCTest
 @testable import Tessera
 
 final class InMemoryVaultFile: VaultTransaction {
@@ -147,6 +148,24 @@ final class PersistHost: VaultPersisting {
         dek = nil
     }
 
+    func unlock(dek: Data) {
+        isLocked = false
+        self.dek = dek
+        envelope = file.envelope
+        accounts = (try? file.accounts(dek: dek)) ?? []
+    }
+
+    func rotateKey() async -> Data? {
+        guard let held = dek else { return nil }
+        let committed = try? await file.commit(heldDEK: held) { opened in
+            let (envelope, dek) = try VaultFiles.makeEnvelope(accounts: opened.accounts)
+            return VaultCommit(envelope: envelope, accounts: opened.accounts, dek: dek, backupPolicy: .copyCurrent)
+        }
+        guard let committed else { return nil }
+        adopt(committed)
+        return committed.dek
+    }
+
     func copyToPasteboard(_ value: String, kind: SecretClipboard.Kind, to pasteboard: any SecretPasteboard) -> Bool {
         guard copySucceeds else { return false }
         copied.append(value)
@@ -172,4 +191,30 @@ final class DiscardingPasteboard: SecretPasteboard {
         changeCount += 1
         return changeCount
     }
+}
+
+@MainActor
+final class TestGate {
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var isOpen = false
+
+    var isWaiting: Bool { !waiters.isEmpty }
+
+    func wait() async {
+        guard !isOpen else { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func open() {
+        isOpen = true
+        let resumed = waiters
+        waiters = []
+        resumed.forEach { $0.resume() }
+    }
+}
+
+@MainActor
+func waitUntil(_ condition: () -> Bool, file: StaticString = #filePath, line: UInt = #line) async {
+    for _ in 0..<2_000 where !condition() { try? await Task.sleep(for: .milliseconds(1)) }
+    XCTAssertTrue(condition(), file: file, line: line)
 }

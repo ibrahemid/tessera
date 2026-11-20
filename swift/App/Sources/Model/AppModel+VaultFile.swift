@@ -147,6 +147,10 @@ extension AppModel {
     /// while unlocked. The DEK is unchanged by CLI account edits, so decrypt with
     /// the held key; if that fails, keep the current list rather than dropping it.
     func reloadIfExternalChanged() {
+        whenCommitsSettle { [weak self] in self?.reloadExternalChangeNow() }
+    }
+
+    private func reloadExternalChangeNow() {
         guard !isLocked, store.isExternal, let dek else { return }
         let modified = store.modifiedAt
         guard modified != lastVaultModified else { return }

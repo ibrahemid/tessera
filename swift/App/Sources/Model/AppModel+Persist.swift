@@ -14,16 +14,37 @@ enum CommitFailurePolicy: Sendable {
     case keep
 }
 
+enum VaultEditError: Error, Equatable, LocalizedError {
+    case vaultClosed
+
+    var errorDescription: String? { UserMessage.text(for: self) }
+}
+
 struct PersistenceState {
+    struct ShownChange {
+        let ticket: UInt64
+        let generation: UInt64
+        let change: AccountChange
+    }
+
     var issued: UInt64 = 0
     var settled: UInt64 = 0
-    var tail: Task<CommitOutcome, Never>?
+    var latestCommit: UInt64 = 0
+    var tail: Task<Void, Never>?
+    var shown: [ShownChange] = []
+    var whenSettled: (@MainActor () -> Void)?
 
     var hasPendingCommits: Bool { settled < issued }
 }
 
 @MainActor
-protocol VaultPersisting: AnyObject {
+protocol PendingCommitFlushing: AnyObject {
+    var hasPendingCommits: Bool { get }
+    func settlePendingCommits() async
+}
+
+@MainActor
+protocol VaultPersisting: PendingCommitFlushing {
     var accounts: [Account] { get set }
     var envelope: Envelope? { get set }
     var dek: Data? { get set }
@@ -69,9 +90,26 @@ enum VaultChange {
     }
 
     static func dedupeKey(_ a: Account) -> String {
-        [String(describing: a.type), a.issuer.lowercased(), a.account.lowercased(),
+        [a.type.rawValue, cliLowercased(a.issuer), cliLowercased(a.account),
          Base32.encodeNoPad(a.secret)].joined(separator: "|")
     }
+
+    static func cliLowercased(_ text: String) -> String {
+        var scalars = String.UnicodeScalarView()
+        scalars.append(contentsOf: text.unicodeScalars.map(cliLowercasedScalar))
+        return String(scalars)
+    }
+
+    // Matches Go `strings.ToLower`: simple one-to-one mapping from Unicode 15.0 tables.
+    private static func cliLowercasedScalar(_ scalar: Unicode.Scalar) -> Unicode.Scalar {
+        if scalar == "\u{130}" { return "i" }
+        guard let age = scalar.properties.age, age <= cliUnicodeVersion else { return scalar }
+        let mapped = scalar.properties.lowercaseMapping.unicodeScalars
+        guard mapped.count == 1, let lower = mapped.first else { return scalar }
+        return lower
+    }
+
+    private static let cliUnicodeVersion: Unicode.Version = (15, 0)
 
     static func appendingNew(_ candidates: [Account]) -> AccountChange {
         { accounts in
@@ -120,24 +158,44 @@ extension VaultPersisting {
     @discardableResult
     func stage(_ change: @escaping AccountChange, showsBeforeCommit: Bool = true,
                onFailure policy: CommitFailurePolicy = .notify) throws -> Task<CommitOutcome, Never> {
-        guard !isLocked, envelope != nil, let dek else { throw VaultError.wrongPassphrase }
+        guard !isLocked, envelope != nil, let dek else { throw VaultEditError.vaultClosed }
         var next = accounts
         try VaultChange.apply(change, to: &next)
-        if showsBeforeCommit { accounts = next }
         persistence.issued += 1
         let ticket = persistence.issued
         let generation = lockGeneration
+        persistence.latestCommit = ticket
+        if showsBeforeCommit {
+            accounts = next
+            persistence.shown.append(.init(ticket: ticket, generation: generation, change: change))
+        }
         let transaction = makeVaultTransaction()
-        let previous = persistence.tail
-        let task = Task { @MainActor in
-            _ = await previous?.value
-            let outcome = await VaultChange.commit(change, dek: dek, through: transaction)
+        return inWriteOrder {
+            let key = self.commitKey(staged: dek, generation: generation)
+            let outcome = await VaultChange.commit(change, dek: key, through: transaction)
             await self.settle(outcome, ticket: ticket, generation: generation, policy: policy,
-                              transaction: transaction, dek: dek)
+                              transaction: transaction, dek: key)
+            self.runWhenSettled()
             return outcome
         }
-        persistence.tail = task
-        return task
+    }
+
+    func runInWriteOrder<T: Sendable>(_ body: @escaping @MainActor () async -> T) async -> T {
+        persistence.issued += 1
+        let ticket = persistence.issued
+        return await inWriteOrder {
+            let result = await body()
+            self.persistence.settled = ticket
+            self.runWhenSettled()
+            return result
+        }.value
+    }
+
+    var hasPendingCommits: Bool { persistence.hasPendingCommits }
+
+    func whenCommitsSettle(_ action: @escaping @MainActor () -> Void) {
+        guard persistence.hasPendingCommits else { return action() }
+        persistence.whenSettled = action
     }
 
     func settlePendingCommits() async {
@@ -148,8 +206,13 @@ extension VaultPersisting {
     }
 
     func adopt(_ committed: CommittedVault) {
+        var next = committed.accounts
+        for pending in persistence.shown where pending.generation == lockGeneration {
+            var candidate = next
+            if (try? VaultChange.apply(pending.change, to: &candidate)) != nil { next = candidate }
+        }
         envelope = committed.envelope
-        accounts = committed.accounts
+        accounts = next
         dek = committed.dek
         lastVaultModified = committed.modifiedAt
     }
@@ -174,8 +237,9 @@ extension VaultPersisting {
     private func settle(_ outcome: CommitOutcome, ticket: UInt64, generation: UInt64,
                         policy: CommitFailurePolicy, transaction: any VaultTransaction, dek: Data) async {
         defer { persistence.settled = ticket }
+        persistence.shown.removeAll { $0.ticket == ticket }
         guard generation == lockGeneration else { return }
-        let isLatest = ticket == persistence.issued
+        let isLatest = ticket == persistence.latestCommit
         switch outcome {
         case .committed(let committed):
             if isLatest {
@@ -193,10 +257,31 @@ extension VaultPersisting {
         }
     }
 
+    private func inWriteOrder<T: Sendable>(_ work: @escaping @MainActor () async -> T) -> Task<T, Never> {
+        let previous = persistence.tail
+        let task = Task { @MainActor in
+            await previous?.value
+            return await work()
+        }
+        persistence.tail = Task { _ = await task.value }
+        return task
+    }
+
+    private func commitKey(staged: Data, generation: UInt64) -> Data {
+        guard generation == lockGeneration, let held = dek else { return staged }
+        return held
+    }
+
+    private func runWhenSettled() {
+        guard !persistence.hasPendingCommits, let action = persistence.whenSettled else { return }
+        persistence.whenSettled = nil
+        action()
+    }
+
     private func reloadFromDisk(through transaction: any VaultTransaction, dek: Data,
                                 ticket: UInt64, generation: UInt64) async {
         let snapshot = try? await transaction.read()
-        guard generation == lockGeneration, ticket == persistence.issued else { return }
+        guard generation == lockGeneration, ticket == persistence.latestCommit else { return }
         if let snapshot, let fresh = try? snapshot.envelope.open(dek: dek) {
             envelope = snapshot.envelope
             accounts = fresh

@@ -62,6 +62,12 @@ extension UserMessage {
         }
     }
 
+    static func text(for e: VaultEditError) -> String {
+        switch e {
+        case .vaultClosed: return "The vault is locked, so this change wasn’t saved."
+        }
+    }
+
     static func text(for e: VaultLockError) -> String {
         switch e {
         case .timedOut:
