@@ -174,18 +174,24 @@ check_app_ellipsis() {
   [ -z "$found" ] || { printf '%s\n' "$found"; return 1; }
 }
 
-# A hosted test that needs window focus skips when another app holds it. GATE_STRICT=1 turns a skip into a failure.
+# Skipped tests and expected failures pass the run but prove nothing. GATE_STRICT=1 turns either into a failure.
 report_app_skips() {
   unit_log="$LOG_DIR/xcodebuild-unit.log"
   [ -f "$unit_log" ] || return 0
-  skipped="$(sed -n 's/.*Executed [0-9]* tests*, with \([0-9]*\) tests* skipped.*/\1/p' "$unit_log" | tail -n 1)"
-  [ -n "$skipped" ] && [ "$skipped" != 0 ] || return 0
-  if [ "${GATE_STRICT:-0}" = 1 ]; then
-    FAILED=1
-    printf 'FAIL  app-unit skipped %s tests  (%s)\n' "$skipped" "$unit_log"
-  else
-    printf 'note  app-unit skipped %s tests  (%s)\n' "$skipped" "$unit_log"
-  fi
+  summary="$(grep -E 'Executed [0-9]+ tests?, with ' "$unit_log" | tail -n 1)"
+  skipped="$(printf '%s' "$summary" | sed -n 's/.* \([0-9][0-9]*\) tests* skipped.*/\1/p')"
+  expected="$(printf '%s' "$summary" | sed -n 's/.* \([0-9][0-9]*\) expected failures*.*/\1/p')"
+  for unproven in "skipped ${skipped:-0} tests" "has ${expected:-0} expected failures"; do
+    case $unproven in
+      *' 0 '*) continue ;;
+    esac
+    if [ "${GATE_STRICT:-0}" = 1 ]; then
+      FAILED=1
+      printf 'FAIL  app-unit %s  (%s)\n' "$unproven" "$unit_log"
+    else
+      printf 'note  app-unit %s  (%s)\n' "$unproven" "$unit_log"
+    fi
+  done
 }
 
 gate_app() {
