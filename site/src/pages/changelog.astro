@@ -8,6 +8,25 @@ const appStore = "https://apps.apple.com/app/tessera-2fa-authenticator/id6788814
 
 const entries = [
   {
+    v: "1.2.0",
+    date: "CLI 2026-11-20",
+    items: [
+      "tess 1.2.0 is a CLI release; the Mac app stays at 1.1.0.",
+      "Vault format version 2: tess writes it once an account is in the Trash, has a note or a position, or is imported with a note. Tessera 1.1.0 and earlier, the Mac app and tess, refuse to open a version 2 vault, so nothing in it is lost. tess prints a notice when a write raises the version. The vault returns to version 1 once the Trash is empty and no account has a note or a position.",
+      "Windows builds for amd64 and arm64. Linux packages in deb, rpm, apk and Arch formats, with completions and man pages.",
+      "tess vault remember on Linux (the Secret Service, with the kernel keyring as a fallback) and Windows (Credential Manager).",
+      "tess watch adds folder and tag filters, add, edit, pin, a Trash with undo, and a lock after 15 minutes without a key press.",
+      "Trash: tess rm moves accounts to the Trash, tess trash lists it and tess restore brings them back. tess trash empty and tess rm --purge delete for good.",
+      "New commands: tess note, tess order, tess pin, tess unpin, tess edit, tess dedupe and tess verify. tess code --all prints every account's code and --at the code at a given time; tess show --qr draws the setup link as a QR code.",
+      "Backups: tess vault backup writes a dated backup, and with $TESSERA_BACKUP_DIR set every change writes one. tess vault restore replaces the vault with a backup or with vault.json.bak, the file before the last write.",
+      "tess vault rekey replaces the vault key, and tess vault passwd now does the same. On a vault shared with the Mac app that removes the app's Touch ID unlock; the app adds it back the next time it is unlocked with the passphrase.",
+      "Import keeps folders, tags, notes and pinned state from exports that carry them. --json on tess import, tess show and tess vault status.",
+      "On a terminal the clipboard is cleared 30 seconds after a copy; --clear 0 keeps it. tess rename --handle is now --alias.",
+      "checksums.txt is signed with keyless cosign, and every file it lists has a build provenance attestation. The install script checks the signature when cosign is installed.",
+    ],
+    links: [[`${repo}/releases/tag/v1.2.0`, "v1.2.0 release"], [`${repo}/blob/main/docs/CLI-JSON.md`, "JSON output"], ["/vault-format", "vault format"]],
+  },
+  {
     v: "1.1.0",
     date: "CLI 2026-09-05 · App Store 2026-09-05",
     items: [
@@ -48,7 +67,7 @@ const entries = [
 ---
 <Base title="Changelog · Tessera" description="What changed in each Tessera release, app and CLI." current="/changelog">
   <PageHead kicker="Changelog" title="What changed.">
-    The CLI and the app version together. Release tarballs and checksums are on <a href={`${repo}/releases`} rel="noopener">GitHub releases</a>.
+    Releases of the tess CLI and the Mac app. Release files and checksums are on <a href={`${repo}/releases`} rel="noopener">GitHub releases</a>.
     <AppShot slot="media" sizes="(min-width: 900px) 34vw, 80vw" />
   </PageHead>
 
@@ -64,7 +83,7 @@ const entries = [
         </ul>
         <p class="mt-3 text-sm links">
           {e.links.map(([href, label], i) => (
-            <>{i > 0 && <span class="faint"> · </span>}<a href={href} rel="noopener">{label}</a></>
+            <>{i > 0 && <span class="faint"> · </span>}<a href={href} rel={href.startsWith("http") ? "noopener" : undefined}>{label}</a></>
           ))}
         </p>
       </section>

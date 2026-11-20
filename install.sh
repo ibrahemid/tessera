@@ -66,7 +66,7 @@ resolve_version() {
 	tag=$(curl --proto '=https' --tlsv1.2 -fsSL "$API_LATEST_URL" 2>/dev/null |
 		sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' |
 		head -n 1) || tag=""
-	[ -n "$tag" ] || die "could not resolve the latest release from ${API_LATEST_URL}; set TESS_VERSION=1.1.0 and retry"
+	[ -n "$tag" ] || die "could not resolve the latest release from ${API_LATEST_URL}; set TESS_VERSION=1.2.0 and retry"
 	printf '%s' "${tag#v}"
 }
 
