@@ -2,16 +2,33 @@
 import Base from "../layouts/Base.astro";
 import PageHead from "../components/PageHead.astro";
 import AppShot from "../components/AppShot.astro";
+import { HAS_WINDOWS_BUILD, IS_VAULT_V2_RELEASED } from "../data/release";
 const repo = "https://github.com/ibrahemid/tessera";
 
-const faqs = [
-  ["How do I import my existing accounts?", "From Google Authenticator: Transfer accounts, Export, then scan the QR (app) or run tess import --migration \"otpauth-migration://…\". You can also paste otpauth links, or import a file of many at once, including Aegis, 2FAS and Raivo exports."],
-  ["Where are my codes stored?", "In an encrypted vault on your Mac. The app keeps it in its sandbox container; the CLI keeps it at ~/.local/share/tessera/vault.json. To use one vault for both, choose Open existing vault in the app and pick the CLI's file; the app remembers it."],
-  ["I forgot my passphrase.", "The vault cannot be decrypted without it. Keep a backup with tess export --file backup.json and store your passphrase somewhere safe, like a password manager."],
-  ["Can I use it on more than one Mac?", "Yes. Move a vault between machines with tess export --file backup.json, then tess merge backup.json on the other side. For the CLI to open the app's own vault, set a recovery passphrase in the app's settings, then point TESSERA_VAULT or --vault at that file."],
-  ["Is it really free?", "Yes. Apache-2.0 licensed, nothing to buy."],
-  ["Which services work with Tessera?", "Any service that offers an authenticator app (TOTP), plus HOTP and Steam Guard. If you can scan its QR or copy its setup link, Tessera can hold it."],
-  ["Is there a menu bar mode?", "Not in 1.0. Tessera is a windowed app; a status bar item is planned."],
+type Faq = { q: string; a: string; more?: [string, string] };
+const faqs: Faq[] = [
+  {
+    q: "How do I import my existing accounts?",
+    a: "From Google Authenticator: Transfer accounts, Export, then scan the QR (app) or run tess import --migration \"otpauth-migration://…\". You can also paste otpauth links, or import the unencrypted export file from Aegis, 2FAS, Raivo, andOTP, FreeOTP+, Stratum, Bitwarden, Proton Authenticator, Ente Auth, Apple Passwords or 1Password.",
+    more: [`${repo}/blob/main/docs/TRANSFER.md`, "Export steps for each app"],
+  },
+  {
+    q: "Where are my codes stored?",
+    a: `In an encrypted vault file. The app keeps its own in its sandbox container, under Application Support/Tessera/vault.json. The CLI uses ~/.local/share/tessera/vault.json on macOS and Linux${HAS_WINDOWS_BUILD ? ", and usually %LOCALAPPDATA%\\Tessera\\vault.json on Windows" : ""}. To use one vault for both, choose Use another vault file… under Settings, Vault, or Use a vault created by the tess CLI on an empty list, and pick the CLI's file; the app remembers it.`,
+    more: ["/cli#files", "How the CLI picks its vault path"],
+  },
+  { q: "I forgot my passphrase.", a: "The vault cannot be decrypted without it. Keep a backup with tess export --file backup.json and store your passphrase somewhere safe, like a password manager." },
+  { q: "Can I use it on more than one Mac?", a: "Yes. Move a vault between machines with tess export --file backup.json, then tess merge backup.json on the other side. For the CLI to open the app's own vault, set a recovery passphrase in the app's settings, then point TESSERA_VAULT or --vault at that file." },
+  { q: "Is it really free?", a: "Yes. Apache-2.0 licensed, nothing to buy." },
+  { q: "Which services work with Tessera?", a: "Any service that offers an authenticator app (TOTP), plus HOTP and Steam Guard. If you can scan its QR or copy its setup link, Tessera can hold it." },
+  { q: "Is there a menu bar mode?", a: "Not in 1.1.0. Tessera is a windowed app; a status bar item is planned." },
+  ...(IS_VAULT_V2_RELEASED
+    ? [{
+        q: "Why won't the Mac app or tess 1.1.0 open my vault?",
+        a: "tess 1.2.0 writes version 2 of the vault format once an account is in the Trash (tess rm, tess dedupe), has a note (tess note) or a position (tess order), or comes in from tess import with a note. The Mac app 1.1.0 and tess 1.1.0 refuse to open a version 2 vault, so nothing in it is lost, and tess 1.2.0 keeps working with it. The vault goes back to version 1 once the Trash is empty (tess restore or tess trash empty) and no account has a note or a position (tess note --clear, tess order --clear).",
+        more: ["/vault-format", "Vault format"],
+      } satisfies Faq]
+    : []),
 ];
 ---
 <Base title="Support · Tessera" description="Help with Tessera: importing accounts, where the vault lives, sharing it between the app and the CLI, backups." current="/support">
@@ -30,10 +47,11 @@ const faqs = [
     <section class="mt-14 faq">
       <h2 class="h-sub">Common questions</h2>
       <div class="mt-6 rows">
-        {faqs.map(([q, a]) => (
+        {faqs.map(({ q, a, more }) => (
           <details class="row-details">
             <summary>{q}</summary>
             <p class="mt-3 soft">{a}</p>
+            {more && <p class="mt-1 text-sm"><a class="inline-flex items-center min-h-11" href={more[0]} rel={more[0].startsWith("http") ? "noopener" : undefined}>{more[1]}</a></p>}
           </details>
         ))}
       </div>
@@ -44,7 +62,7 @@ const faqs = [
 <style>
   .faq { padding-bottom: 6rem; }
   .row-details { border-bottom: 1px solid var(--line); padding: 1.1rem 0; }
-  .row-details summary { cursor: pointer; list-style: none; display: flex; justify-content: space-between; gap: 1rem; font-family: var(--font-display); }
+  .row-details summary { cursor: pointer; list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 1rem; font-family: var(--font-display); }
   .row-details summary::-webkit-details-marker { display: none; }
   .row-details summary::after { content: "+"; color: var(--gold); font-family: var(--font-mono); }
   .row-details[open] summary::after { content: "−"; }

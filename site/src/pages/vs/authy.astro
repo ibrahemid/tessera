@@ -3,19 +3,20 @@ import Base from "../../layouts/Base.astro";
 import PageHead from "../../components/PageHead.astro";
 import AppShot from "../../components/AppShot.astro";
 
-const rows = [
-  ["Where the secrets live", "Encrypted backups on Twilio's servers, tied to your phone number", "An encrypted file on your Mac"],
-  ["Account", "Required", "None"],
-  ["Source", "Closed", "Open source, Apache-2.0"],
-  ["Desktop", "The desktop apps were discontinued in August 2024", "A native macOS app and the tess CLI"],
-  ["Phone", "iOS and Android", "None"],
-  ["Export", "No export", "tess export, the app's vault export, and otpauth links or QR codes per account"],
-  ["Price", "Free", "Free"],
+const authyFeatures: [string, string] = ["https://authy.com/features/", "Authy features"];
+const authyHelp: [string, string] = ["https://authy.com/help/", "Authy help"];
+const authyDownload: [string, string] = ["https://authy.com/download/", "Authy download"];
+
+type Row = { k: string; them: string; us: string; src: [string, string][] };
+const rows: Row[] = [
+  { k: "Where the secrets live", them: "Encrypted backups of your 2FA data in Authy's cloud", us: "An encrypted file on your computer", src: [authyFeatures] },
+  { k: "Account", them: "An account on your phone number", us: "None", src: [authyHelp] },
+  { k: "Phone", them: "Apps on the App Store and Google Play", us: "None", src: [authyDownload] },
 ];
 ---
 <Base
   title="Tessera vs Authy"
-  description="Authy keeps your codes on Twilio's servers behind your phone number; Tessera keeps them in a file on your Mac. What differs and how to move."
+  description="Authy backs up your codes to its cloud, on an account tied to your phone number; Tessera keeps them in a file on your Mac. What differs and how to move."
   current="/vs/authy"
 >
   <PageHead kicker="Compared" title="Tessera vs Authy.">
@@ -24,20 +25,26 @@ const rows = [
   </PageHead>
 
   <div class="measure cmp">
-    <table>
-      <thead>
-        <tr><th></th><th>Authy</th><th>Tessera</th></tr>
-      </thead>
-      <tbody>
-        {rows.map(([k, a, b]) => (
-          <tr><th scope="row">{k}</th><td>{a}</td><td>{b}</td></tr>
-        ))}
-      </tbody>
-    </table>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th></th><th>Authy</th><th>Tessera</th></tr>
+        </thead>
+        <tbody>
+          {rows.map(({ k, them, us, src }) => (
+            <tr>
+              <th scope="row">{k}</th>
+              <td>{them}<span class="src">{src.map(([href, label], i) => (<>{i > 0 && " · "}<a href={href} rel="noopener">{label}</a></>))}</span></td>
+              <td>{us}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
 
     <h2 class="h-sub mt-14">Pick Authy if</h2>
     <ul class="mt-4 soft list">
-      <li>You want codes on a phone with a backup you never think about, and do not need a desktop app.</li>
+      <li>You want codes on a phone, backed up to Authy's cloud.</li>
     </ul>
 
     <h2 class="h-sub mt-12">Pick Tessera if</h2>
@@ -49,19 +56,29 @@ const rows = [
 
     <h2 class="h-sub mt-12">Moving from Authy</h2>
     <p class="mt-4 soft">
-      Authy has no export, so each account is re-enrolled: on the service's security page, turn two-factor off and on again, then scan the new QR with Tessera (on screen, from the app) or save it and run <span class="mono">tess add code.png</span>. Keep Authy installed until the last account has moved.
+      To move an account, re-enroll it: on the service's security page, turn two-factor off and on again, then scan the new QR with Tessera (on screen, from the app) or save it and run <span class="mono">tess add code.png</span>. Keep Authy installed until the last account has moved.
     </p>
-    <p class="mt-4 soft">Facts about Authy were checked on 2026-08-22 and may have changed.</p>
+    <p class="mt-4 soft">Facts about Authy were checked on 2026-11-20 against <a href="https://authy.com/" rel="noopener">authy.com</a> and may have changed.</p>
   </div>
 </Base>
 
 <style>
   .cmp { padding-block: 1rem 6rem; }
+  .table-wrap { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
-  th, td { text-align: left; vertical-align: top; padding: 0.8rem 1rem 0.8rem 0; border-bottom: 1px solid var(--line); }
+  th, td { text-align: left; vertical-align: top; padding: 0.8rem 1rem 0.8rem 0; border-bottom: 1px solid var(--line); overflow-wrap: break-word; }
   thead th { font-family: var(--font-display); font-size: 1.05rem; }
-  tbody th { color: var(--ink); white-space: nowrap; }
+  tbody th { color: var(--ink); width: 7.5rem; }
   td { color: var(--ink-soft); }
+  .src { display: block; margin-top: 0.25rem; font-size: 0.85rem; }
+  .src a { display: inline-flex; align-items: center; min-height: 44px; }
+  @media (max-width: 639px) {
+    table { border-collapse: separate; border-spacing: 0; }
+    tr { display: grid; grid-template-columns: 1fr 1fr; column-gap: 1rem; border-bottom: 1px solid var(--line); }
+    th, td { border-bottom: 0; padding-right: 0; }
+    thead th:first-child { display: none; }
+    tbody th { grid-column: 1 / -1; width: auto; padding-bottom: 0; }
+  }
   .list li { padding-left: 1.1rem; position: relative; }
   .list li + li { margin-top: 0.5rem; }
   .list li::before { content: ""; position: absolute; left: 0; top: 0.72em; width: 0.4rem; height: 0.4rem; border-radius: 2px; background: var(--gold); }

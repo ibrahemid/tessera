@@ -13,7 +13,7 @@ const steps = [
 <Base title="New to 2FA · Tessera" description="What a two-factor code is, why it protects an account a password alone cannot, and how to set one up in Tessera." current="/learn">
   <PageHead kicker="New to 2FA?" title="A second key, just for you.">
     A password can be guessed, leaked, or phished. Two-factor authentication adds a second step: a six-digit code that changes every 30 seconds, generated from a secret set up between you and the service.
-    <Still slot="media" src={codesStill} alt="tess printing four accounts: a handle, the issuer, the current six-digit code, a countdown bar and the seconds left" eager />
+    <Still slot="media" src={codesStill} alt="tess printing six accounts: a handle, the issuer, the current code, a countdown bar and the seconds left" eager />
   </PageHead>
 
   <article class="measure body">
@@ -23,7 +23,7 @@ const steps = [
 
     <h2 class="h-sub mt-12">What you are looking at</h2>
     <p class="mt-4 soft">
-      Each line in the terminal above is one account. From the left: a short handle you can type (<span class="mono">gi</span>), the service, the code, and how long it stays valid. An <span class="mono">hotp</span> account counts instead of ticking, so it shows a counter and waits for you to ask for the next code. A Steam Guard code is five letters and digits. The app shows the same accounts as tiles with a ring that drains over the 30 seconds.
+      Each line of tess output is one account. From the left: a short handle you can type (<span class="mono">gi</span>), the service, the code, and how long it stays valid. An <span class="mono">hotp</span> account counts instead of ticking, so it shows a counter and waits for you to ask for the next code. A Steam Guard code is five letters and digits. The app lists the same accounts in rows, each with a countdown ring.
     </p>
 
     <h2 class="h-sub mt-12">Setting it up</h2>
@@ -56,8 +56,8 @@ const steps = [
     position: absolute;
     left: 0;
     top: 0.15rem;
-    font-family: var(--font-mono);
     font-size: 0.85rem;
-    color: var(--gold);
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-soft);
   }
 </style>

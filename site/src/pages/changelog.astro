@@ -13,8 +13,8 @@ const entries = [
     items: [
       "CLI: tess code copies the code by default and prints the seconds left; tess <handle> is a shortcut; a code with under 4 seconds left waits for the next one; --clear wipes the clipboard after a delay.",
       "CLI: shell completion for account handles, tess add --screen reads a QR off the screen, add and import read stdin with -.",
-      "Import, app and CLI: Bitwarden, Proton Authenticator, Ente Auth, andOTP, FreeOTP+, Stratum, 1Password and Apple Passwords exports. Encrypted exports are rejected with the app's own unencrypted export path.",
-      "CLI export: --format aegis, 2fas, bitwarden, proton, andotp, apple-csv, or google-migration (QR batches any phone app scans).",
+      "Import, app and CLI: Bitwarden, Proton Authenticator, Ente Auth, andOTP, FreeOTP+, Stratum, 1Password and Apple Passwords exports. An encrypted export is rejected with an error that says where that app's unencrypted export is.",
+      "CLI export: --format aegis, 2fas, bitwarden, proton, andotp, apple-csv, or google-migration (Google Authenticator transfer QR codes).",
       "CLI: tess merge --two-way syncs two vaults in a shared folder.",
       "Fix: a malformed otpauth link no longer echoes its secret in the error.",
       "go install builds report the module version in tess --version.",
@@ -57,12 +57,12 @@ const entries = [
       <section class="entry">
         <div class="entry-head">
           <h2 class="h-sub">{e.v}</h2>
-          <p class="mono text-[0.8rem] faint mt-1">{e.date}</p>
+          <p class="text-sm soft mt-1">{e.date}</p>
         </div>
         <ul class="mt-4 space-y-2 soft">
           {e.items.map((i) => <li>{i}</li>)}
         </ul>
-        <p class="mt-4 mono text-[0.8rem]">
+        <p class="mt-3 text-sm links">
           {e.links.map(([href, label], i) => (
             <>{i > 0 && <span class="faint"> · </span>}<a href={href} rel="noopener">{label}</a></>
           ))}
@@ -74,6 +74,7 @@ const entries = [
 
 <style>
   .log { padding-bottom: 6rem; }
+  .links a { display: inline-flex; align-items: center; min-height: 44px; }
   .entry { padding-block: 2.5rem; border-top: 1px solid var(--line); }
   .entry li { padding-left: 1.1rem; position: relative; }
   .entry li::before { content: ""; position: absolute; left: 0; top: 0.72em; width: 0.4rem; height: 0.4rem; border-radius: 2px; background: var(--gold); }

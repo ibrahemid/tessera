@@ -182,5 +182,81 @@
         }
       ]
     }
-  ]
+  ],
+  "environment": {
+    "variables": [
+      {
+        "name": "TESSERA_VAULT",
+        "effect": "Vault file path; `--vault` overrides it"
+      },
+      {
+        "name": "TESSERA_PASSPHRASE",
+        "effect": "Vault passphrase, so tess does not prompt"
+      },
+      {
+        "name": "TESSERA_NEW_PASSPHRASE",
+        "effect": "New passphrase for `tess vault passwd`"
+      },
+      {
+        "name": "TESSERA_MERGE_PASSPHRASE",
+        "effect": "Passphrase of the source vault for `tess merge`"
+      },
+      {
+        "name": "TESSERA_BACKUP_DIR",
+        "effect": "Absolute path of a folder for a daily backup after every vault change; the 30 newest are kept"
+      },
+      {
+        "name": "TESSERA_CLIP_CLEAR",
+        "effect": "Seconds before a copied code is cleared; `0` keeps it"
+      },
+      {
+        "name": "TESSERA_WATCH_LOCK",
+        "effect": "Idle time before `tess watch` locks, such as `5m`; `0` never locks"
+      },
+      {
+        "name": "TESSERA_SECRET_BACKEND",
+        "effect": "Secret store for `tess vault remember`: `keychain`, `secret-service`, `kernel-keyring` or `credential-manager`"
+      },
+      {
+        "name": "TESSERA_CLIPBOARD",
+        "effect": "Clipboard on Linux and other Unix systems: `wayland`, `x11` or `osc52`"
+      },
+      {
+        "name": "XDG_DATA_HOME",
+        "effect": "Base folder of the default vault path (below)"
+      },
+      {
+        "name": "NO_COLOR",
+        "effect": "Turns off colored output"
+      }
+    ],
+    "notes": [
+      "tess removes the three passphrase variables from the environment of any program it starts."
+    ]
+  },
+  "vaultLocation": {
+    "lead": "`--vault`, else `$TESSERA_VAULT`, else the default:",
+    "platforms": [
+      {
+        "os": "macOS",
+        "path": "`$XDG_DATA_HOME/tessera/vault.json` when `XDG_DATA_HOME` is set, else `~/.local/share/tessera/vault.json`."
+      },
+      {
+        "os": "Linux and other Unix systems",
+        "path": "the same, with `XDG_DATA_HOME` used only when it is an absolute path."
+      },
+      {
+        "os": "Windows",
+        "path": "`%XDG_DATA_HOME%\\tessera\\vault.json` when that is an absolute path; else `%USERPROFILE%\\.local\\share\\tessera\\vault.json` if that file exists; else `%LOCALAPPDATA%\\Tessera\\vault.json`."
+      }
+    ],
+    "notes": [
+      "A vault path that is a symbolic link resolves to its target. Next to the vault, tess keeps `vault.json.bak` (the file before the last write) and `vault.json.lock`, all readable by you only. `tess vault status` prints the resolved path.",
+      "`tess vault remember` stores the passphrase in the system secret store so tess stops prompting: the login keychain on macOS, the Secret Service on Linux with the kernel keyring as a fallback, and Windows Credential Manager on Windows. It verifies the passphrase against the vault first; `tess vault forget` removes it."
+    ]
+  },
+  "jsonSample": {
+    "command": "tess code github --json --at 2026-03-01T09:00:13Z",
+    "output": "{\n  \"id\": \"412a531ecbef1dc1eec6e339c5cad7d9\",\n  \"handle\": \"gi\",\n  \"issuer\": \"GitHub\",\n  \"account\": \"octocat\",\n  \"type\": \"totp\",\n  \"code\": \"333380\",\n  \"next_code\": \"855842\",\n  \"expires_in\": 17\n}"
+  }
 }

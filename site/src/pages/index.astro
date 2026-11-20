@@ -4,24 +4,32 @@ import AppShot from "../components/AppShot.astro";
 import HeroVideo from "../components/HeroVideo.astro";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { CLI_PLATFORMS, CLI_SIGNATURE, HAS_LINUX_PACKAGES, HAS_WINDOWS_BUILD, LINUX_PACKAGES, WINDOWS_ARCHIVES, versions } from "../data/release";
+import { joinList } from "../data/release-model";
+import { GO_VERSION } from "../data/toolchain";
 
+const site = "https://tessera.ibrahemid.com";
 const repo = "https://github.com/ibrahemid/tessera";
 const blob = `${repo}/blob/main`;
 const appStore = "https://apps.apple.com/app/tessera-2fa-authenticator/id6788814172";
 
-const cliVersion = "1.1.0";
+const cliVersion = versions.cli.version;
+const cliPlatforms = CLI_PLATFORMS;
 const goCmd = "go install github.com/ibrahemid/tessera/go/cmd/tess@latest";
 const brewCmd = "brew install ibrahemid/tap/tess";
 const trustCmd = "brew trust ibrahemid/tap";
-const curlCmd = `curl -fsSL ${repo.replace("github.com", "raw.githubusercontent.com")}/main/install.sh | sh`;
+const curlCmd = `curl --proto '=https' --tlsv1.2 -fsSL ${repo.replace("github.com", "raw.githubusercontent.com")}/main/install.sh | sh`;
 const tapFormula = "https://github.com/ibrahemid/homebrew-tap/blob/main/Formula/tess.rb";
-const releaseBase = `${repo}/releases/download/v${cliVersion}`;
-const tarballs = [
-  ["macOS, Apple silicon", `tess_${cliVersion}_darwin_arm64.tar.gz`, "75df08b715dc31a326d25061a64171423bce245cf6f5943753577470a0275568"],
-  ["macOS, Intel", `tess_${cliVersion}_darwin_amd64.tar.gz`, "84cd31b461cc868cdb219b3da47c7885fff70f9a6b501a69258d1b5aea5399f7"],
-  ["Linux, arm64", `tess_${cliVersion}_linux_arm64.tar.gz`, "baf83665ca822a8f75882cc9e08178593d8ca65bbf8c6deb3d4158fbb4264346"],
-  ["Linux, x86_64", `tess_${cliVersion}_linux_amd64.tar.gz`, "94144967eddcc5635ce2f1087ea51644fc7195b8482a7c28c12622804b933387"],
-];
+const releases = `${repo}/releases`;
+const releaseBase = `${releases}/download/v${cliVersion}`;
+const archives = versions.cli.files;
+const packageFormatNames: Record<string, string> = { deb: "deb", rpm: "rpm", apk: "apk", "pkg.tar.zst": 'Arch (<span class="mono">.pkg.tar.zst</span>)' };
+const linuxPackageFormats = joinList(LINUX_PACKAGES.formats.map((f) => packageFormatNames[f]));
+const linuxPackageArches = joinList(LINUX_PACKAGES.arches);
+const shasumCmd = "shasum -a 256 -c --ignore-missing checksums.txt";
+const escapeHtml = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const getCommandHtml = (cmd: string) => cmd.split(" ").map((t) => (t.startsWith("-") ? `<span class="whitespace-nowrap">${escapeHtml(t)}</span>` : escapeHtml(t))).join(" ");
+const verifyCmd = CLI_SIGNATURE && `cosign verify-blob --bundle ${CLI_SIGNATURE} --certificate-identity ${repo}/.github/workflows/release.yml@refs/tags/v${cliVersion} --certificate-oidc-issuer https://token.actions.githubusercontent.com checksums.txt`;
 
 const pillars = [
   {
@@ -59,8 +67,8 @@ const security = [
   },
   {
     t: "No network entitlement",
-    d: "The app's entitlements are App Sandbox, user-selected files and app-scoped bookmarks. There is no network entitlement, so the app cannot open a connection. The CLI makes no network connections: it imports neither net nor net/http.",
-    links: [[`${blob}/swift/App/Resources/Tessera.entitlements`, "swift/App/Resources/Tessera.entitlements"], [`${blob}/go/go.mod`, "go/go.mod"]],
+    d: "The app's entitlements are App Sandbox, user-selected files and app-scoped bookmarks. There is no network entitlement, so the app cannot open a connection. The CLI links no HTTP or TLS code and never opens a network connection; on Linux it talks to the Secret Service over the local D-Bus socket.",
+    links: [[`${repo}/blob/v${versions.app.version}/swift/App/Resources/Tessera.entitlements`, "swift/App/Resources/Tessera.entitlements"], [`${blob}/scripts/gate.sh`, "scripts/gate.sh"]],
   },
   {
     t: "Sandboxed",
@@ -69,12 +77,34 @@ const security = [
   },
 ];
 
-const others = [
-  ["Ente Auth", "Free, open source, end-to-end encrypted sync across devices. Not on the Mac App Store.", "Local only, on the Mac App Store, with a command line.", "/vs/ente"],
-  ["Authy", "Tied to a phone number and an account, closed source; the desktop app ended in August 2024.", "No account. A local file you own.", "/vs/authy"],
-  ["2FAS", "A phone app; on a Mac, a browser extension.", "A native Mac app plus a command line.", null],
-  ["Raivo", "Open source on Apple platforms until it changed hands.", "Apache-2.0, a documented format, export in one command.", null],
-  ["oathtool, pass-otp", "Command-line tools with secrets in plain files or gpg, and no app.", "The same scriptability, an encrypted vault, Touch ID in the app, a window when you want one.", null],
+type Other = { name: string; them: string; us: string; vs?: string; sources: [string, string][] };
+const others: Other[] = [
+  {
+    name: "Ente Auth",
+    them: "Free and open source, with end-to-end encrypted sync on phones, the web and desktop.",
+    us: "Local only, on the Mac App Store, with a command line.",
+    vs: "/vs/ente",
+    sources: [["https://ente.com/auth/", "ente.com/auth"], ["https://ente.com/help/auth/", "ente.com/help/auth"]],
+  },
+  {
+    name: "Authy",
+    them: "An account on your phone number, with encrypted backups of your 2FA data in Authy's cloud.",
+    us: "No account. A local file you own.",
+    vs: "/vs/authy",
+    sources: [["https://authy.com/features/", "authy.com/features"], ["https://authy.com/help/", "authy.com/help"]],
+  },
+  {
+    name: "2FAS",
+    them: "Native iOS and Android apps, and a browser extension.",
+    us: "A native Mac app plus a command line.",
+    sources: [["https://2fas.com/", "2fas.com"], ["https://2fas.com/auth/", "2fas.com/auth"]],
+  },
+  {
+    name: "oathtool, pass-otp",
+    them: "oathtool prints a code for a key given on the command line or in a file; pass-otp keeps otpauth URIs in pass entries.",
+    us: "The same scriptability, an encrypted vault, Touch ID in the app, a window when you want one.",
+    sources: [["https://oath-toolkit.codeberg.page/oathtool.1.html", "oathtool(1)"], ["https://github.com/pass-extension/pass-otp", "pass-otp"]],
+  },
 ];
 
 // Owed loops (Screen Studio, specs in design/ASSETS.md). A slot renders only once its
@@ -95,19 +125,40 @@ const loops = [
   },
 ].filter((l) => ["mp4", "webm", "poster.webp"].every((ext) => existsSync(`${mediaDir}${l.base}${ext === "poster.webp" ? "-poster.webp" : "." + ext}`)));
 
+const license = "https://www.apache.org/licenses/LICENSE-2.0";
+const freeOffer = { "@type": "Offer", price: "0", priceCurrency: "USD" };
 const softwareLd = {
   "@context": "https://schema.org",
-  "@type": "SoftwareApplication",
-  name: "Tessera",
-  applicationCategory: "SecurityApplication",
-  operatingSystem: "macOS 14",
-  url: "https://tessera.ibrahemid.com",
-  downloadUrl: [appStore, `${repo}/releases`],
-  installUrl: [appStore, `${repo}/releases`],
-  softwareVersion: cliVersion,
-  license: "https://www.apache.org/licenses/LICENSE-2.0",
-  isAccessibleForFree: true,
-  offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+  "@graph": [
+    {
+      "@type": "SoftwareApplication",
+      "@id": `${site}/#app`,
+      name: "Tessera",
+      applicationCategory: "SecurityApplication",
+      operatingSystem: `macOS ${versions.app.minimumMacOS}`,
+      url: site,
+      downloadUrl: appStore,
+      installUrl: appStore,
+      softwareVersion: versions.app.version,
+      license,
+      isAccessibleForFree: true,
+      offers: freeOffer,
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": `${site}/#cli`,
+      name: "tess",
+      applicationCategory: "SecurityApplication",
+      operatingSystem: versions.cli.platforms.join(", "),
+      url: `${site}/cli`,
+      downloadUrl: releases,
+      installUrl: `${site}/#install`,
+      softwareVersion: cliVersion,
+      license,
+      isAccessibleForFree: true,
+      offers: freeOffer,
+    },
+  ],
 };
 ---
 
@@ -129,10 +180,10 @@ const softwareLd = {
           <div class="cmd hero-cmd"><code><span class="p">$</span>{brewCmd}</code><button type="button" data-copy={brewCmd} aria-label="Copy the Homebrew command">Copy</button></div>
         </div>
         <p class="mt-5 text-sm faint">
-          macOS 14 or later · Apache-2.0 · tess {cliVersion} for macOS and Linux · <a href="#install">all install options</a>
+          macOS {versions.app.minimumMacOS} or later · Apache-2.0 · tess for {cliPlatforms} · <a href="#install">all install options</a>
         </p>
       </div>
-      <div class="hero-demo">
+      <figure class="hero-demo hero-frame">
         <HeroVideo
           src="/media/hero"
           poster="/media/hero-poster.webp"
@@ -140,8 +191,8 @@ const softwareLd = {
           height={720}
           alt="tess in a terminal: the live watch view with five accounts, codes and full countdown bars, then adding GitHub from a QR image, copying its code and printing it as JSON"
         />
-        <p class="text-xs faint mt-3">Recorded from the real CLI against a throwaway vault.</p>
-      </div>
+        <figcaption class="text-xs faint">Recorded from the real CLI against a throwaway vault.</figcaption>
+      </figure>
     </div>
   </section>
 
@@ -152,7 +203,7 @@ const softwareLd = {
       <a href={appStore} rel="noopener" class="inline-block mt-5" aria-label="Download on the Mac App Store">
         <img src="/mac-app-store-badge.svg" alt="" width="156" height="40" class="badge-store" style="height: 3.4rem" />
       </a>
-      <p class="mt-3 text-sm soft">App version 1.1.0.</p>
+      <p class="mt-3 text-sm soft">App version {versions.app.version}.</p>
       <p class="mt-6 text-sm soft measure">The app and the CLI are separate downloads. They share one vault once you open the CLI's file in the app, or set a recovery passphrase in the app's settings.</p>
     </div>
     <div class="install-cli">
@@ -168,40 +219,66 @@ const softwareLd = {
         <div class="row">
           <dt>Script</dt>
           <dd>
-            <div class="cmd"><code><span class="p">$</span>{curlCmd}</code><button type="button" data-copy={curlCmd} aria-label="Copy the install script command">Copy</button></div>
-            <span class="src">Downloads the release tarball for the current OS and CPU, verifies its sha256 against checksums.txt, and puts <span class="mono">tess</span> in /usr/local/bin or ~/.local/bin. Read <a href={`${blob}/install.sh`} rel="noopener">install.sh</a> first.</span>
+            <div class="cmd"><code><span class="p">$</span><Fragment set:html={getCommandHtml(curlCmd)} /></code><button type="button" data-copy={curlCmd} aria-label="Copy the install script command">Copy</button></div>
+            <span class="src">{HAS_WINDOWS_BUILD && "For macOS and Linux. "}Downloads the release tarball for the current OS and CPU, verifies its sha256 against checksums.txt, and puts <span class="mono">tess</span> in /usr/local/bin or ~/.local/bin.{CLI_SIGNATURE && <> When <span class="mono">cosign</span> is on your PATH, it first verifies the signature on checksums.txt and installs nothing if that fails.</>} Read <a href={`${blob}/install.sh`} rel="noopener">install.sh</a> first.</span>
           </dd>
         </div>
+        {HAS_LINUX_PACKAGES && (
         <div class="row">
-          <dt>Tarballs</dt>
+          <dt>Linux packages</dt>
+          <dd>
+            A <span class="mono">tessera</span> package in <Fragment set:html={linuxPackageFormats} /> formats for {linuxPackageArches}. It installs <span class="mono">/usr/bin/tess</span>, completions for bash, zsh and fish, and man pages.
+            <span class="src">The packages carry no package-manager signature; check the file against checksums.txt first. <a href={`${blob}/README.md#linux-packages`} rel="noopener">Install commands</a>&nbsp;· <a href={releases} rel="noopener">Releases</a></span>
+          </dd>
+        </div>
+        )}
+        {HAS_WINDOWS_BUILD && (
+        <div class="row">
+          <dt>Windows</dt>
+          <dd>
+            Download {WINDOWS_ARCHIVES.map(({ file }, i) => <>{i > 0 && (i === WINDOWS_ARCHIVES.length - 1 ? " or " : ", ")}<span class="mono">{file}</span></>)}, unzip it, and put <span class="mono">tess.exe</span> on your PATH.
+          </dd>
+        </div>
+        )}
+        <div class="row">
+          <dt>Archives</dt>
           <dd>
             <ul class="tarballs">
-              {tarballs.map(([label, file, sha]) => (
+              {archives.map(({ label, file, sha256 }) => (
                 <li>
                   <a href={`${releaseBase}/${file}`} rel="noopener">{label}</a>
-                  <span class="mono sha">{sha}</span>
+                  <span class="mono sha">{sha256}</span>
                 </li>
               ))}
             </ul>
-            <span class="src">v{cliVersion} · <a href={`${releaseBase}/checksums.txt`} rel="noopener">checksums.txt</a> · <a href={`${repo}/releases`} rel="noopener">all releases</a></span>
+            <span class="src">v{cliVersion} · <a href={`${releaseBase}/checksums.txt`} rel="noopener">checksums.txt</a> · <a href={releases} rel="noopener">all releases</a></span>
+            {verifyCmd && (
+              <>
+                <span class="src">checksums.txt is signed with keyless cosign. Download it and <a href={`${releaseBase}/${CLI_SIGNATURE}`} rel="noopener">{CLI_SIGNATURE}</a> next to the archive, then:</span>
+                <div class="cmd mt-2"><code><span class="p">$</span><Fragment set:html={getCommandHtml(verifyCmd)} /></code><button type="button" data-copy={verifyCmd} aria-label="Copy the cosign verify command">Copy</button></div>
+                <div class="cmd mt-2"><code><span class="p">$</span><Fragment set:html={getCommandHtml(shasumCmd)} /></code><button type="button" data-copy={shasumCmd} aria-label="Copy the checksum command">Copy</button></div>
+                <span class="src">Every file also carries a build provenance attestation, checked with <span class="mono">gh attestation verify &lt;file&gt; --repo ibrahemid/tessera</span>. <a href={`${blob}/README.md#verifying-a-download`} rel="noopener">Verifying a download</a></span>
+              </>
+            )}
           </dd>
         </div>
         <div class="row">
           <dt>From source</dt>
           <dd>
             <div class="cmd"><code><span class="p">$</span>{goCmd}</code><button type="button" data-copy={goCmd} aria-label="Copy the go install command">Copy</button></div>
-            <span class="src">Go 1.26.2 or later.</span>
+            <span class="src">Go {GO_VERSION} or later.</span>
           </dd>
         </div>
       </dl>
       <p class="mt-5 text-sm soft">
         Then <span class="mono">tess vault init</span>, <span class="mono">tess add</span>, <span class="mono">tess watch</span>.
-        Vault path: <span class="mono">~/.local/share/tessera/vault.json</span>. The full reference is on <a href="/cli">/cli</a>.
+        Vault path on macOS and Linux: <span class="mono">~/.local/share/tessera/vault.json</span>; {HAS_WINDOWS_BUILD ? "Windows and overrides are" : "overrides are"} under <a href="/cli#files">Files</a>.{" "}
+        <a href={`${blob}/README.md#launchers`} rel="noopener">Raycast and Alfred launchers</a> search accounts and copy or paste codes through <span class="mono">tess</span>. The full reference is on <a href="/cli">/cli</a>.
       </p>
     </div>
   </section>
 
-  <!-- ===== THE APP: sunken band, the live window runs off the right edge and over the next band ===== -->
+  <!-- ===== THE APP: sunken band, the live window runs off the right edge ===== -->
   <section id="app" class="band band-sunken app-band scroll-mt-20">
     <div class="u-bleed-right app">
       <div class="app-copy">
@@ -247,9 +324,9 @@ const softwareLd = {
         <div class="pillar">
           <h3 class="h-sub">{x.h}</h3>
           <p class="mt-3 soft">{x.p}</p>
-          <ul class="mt-4 space-y-1">
+          <ul class="mt-3">
             {x.links.map(([href, label]) => (
-              <li><a href={href} rel="noopener" class="mono text-[0.8rem]">{label}</a></li>
+              <li><a href={href} rel="noopener" class="mono text-[0.8rem] inline-flex items-center min-h-11">{label}</a></li>
             ))}
           </ul>
         </div>
@@ -271,7 +348,7 @@ const softwareLd = {
           <dt>{s.t}</dt>
           <dd>
             {s.d}
-            <span class="src">
+            <span class="src src-links">
               {s.links.map(([href, label], i) => (
                 <>{i > 0 && " · "}<a href={href} rel="noopener">{label}</a></>
               ))}
@@ -292,13 +369,20 @@ const softwareLd = {
       <h2 class="h-sub">Compared with the others</h2>
       <div class="cmp mt-8" role="table" aria-label="Tessera compared with other authenticators">
         <div class="cmp-head" role="row"><span role="columnheader"></span><span role="columnheader">Them</span><span role="columnheader">Tessera</span></div>
-        {others.map(([name, them, us, href]) => (
+        {others.map(({ name, them, us, vs, sources }) => (
           <div class="cmp-row" role="row">
             <div role="rowheader" class="cmp-name">
-              {name}
-              {href && <a href={href} class="block text-[0.85rem] mt-1">{`Tessera vs ${name}`}</a>}
+              <span class="block">{name}</span>
+              {vs && <a href={vs} class="text-[0.85rem]">{`Tessera vs ${name}`}</a>}
             </div>
-            <div role="cell"><span class="cmp-label">Them</span>{them}</div>
+            <div role="cell">
+              <span class="cmp-label">Them</span>{them}
+              <span class="cmp-src">
+                {sources.map(([href, label], i) => (
+                  <>{i > 0 && " · "}<a href={href} rel="noopener">{label}</a></>
+                ))}
+              </span>
+            </div>
             <div role="cell"><span class="cmp-label">Tessera</span>{us}</div>
           </div>
         ))}
@@ -330,6 +414,9 @@ const softwareLd = {
     align-items: center;
   }
   .hero-cmd { max-width: 100%; }
+  .hero-frame { margin: 0; border: 1px solid var(--band-line); border-radius: 0.75rem; overflow: hidden; background: #0e0f13; }
+  .hero-frame :global(.hero-media) { border: 0; border-radius: 0; }
+  .hero-frame figcaption { padding: 0.6rem 1rem; border-top: 1px solid var(--band-line); }
   @media (min-width: 1120px) {
     .hero {
       grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
@@ -344,12 +431,13 @@ const softwareLd = {
   .install .row { grid-template-columns: 1fr; }
   @media (min-width: 720px) { .install .row { grid-template-columns: minmax(8rem, 0.22fr) 1fr; } }
   .install .row > dd { max-width: none; }
-  .tarballs { display: grid; gap: 0.6rem; }
-  .tarballs a { color: var(--gold); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.15em; }
-  .sha { display: block; font-size: 0.72rem; color: var(--ink-faint); overflow-wrap: anywhere; }
+  .src-links a { display: inline-flex; align-items: center; min-height: 44px; }
+  .tarballs { display: grid; gap: 0.25rem; }
+  .tarballs a { display: inline-flex; align-items: center; min-height: 44px; color: var(--gold); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.15em; }
+  .sha { display: block; font-size: 0.72rem; color: var(--ink-soft); overflow-wrap: anywhere; }
 
   /* app */
-  .app-band { padding-block: 4.5rem 0; }
+  .app-band { padding-block: 4.5rem; }
   .app {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -362,10 +450,9 @@ const softwareLd = {
   .app-copy li { padding-left: 1.1rem; position: relative; }
   .app-copy li::before { content: ""; position: absolute; left: 0; top: 0.72em; width: 0.45rem; height: 0.45rem; border-radius: 2px; background: var(--gold); }
   @media (min-width: 900px) {
-    .app-band { padding-top: 5.5rem; }
+    .app-band { padding-block: 5.5rem; }
     .app { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 3rem; }
-    .app-copy { padding-bottom: 6rem; }
-    .app > :global(.app-shot) { margin-bottom: -3.5rem; }
+    .app-copy { padding-bottom: 2.5rem; }
   }
 
   /* loops */
@@ -394,7 +481,8 @@ const softwareLd = {
   .cmp-head, .cmp-row { display: grid; grid-template-columns: 1fr; gap: 0.5rem 2rem; padding: 1.1rem 0; border-bottom: 1px solid var(--line); }
   .cmp-head { display: none; }
   .cmp-name { font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; color: var(--ink); }
-  .cmp-name a { color: var(--gold); font-weight: 400; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.15em; }
+  .cmp-name a, .cmp-src a { display: inline-flex; align-items: center; min-height: 44px; color: var(--gold); font-weight: 400; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.15em; }
+  .cmp-src { display: block; margin-top: 0.25rem; font-size: 0.85rem; color: var(--ink-soft); }
   .cmp-row [role="cell"] { color: var(--ink-soft); max-width: 60ch; }
   .cmp-label { display: block; font-family: var(--font-display); font-weight: 700; font-size: 0.85rem; color: var(--ink); margin-bottom: 0.15rem; }
   @media (min-width: 720px) {

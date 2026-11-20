@@ -3,66 +3,84 @@ import Base from "../layouts/Base.astro";
 import PageHead from "../components/PageHead.astro";
 import HeroVideo from "../components/HeroVideo.astro";
 import cli from "../data/cli.json";
+import { HAS_LINUX_PACKAGES, IS_VAULT_V2_RELEASED } from "../data/release";
 
 const repo = "https://github.com/ibrahemid/tessera";
 const blob = `${repo}/blob/main`;
 
 const quickStart = [
-  ["tess vault init", "create an encrypted vault"],
-  ['tess add "otpauth://totp/ACME:me@x.com?secret=JBSWY3DPEHPK3PXP&issuer=ACME"', ""],
-  ["tess add code.png", "from a QR image"],
-  ["tess add --screen", "select a QR code on screen (macOS)"],
-  ['tess import --migration "otpauth-migration://offline?data=..."', "Google Authenticator export"],
-  ["tess import aegis-export.json", "another app's export, recognized by content"],
-  ["cat export.json | tess import -", "read the input from stdin, as tess add - does too"],
-  ["tess", "current codes with countdown bars"],
-  ["tess watch", "live view: / search, enter or c copy, q quit"],
-  ["tess acme", "one account's code, copied to the clipboard"],
-  ["tess ac --no-copy", "by handle, as shown by tess list, printed only"],
-  ["tess code acme --clear 30", "copy, then clear the clipboard after 30s"],
-  ["tess alias ac work", "set a handle"],
-  ["tess code --json", "machine-readable"],
-  ["tess vault remember", "store the passphrase in the login keychain"],
-  ["tess vault status", "path, file details, wrap methods, keychain state"],
-  ["tess export --file backup.json", "encrypted copy of the vault"],
-  ["tess export --format aegis --out aegis.json", "the vault in another app's export format"],
-  ["tess merge --two-way ~/other.json", "reconcile two vaults, writing both"],
-];
-
-const env = [
-  ["TESSERA_VAULT", "Vault path. Default ~/.local/share/tessera/vault.json; --vault overrides both."],
-  ["TESSERA_PASSPHRASE", "Skips the passphrase prompt. For scripts."],
-  ["TESSERA_NEW_PASSPHRASE", "The replacement passphrase for tess vault passwd."],
-  ["TESSERA_MERGE_PASSPHRASE", "The source vault's passphrase for tess merge, when it differs."],
-  ["TESSERA_CLIP_CLEAR", "Seconds after which a copied code is wiped from the clipboard. The --clear default."],
-  ["NO_COLOR", "Turns colored output off. Output is also plain when piped."],
+  ["create an encrypted vault", "tess vault init"],
+  ["add from an otpauth link", 'tess add "otpauth://totp/ACME:me@x.com?secret=JBSWY3DPEHPK3PXP&issuer=ACME"'],
+  ["from a QR image", "tess add code.png"],
+  ["select a QR code on screen (macOS, Linux)", "tess add --screen"],
+  ["Google Authenticator export", 'tess import --migration "otpauth-migration://offline?data=..."'],
+  ["another app's export, recognized by content", "tess import aegis-export.json"],
+  ["read the input from stdin, as tess add - does too", "cat export.json | tess import -"],
+  ["current codes with countdown bars", "tess"],
+  ["live view: / search, enter or c copy, q quit", "tess watch"],
+  ["one account's code, copied to the clipboard", "tess acme"],
+  ["by handle, as shown by tess list, printed only", "tess ac --no-copy"],
+  ["copy, then clear the clipboard after 30s", "tess code acme --clear 30"],
+  ["set a handle", "tess alias ac work"],
+  ["machine-readable", "tess code --json"],
+  ["store the passphrase in the system secret store", "tess vault remember"],
+  ["path, file details, unlock methods, backups, secret store", "tess vault status"],
+  ["encrypted copy of the vault", "tess export --file backup.json"],
+  ["the vault in another app's export format", "tess export --format aegis --out aegis.json"],
+  ["reconcile two vaults, writing both", "tess merge --two-way ~/other.json"],
 ];
 
 const commands = cli.commands.filter((c) => c.name !== "completion");
 const completion = cli.commands.find((c) => c.name === "completion");
-const shells = completion ? completion.subcommands.filter((s) => s.name !== "powershell") : [];
+const shells = completion ? completion.subcommands : [];
+
+const JSON_FLAG = /^\s+--json\b/m;
+const jsonCommands = cli.commands.flatMap((c) => [
+  ...(JSON_FLAG.test(c.help) ? [`tess ${c.name}`] : []),
+  ...c.subcommands.filter((s) => JSON_FLAG.test(s.help)).map((s) => `tess ${c.name} ${s.name}`),
+]);
 
 const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const inline = (t: string) => esc(t).replace(/`([^`]+)`/g, '<span class="mono">$1</span>');
+
 const quickStartHtml = quickStart
-  .map(([cmd, note]) => `<span class="p">$ </span>${esc(cmd)}${note ? `<span class="c">  # ${esc(note)}</span>` : ""}`)
+  .map(([note, cmd]) => `<span class="c"># ${esc(note)}</span>\n<span class="p">$ </span>${esc(cmd)}`)
   .join("\n");
-const jsonHtml = `<span class="p">$ </span>tess code github --json\n${esc(`{
-  "account": "ibra",
-  "code": "899519",
-  "expires_in": 17,
-  "issuer": "GitHub",
-  "type": "totp"
-}`)}`;
-const completionLines = [
-  ["# zsh, macOS with Homebrew", "tess completion zsh > $(brew --prefix)/share/zsh/site-functions/_tess"],
-  ["# zsh, Linux", 'tess completion zsh > "${fpath[1]}/_tess"'],
-  ["# bash, macOS with Homebrew (needs bash-completion)", "tess completion bash > $(brew --prefix)/etc/bash_completion.d/tess"],
-  ["# bash, Linux", "tess completion bash > /etc/bash_completion.d/tess"],
-  ["# fish", "tess completion fish > ~/.config/fish/completions/tess.fish"],
-];
-const completionsHtml = completionLines
-  .map(([c, cmd]) => `<span class="c">${esc(c)}</span>\n<span class="p">$ </span>${esc(cmd)}`)
+const jsonHtml = `<span class="p">$ </span>${esc(cli.jsonSample.command)}\n${esc(cli.jsonSample.output)}`;
+
+type CompletionLine = { label: string; cmd: string };
+function completionLinesFor(shell: { name: string; help: string }): CompletionLine[] {
+  const lines = shell.help.split("\n");
+  const commandsAfter = (marker: string) => {
+    const start = lines.findIndex((l) => l.startsWith(marker));
+    if (start < 0) return [];
+    const found: CompletionLine[] = [];
+    let os = "";
+    for (const l of lines.slice(start + 1)) {
+      if (l.startsWith("Usage:")) break;
+      const heading = l.match(/^#### (.+):$/);
+      if (heading) os = heading[1];
+      else if (l.startsWith("\t")) found.push({ label: os ? `${shell.name}, ${os}` : shell.name, cmd: l.trim() });
+    }
+    return found;
+  };
+  const everySession = commandsAfter("To load completions for every new session");
+  if (everySession.length > 0) return everySession;
+  return commandsAfter("To load completions in your current shell session").slice(0, 1).map((l) => ({ ...l, label: `${shell.name}, current session` }));
+}
+const needsBashCompletion = (help: string) => help.includes("depends on the 'bash-completion' package");
+const completionsHtml = shells
+  .flatMap((s) => completionLinesFor(s).map((l) => {
+    const note = s.name === "bash" && needsBashCompletion(s.help) ? `${l.label} (needs bash-completion)` : l.label;
+    const prompt = s.name === "powershell" ? "PS> " : "$ ";
+    return `<span class="c"># ${esc(note)}</span>\n<span class="p">${prompt}</span>${esc(l.cmd)}`;
+  }))
   .join("\n");
+const hasPowershell = shells.some((s) => s.name === "powershell");
+
+const env = cli.environment;
+const vault = cli.vaultLocation;
+const [vaultFileNote, ...vaultSecretNotes] = vault.notes;
 ---
 <Base
   title="tess command line · Tessera"
@@ -102,7 +120,7 @@ const completionsHtml = completionLines
     <div class="doc">
       <section id="quick-start" class="scroll-mt-20">
         <h2 class="h-sub">Quick start</h2>
-        <pre class="term mt-5"><code set:html={quickStartHtml} /></pre>
+        <pre class="term wrap mt-5"><code set:html={quickStartHtml} /></pre>
         <p class="mt-4 soft">
           <span class="mono">tess import</span> reads unencrypted exports from Aegis, 2FAS, Raivo, andOTP, FreeOTP+, Stratum, Bitwarden and Bitwarden Authenticator, Proton Authenticator, Ente Auth, Apple Passwords and 1Password, plus Google Authenticator transfer QR codes. <span class="mono">tess export --format</span> writes Aegis, 2FAS, Bitwarden Authenticator, Proton Authenticator, andOTP, Apple Passwords CSV and Google Authenticator QR codes back out.
         </p>
@@ -135,18 +153,22 @@ const completionsHtml = completionLines
       <section id="json" class="mt-16 scroll-mt-20">
         <h2 class="h-sub">JSON output</h2>
         <p class="mt-3 soft">
-          <span class="mono">tess code --json</span> and <span class="mono">tess list --json</span> print JSON for scripts. One account:
+          With <span class="mono">--json</span>, these commands print JSON for scripts:
+          {jsonCommands.map((c, i) => <>{i > 0 && ", "}<span class="mono">{c}</span></>)}. One account:
         </p>
-        <pre class="term mt-5"><code set:html={jsonHtml} /></pre>
+        <pre class="term wrap mt-5"><code set:html={jsonHtml} /></pre>
         <p class="mt-4 soft">
-          Without a query, <span class="mono">tess code --json</span> prints an array. Set <span class="mono">TESSERA_PASSPHRASE</span> to avoid the prompt, or run <span class="mono">tess vault remember</span> once. Errors go to stderr as <span class="mono">error: …</span> with exit status 1.
+          Without a query, <span class="mono">tess code --json</span> prints an array. Set <span class="mono">TESSERA_PASSPHRASE</span> to avoid the prompt, or run <span class="mono">tess vault remember</span> once. Errors go to stderr as text, with a non-zero exit status. Every field is listed in <a href={`${blob}/docs/CLI-JSON.md`} rel="noopener">docs/CLI-JSON.md</a>.
         </p>
       </section>
 
       <section id="completions" class="mt-16 scroll-mt-20">
         <h2 class="h-sub">Shell completions</h2>
-        <p class="mt-3 soft">Once per shell. Completing an account name reads the vault, so handles are offered once it opens without a prompt, from <span class="mono">TESSERA_PASSPHRASE</span> or the login keychain.</p>
-        <pre class="term mt-5"><code set:html={completionsHtml} /></pre>
+        <p class="mt-3 soft">Once per shell. Completing an account name reads the vault, so handles are offered once it opens without a prompt, from <span class="mono">TESSERA_PASSPHRASE</span> or the system secret store.{HAS_LINUX_PACKAGES && " The Linux packages install the bash, zsh and fish scripts."}</p>
+        <pre class="term wrap mt-5"><code set:html={completionsHtml} /></pre>
+        {hasPowershell && (
+          <p class="mt-4 soft">On Windows, add the output of <span class="mono">tess completion powershell</span> to your PowerShell profile to load it in every session.</p>
+        )}
         {shells.map((s) => (
           <details class="mt-4">
             <summary class="mono text-[0.9rem] cursor-pointer">tess completion {s.name} --help</summary>
@@ -158,26 +180,43 @@ const completionsHtml = completionLines
       <section id="environment" class="mt-16 scroll-mt-20">
         <h2 class="h-sub">Environment</h2>
         <dl class="rows mt-5">
-          {env.map(([k, v]) => (
+          {env.variables.map((v) => (
             <div class="row">
-              <dt class="mono" style="font-family: var(--font-mono); font-weight: 400; font-size: 0.9rem">{k}</dt>
-              <dd>{v}</dd>
+              <dt class="mono">{v.name}</dt>
+              <dd set:html={inline(v.effect)} />
             </div>
           ))}
         </dl>
+        {env.notes.map((n) => <p class="mt-4 soft" set:html={inline(n)} />)}
       </section>
 
       <section id="files" class="mt-16 mb-24 scroll-mt-20">
         <h2 class="h-sub">Files</h2>
         <dl class="rows mt-5">
           <div class="row">
-            <dt class="mono" style="font-family: var(--font-mono); font-weight: 400; font-size: 0.9rem">~/.local/share/tessera/vault.json</dt>
-            <dd>The vault. The Mac app can open this same file; pick it with Open existing vault and the app remembers it. Format on <a href="/vault-format">/vault-format</a>.</dd>
+            <dt>Vault</dt>
+            <dd>
+              <p set:html={inline(vault.lead)} />
+              <ul class="mt-2 paths">
+                {vault.platforms.map((p) => <li><span class="os">{p.os}:</span> <span set:html={inline(p.path)} /></li>)}
+              </ul>
+              {vaultFileNote && <p class="mt-3" set:html={inline(vaultFileNote)} />}
+              <p class="mt-3">The Mac app can open this same file: choose Use a vault created by the tess CLI on its empty window, or Use another vault file in Settings, Vault. The app remembers it. Format on <a href="/vault-format">/vault-format</a>.</p>
+              {IS_VAULT_V2_RELEASED && (
+                <p class="mt-3">tess 1.2.0 writes version 2 of the format once an account is in the Trash (<span class="mono">tess rm</span>, <span class="mono">tess dedupe</span>), has a note (<span class="mono">tess note</span>) or a position (<span class="mono">tess order</span>), or comes in from <span class="mono">tess import</span> with a note. The Mac app 1.1.0 and tess 1.1.0 refuse to open a version 2 vault, so nothing in it is lost; tess 1.2.0 keeps working with it. The vault goes back to version 1 once the Trash is empty (<span class="mono">tess restore</span>, <span class="mono">tess trash empty</span>) and no account has a note or a position (<span class="mono">tess note --clear</span>, <span class="mono">tess order --clear</span>).</p>
+              )}
+            </dd>
           </div>
           <div class="row">
-            <dt class="mono" style="font-family: var(--font-mono); font-weight: 400; font-size: 0.9rem">vault.json.lock</dt>
-            <dd>Held next to the vault for the length of a command so two tess processes cannot interleave writes.</dd>
+            <dt>Backups</dt>
+            <dd>With <span class="mono">TESSERA_BACKUP_DIR</span> set, every change to the vault writes <span class="mono">tessera-backup-YYYYMMDD.json</span> there; the folder keeps the 30 newest. <a href="#vault-backup">tess vault backup</a> writes one on demand.</dd>
           </div>
+          {vaultSecretNotes.length > 0 && (
+            <div class="row">
+              <dt>Passphrase</dt>
+              <dd>{vaultSecretNotes.map((n, i) => <p class={i > 0 ? "mt-3" : undefined} set:html={inline(n)} />)}</dd>
+            </div>
+          )}
           <div class="row">
             <dt>Source</dt>
             <dd><a href={`${blob}/go/cmd/tess`} rel="noopener">go/cmd/tess</a> is the command layer; <a href={`${blob}/go/internal`} rel="noopener">go/internal</a> holds the vault, OTP, otpauth and import code.</dd>
@@ -196,11 +235,22 @@ const completionsHtml = completionLines
   .toc li { line-height: 1.9; }
   .toc a { color: var(--ink-soft); }
   .toc a:hover { color: var(--ink); }
+  @media (max-width: 1023px) {
+    .toc ul ul { columns: 3; }
+    .toc li { line-height: 1.4; }
+    .toc a { display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; }
+  }
   @media (min-width: 1024px) {
     .docs { grid-template-columns: 13rem minmax(0, 1fr); gap: 4rem; }
     .toc { position: sticky; top: 5.5rem; align-self: start; }
     .toc ul ul { columns: 1; }
   }
   pre.term { white-space: pre; }
+  pre.term.wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
+  @media (min-width: 720px) {
+    .doc .row { grid-template-columns: minmax(max-content, 0.38fr) minmax(0, 1fr); }
+  }
+  .paths li { overflow-wrap: anywhere; }
+  .paths li + li { margin-top: 0.35rem; }
+  .paths .os { color: var(--ink); }
 </style>
-
