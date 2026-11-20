@@ -35,7 +35,7 @@ With $TESSERA_BACKUP_DIR set, every change to the vault writes this file too.`,
 				return err
 			}
 			defer s.close()
-			res, err := store.WriteBackup(dir, s.env, now(), false)
+			res, err := store.WriteBackup(dir, s.path, s.env, now(), false)
 			if res == nil {
 				return err
 			}

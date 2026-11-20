@@ -172,6 +172,7 @@ func v2Blocks() []member {
 		{"hotp_counter_range", hotpCounterRangeBlock()},
 		{"display_order", displayOrderBlock()},
 		{"rotation", rotationBlock()},
+		{"rotation_extra_passphrase", rotationExtraPassphraseBlock()},
 	}
 }
 
@@ -892,6 +893,32 @@ func rotationBlock() object {
 		{"expected_canonical_json", string(canonical)},
 		{"expected_version", 2},
 		{"expected_removed", []string{"secure-enclave", "hardware-key"}},
+		{"expected_wrap_types", []string{"passphrase"}},
+		{"kept_top_level", []string{"x_future"}},
+	}
+}
+
+func rotationExtraPassphraseBlock() object {
+	dek := pattern(32, 0x21)
+	acct := v2Account("51")
+	acct.Note = "rotated"
+	canonical := mustCanonical(acct)
+	nonce := pattern(24, 0x5a)
+	wraps := []any{
+		passWrap(dek, "another passphrase that also opens", v2LowCost, pattern(16, 0x90), pattern(24, 0x3a)),
+		passWrap(dek, v2Passphrase, v2LowCost, v2Salt, pattern(24, 0x39)),
+		seWrapObject(),
+		unknownWrap(1),
+	}
+	env := envelopeObject(2, wraps, nonce, xseal(dek, nonce, canonical)).with("x_future", object{{"note", "kept"}})
+	return object{
+		{"passphrase", v2Passphrase},
+		{"new_passphrase", v2NewPassphrase},
+		{"old_dek_b64", b64(dek)},
+		{"envelope", env},
+		{"expected_canonical_json", string(canonical)},
+		{"expected_version", 2},
+		{"expected_removed", []string{"passphrase", "secure-enclave", "hardware-key"}},
 		{"expected_wrap_types", []string{"passphrase"}},
 		{"kept_top_level", []string{"x_future"}},
 	}

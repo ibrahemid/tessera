@@ -136,10 +136,16 @@ func normalizeCode(a account.Account, input string) (string, error) {
 // matchStep returns the step offset from t, in -window..window and nearest
 // first, whose code is c.
 func matchStep(a account.Account, c string, t time.Time, window int) (int, bool, error) {
-	step := time.Duration(a.Period) * time.Second
 	for d := 0; d <= window; d++ {
 		for _, offset := range []int{-d, d} {
-			want, err := genCode(a, t.Add(time.Duration(offset)*step))
+			at, ok := stepStart(t, a.Period, int64(offset))
+			if !ok {
+				if d == 0 {
+					break
+				}
+				continue
+			}
+			want, err := genCode(a, at)
 			if err != nil {
 				return 0, false, err
 			}

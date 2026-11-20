@@ -35,6 +35,7 @@ func resolveVersion() string {
 }
 
 func main() {
+	hardenProcess()
 	restoreConsole, _ := ui.EnableConsole()
 	code := 0
 	if err := newRootCmd().Execute(); err != nil {

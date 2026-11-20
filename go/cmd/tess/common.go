@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -103,6 +104,7 @@ type unlockProvider struct {
 	lookup     func() (pass string, from secretstore.Backend, hit bool, err error) // silent secret store lookup for this vault
 	rememberIn func() secretstore.Backend                                          // store for a typed passphrase; nil when none may be offered
 	store      func(b secretstore.Backend, pass string) error                      // persist pass in b
+	remove     func(b secretstore.Backend) error                                   // delete this vault's entry from b
 	prompt     func(prompt string) (string, error)                                 // interactive passphrase prompt
 	confirm    func(prompt string) bool                                            // y/N prompt
 	tryOpen    func(pass string) ([]account.Account, error)
@@ -149,18 +151,40 @@ func resolvePassphrase(p unlockProvider) (string, []account.Account, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	if b := rememberTarget(p); b != nil {
-		q := fmt.Sprintf("Remember in the %s so tess stops prompting? [y/N] ", b.Name())
+	if chosen := rememberTarget(p); chosen != nil {
+		target := chosen
+		q := fmt.Sprintf("Remember in the %s so tess stops prompting? [y/N] ", chosen.Name())
 		if stale {
-			q = fmt.Sprintf("Stored passphrase no longer opens the vault. Update the %s entry? [y/N] ", storeNoun(b))
+			if staleFrom != nil {
+				target = staleFrom
+			}
+			q = fmt.Sprintf("Stored passphrase no longer opens the vault. Update the %s entry? [y/N] ", storeNoun(target))
 		}
 		if p.confirm(q) {
-			if serr := p.store(b, entered); serr != nil {
+			if serr := storeTyped(p, target, chosen, entered); serr != nil {
 				fmt.Fprintln(os.Stderr, "warning:", ui.Sanitize(userMessage(serr)))
 			}
 		}
 	}
 	return entered, accts, nil
+}
+
+// storeTyped writes pass to target, the store that held a stale entry or else
+// the chosen one. When that write fails and the chosen store is another one,
+// pass goes to the chosen store and the stale entry in target is deleted after,
+// so the next unlock does not find it first.
+func storeTyped(p unlockProvider, target, chosen secretstore.Backend, pass string) error {
+	err := p.store(target, pass)
+	if err == nil || target.ID() == chosen.ID() {
+		return err
+	}
+	if cerr := p.store(chosen, pass); cerr != nil {
+		return errors.Join(err, cerr)
+	}
+	if p.remove == nil {
+		return nil
+	}
+	return p.remove(target)
 }
 
 // rememberTarget is the store a typed passphrase may be offered to, or nil.
@@ -200,6 +224,9 @@ func interactiveContext(parent context.Context) (context.Context, context.Cancel
 	}
 }
 
+// promptVaultPassphrase reads the passphrase typed at the vault unlock prompt.
+var promptVaultPassphrase = promptPassphrase
+
 // interactiveUnlock resolves the passphrase from the environment, then the
 // secret store, then a terminal prompt, and offers to remember a typed one.
 func interactiveUnlock(path string) unlockProvider {
@@ -226,48 +253,68 @@ func interactiveUnlock(path string) unlockProvider {
 			defer stop()
 			return b.Store(ctx, path, pass, 0)
 		},
+		remove: func(b secretstore.Backend) error {
+			ctx, stop := interactiveContext(context.Background())
+			defer stop()
+			return b.Delete(ctx, path)
+		},
 		prompt: func(q string) (string, error) {
 			if !isTTY {
 				return "", errNoUnlockTerminal
 			}
-			return promptPassphrase(q)
+			return promptVaultPassphrase(q)
 		},
 		confirm: confirmYN,
 	}
 }
 
-// openSession resolves the vault path, takes the vault lock, loads the envelope
-// and decrypts it, resolving the passphrase from env, the secret store, or an
-// interactive prompt. Every caller must close the returned session.
+// openSession resolves the vault path and unlocks the vault with no lock held,
+// since that may prompt, then takes the vault lock and re-reads the vault under
+// it. Every caller must close the returned session.
 func openSession() (*session, error) {
 	path, err := store.Resolve(vaultPath)
 	if err != nil {
 		return nil, err
 	}
-	lock, err := store.Acquire(path)
+	s, seen, err := unlockVault(path, interactiveUnlock(path))
 	if err != nil {
 		return nil, err
 	}
-	s, err := loadSession(path)
+	lock, err := store.Acquire(path)
 	if err != nil {
-		_ = lock.Release()
+		s.close()
 		return nil, err
 	}
 	s.lock = lock
+	if err := s.reload(seen); err != nil {
+		s.close()
+		return nil, err
+	}
+	s.migrate()
 	return s, nil
 }
 
-// loadSession reads and decrypts the vault at path. The caller owns the lock.
-func loadSession(path string) (*session, error) {
-	return unlockSession(path, interactiveUnlock(path))
-}
-
-// unlockSession reads the vault at path and decrypts it with the passphrase p
-// resolves. The caller owns the lock.
+// unlockSession reads the vault at path, decrypts it with the passphrase p
+// resolves and persists the unlock migration. The caller owns the lock.
 func unlockSession(path string, p unlockProvider) (*session, error) {
-	env, err := store.Load(path)
+	s, _, err := unlockVault(path, p)
 	if err != nil {
 		return nil, err
+	}
+	s.migrate()
+	return s, nil
+}
+
+// unlockVault reads the vault at path and decrypts it with the passphrase p
+// resolves. It also returns the envelope as read, before the unlock changed it.
+func unlockVault(path string, p unlockProvider) (*session, []byte, error) {
+	env, err := store.Load(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	seen, err := env.Marshal()
+	if err != nil {
+		return nil, nil, err
 	}
 	var dek []byte
 	p.path = path
@@ -278,6 +325,7 @@ func unlockSession(path string, p unlockProvider) (*session, error) {
 		}
 		a, err := env.OpenWithDEK(d)
 		if err != nil {
+			zeroBytes(d)
 			return nil, err
 		}
 		dek = d
@@ -285,27 +333,72 @@ func unlockSession(path string, p unlockProvider) (*session, error) {
 	}
 	pass, accts, err := resolvePassphrase(p)
 	if err != nil {
-		return nil, withRestoreHint(path, err)
+		return nil, nil, withRestoreHint(path, err)
 	}
-	s := &session{path: path, env: env, passphrase: pass, dek: dek, accounts: accts}
-	// Migration: accounts written before handles existed gain one deterministically
-	// at unlock. An argon2 params.v upgrade performed during the unwrap rides the
-	// same write. Persist once, atomically (wraps otherwise untouched). A
-	// read-only vault keeps both in memory only; the next writable unlock redoes
-	// them from the same deterministic inputs.
-	if account.AssignHandles(s.accounts) || env.NeedsPersist() {
-		if err := env.UpdateAccountsWithDEK(dek, s.accounts); err == nil {
-			_, _ = saveVault(warnOut, path, env, false)
-		}
-	}
-	return s, nil
+	return &session{path: path, env: env, passphrase: pass, dek: dek, accounts: accts}, seen, nil
 }
 
-// close releases the vault lock. Safe on a nil session and safe to call twice.
+// reload re-reads the vault under the lock and takes what is on disk when it
+// differs from seen, the envelope the unlock read.
+func (s *session) reload(seen []byte) error {
+	env, err := store.Load(s.path)
+	if err != nil {
+		return err
+	}
+	now, err := env.Marshal()
+	if err != nil {
+		return err
+	}
+	if bytes.Equal(now, seen) {
+		return nil
+	}
+	accts, err := env.OpenWithDEK(s.dek)
+	if err != nil {
+		dek, uerr := env.UnwrapDEK(s.passphrase)
+		if errors.Is(uerr, vault.ErrWrongPassphrase) {
+			return &vaultChangedError{path: s.path}
+		}
+		if uerr != nil {
+			return uerr
+		}
+		if accts, err = env.OpenWithDEK(dek); err != nil {
+			zeroBytes(dek)
+			return err
+		}
+		zeroBytes(s.dek)
+		s.dek = dek
+	}
+	s.env, s.accounts = env, accts
+	return nil
+}
+
+// migrate persists what the unlock changed in memory: a handle for each account
+// written before handles existed, and an argon2 params.v upgrade performed
+// during the unwrap. Both go out in one atomic write that leaves the wraps
+// otherwise untouched. A read-only vault keeps both in memory only; the next
+// writable unlock redoes them from the same deterministic inputs.
+func (s *session) migrate() {
+	if account.AssignHandles(s.accounts) || s.env.NeedsPersist() {
+		if err := s.env.UpdateAccountsWithDEK(s.dek, s.accounts); err == nil {
+			_, _ = saveVault(warnOut, s.path, s.env, false)
+		}
+	}
+}
+
+// close releases the vault lock and clears the DEK. Safe on a nil session and
+// safe to call twice.
 func (s *session) close() {
 	if s == nil {
 		return
 	}
+	s.releaseLock()
+	zeroBytes(s.dek)
+	s.dek = nil
+}
+
+// releaseLock releases the vault lock and keeps the keys, for a command that
+// writes later through mutate. Safe to call twice.
+func (s *session) releaseLock() {
 	if err := s.lock.Release(); err != nil {
 		fmt.Fprintln(os.Stderr, "warning:", err)
 	}
@@ -323,14 +416,19 @@ func (s *session) mutate(fn func(*session) error) error {
 		return err
 	}
 	defer lock.Release()
+	return s.mutateHeld(fn)
+}
 
+// mutateHeld is mutate for a caller that already holds the vault lock.
+func (s *session) mutateHeld(fn func(*session) error) error {
 	env, err := store.Load(s.path)
 	if err != nil {
 		return err
 	}
 	dek := s.dek
 	accts, err := env.OpenWithDEK(dek)
-	if err != nil {
+	derived := err != nil
+	if derived {
 		// The vault was re-keyed while the view was idle: derive again.
 		dek, err = env.UnwrapDEK(s.passphrase)
 		if err != nil {
@@ -338,16 +436,24 @@ func (s *session) mutate(fn func(*session) error) error {
 		}
 		accts, err = env.OpenWithDEK(dek)
 		if err != nil {
+			zeroBytes(dek)
 			return err
 		}
 	}
 	account.AssignHandles(accts)
 	fresh := &session{path: s.path, env: env, passphrase: s.passphrase, dek: dek, accounts: accts}
-	if err := fn(fresh); err != nil {
+	err = fn(fresh)
+	if err == nil {
+		err = fresh.save()
+	}
+	if err != nil {
+		if derived {
+			zeroBytes(dek)
+		}
 		return err
 	}
-	if err := fresh.save(); err != nil {
-		return err
+	if derived {
+		zeroBytes(s.dek)
 	}
 	s.env, s.dek, s.accounts = fresh.env, fresh.dek, fresh.accounts
 	return nil

@@ -123,11 +123,13 @@ func HasPassphraseWrap(env *vault.Envelope) bool {
 
 // WriteBackup writes env, keeping only its passphrase wraps, to the day file
 // for at in dir, replacing a file of the same day. It then keeps the
-// BackupRetention newest files whose names match the backup pattern exactly,
-// or only the day file when rotated is set, since older files open with the
-// key the rotation replaced. When the day file is written but an older file
-// cannot be deleted, the result is returned with a *BackupPruneError.
-func WriteBackup(dir string, env *vault.Envelope, at time.Time, rotated bool) (*BackupResult, error) {
+// BackupRetention newest files whose names match the backup pattern exactly
+// and carry a real day no later than the UTC day of at, leaving other matching
+// names alone. When rotated is set it keeps only the day file, since older
+// files open with the key the rotation replaced. The file at vaultPath is never
+// deleted under any of its names. When the day file is written but an older
+// file cannot be deleted, the result is returned with a *BackupPruneError.
+func WriteBackup(dir, vaultPath string, env *vault.Envelope, at time.Time, rotated bool) (*BackupResult, error) {
 	if err := CheckBackupDir(dir); err != nil {
 		return nil, err
 	}
@@ -147,10 +149,11 @@ func WriteBackup(dir string, env *vault.Envelope, at time.Time, rotated bool) (*
 	}
 	name := BackupName(at)
 	path := filepath.Join(dir, name)
+	removeStaleTemps(dir, time.Now())
 	if err := writeAtomic(path, data, true); err != nil {
 		return nil, fmt.Errorf("store: could not write the backup %s: %w", path, err)
 	}
-	removed, err := pruneBackups(dir, name, rotated)
+	removed, err := pruneBackups(dir, name, vaultPath, at, rotated)
 	return &BackupResult{Path: path, Removed: removed}, err
 }
 
@@ -170,11 +173,17 @@ func ListBackups(dir string) ([]string, error) {
 	return names, nil
 }
 
-func pruneBackups(dir, keep string, rotated bool) ([]string, error) {
+func pruneBackups(dir, keep, vaultPath string, at time.Time, rotated bool) ([]string, error) {
 	names, err := ListBackups(dir)
 	if err != nil {
 		return nil, fmt.Errorf("store: list the backups in %s to delete older ones: %w", dir, err)
 	}
+	var vaultInfo os.FileInfo
+	if vaultPath != "" {
+		vaultInfo, _ = os.Stat(vaultPath)
+	}
+	y, m, d := at.UTC().Date()
+	today := time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
 	var removed, failed []string
 	var firstErr error
 	kept := 1
@@ -182,11 +191,21 @@ func pruneBackups(dir, keep string, rotated bool) ([]string, error) {
 		if name == keep {
 			continue
 		}
-		if !rotated && kept < BackupRetention {
-			kept++
-			continue
-		}
 		path := filepath.Join(dir, name)
+		if vaultInfo != nil {
+			if info, err := os.Stat(path); err == nil && os.SameFile(info, vaultInfo) {
+				continue
+			}
+		}
+		if !rotated {
+			if day, ok := BackupDate(name); !ok || day.After(today) {
+				continue
+			}
+			if kept < BackupRetention {
+				kept++
+				continue
+			}
+		}
 		if err := removeFile(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			failed = append(failed, path)
 			if firstErr == nil {

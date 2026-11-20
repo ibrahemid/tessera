@@ -146,7 +146,6 @@ func TestCodeCopyRules(t *testing.T) {
 		{"piped without -c does not", false, []string{"acme"}, false},
 		{"terminal copies", true, []string{"acme"}, true},
 		{"no-copy on a terminal does not", true, []string{"acme", "--no-copy"}, false},
-		{"no-copy beats -c", true, []string{"acme", "-c", "--no-copy"}, false},
 		{"json with -c copies", false, []string{"acme", "--json", "-c"}, true},
 	}
 	for _, tc := range cases {
@@ -162,6 +161,27 @@ func TestCodeCopyRules(t *testing.T) {
 			}
 			if got := copied != ""; got != tc.want {
 				t.Errorf("copied %q, want copy = %v", copied, tc.want)
+			}
+		})
+	}
+}
+
+func TestCodeRejectsNoCopyWithCopy(t *testing.T) {
+	for _, args := range [][]string{{"code", "acme", "-c", "--no-copy"}, {"acme", "--no-copy", "-c"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			path := withVault(t)
+			sealVault(t, path, []account.Account{totp("a", "ACME", "x", 1)})
+			stubTTY(t, true)
+			stubClipboard(t, func(string) error {
+				t.Error("a rejected run must not touch the clipboard")
+				return nil
+			})
+			stdout, _, err := runRootStreams(t, args...)
+			if !errors.Is(err, errNoCopyAndCopy) {
+				t.Fatalf("err = %v, want %v", err, errNoCopyAndCopy)
+			}
+			if stdout != "" {
+				t.Errorf("stdout = %q", stdout)
 			}
 		})
 	}

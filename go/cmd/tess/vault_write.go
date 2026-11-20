@@ -28,15 +28,15 @@ func saveVault(w io.Writer, path string, env *vault.Envelope, rotated bool) (*st
 			warn(w, fmt.Sprintf("%s still opens with the old key and could not be deleted (%s); delete it", store.BackupPath(path), userMessage(err)))
 		}
 	}
-	return writeAutoBackup(w, env, rotated), nil
+	return writeAutoBackup(w, path, env, rotated), nil
 }
 
-func writeAutoBackup(w io.Writer, env *vault.Envelope, rotated bool) *store.BackupResult {
+func writeAutoBackup(w io.Writer, path string, env *vault.Envelope, rotated bool) *store.BackupResult {
 	dir := os.Getenv(backupDirEnv)
 	if dir == "" {
 		return nil
 	}
-	res, err := store.WriteBackup(dir, env, now(), rotated)
+	res, err := store.WriteBackup(dir, path, env, now(), rotated)
 	if err != nil {
 		warn(w, backupFailure(err))
 	}

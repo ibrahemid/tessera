@@ -7,6 +7,10 @@ import (
 )
 
 func (e *Envelope) Rotate(passphrase string, accounts []account.Account) ([]byte, []string, error) {
+	return e.rotate(slices.IndexFunc(e.Wraps, func(w wrap) bool { return w.Type == passphraseType }), passphrase, accounts)
+}
+
+func (e *Envelope) rotate(replaced int, passphrase string, accounts []account.Account) ([]byte, []string, error) {
 	if err := validateAccounts(accounts); err != nil {
 		return nil, nil, err
 	}
@@ -27,8 +31,8 @@ func (e *Envelope) Rotate(passphrase string, accounts []account.Account) ([]byte
 		return nil, nil, err
 	}
 	removed := []string{}
-	for _, w := range e.Wraps {
-		if w.Type != passphraseType && !slices.Contains(removed, w.Type) {
+	for i, w := range e.Wraps {
+		if i != replaced && !slices.Contains(removed, w.Type) {
 			removed = append(removed, w.Type)
 		}
 	}
@@ -41,7 +45,7 @@ func (e *Envelope) Rotate(passphrase string, accounts []account.Account) ([]byte
 }
 
 func (e *Envelope) RotatePassphrase(old, new string) ([]string, error) {
-	dek, _, err := e.unwrapWithPassphrase(old)
+	dek, opened, err := e.unwrapWithPassphrase(old)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +53,7 @@ func (e *Envelope) RotatePassphrase(old, new string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, removed, err := e.Rotate(new, accounts)
+	_, removed, err := e.rotate(opened, new, accounts)
 	if err != nil {
 		return nil, err
 	}

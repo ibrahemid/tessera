@@ -68,8 +68,9 @@ func dedupeAccounts(cmd *cobra.Command, yes bool) error {
 	if err != nil {
 		return err
 	}
+	defer s.close()
 	groups := findDuplicates(s.accounts)
-	s.close()
+	s.releaseLock()
 	if len(groups) == 0 {
 		out(cmd, "No duplicates.")
 		return nil

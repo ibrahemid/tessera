@@ -146,6 +146,29 @@ func TestSecretLookingQueryIsNotEchoed(t *testing.T) {
 	}
 }
 
+func TestMalformedSecretQueryIsNotEchoed(t *testing.T) {
+	withVault(t)
+	sealVault(t, vaultPath, []account.Account{totp("a", "ACME", "x", 1)})
+	for _, q := range []string{
+		"otpauth//totp/X:y?secret=GEZDGNBVGY3TQOJQ",
+		"secret=GEZDGNBVGY3TQOJQ",
+		"issuer=X&SECRET=GEZDGNBVGY3TQOJQ",
+		"otpauth-migration//offline?data=GEZDGNBVGY3TQOJQ",
+		"Data=GEZDGNBVGY3TQOJQ",
+	} {
+		stdout, stderr, err := runRootStreams(t, "code", q)
+		if err == nil {
+			t.Fatalf("%q matched an account", q)
+		}
+		if strings.Contains(stdout+stderr, "GEZDGNBVGY3TQOJQ") {
+			t.Errorf("the secret was echoed: stdout %q stderr %q", stdout, stderr)
+		}
+		if !strings.Contains(stderr, "`tess add`") {
+			t.Errorf("the error should point at tess add, got %q", stderr)
+		}
+	}
+}
+
 func TestAmbiguousQueryOffATerminalExitsTwo(t *testing.T) {
 	for _, args := range [][]string{{"code", "acme"}, {"acme"}, {"show", "acme"}} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
@@ -177,6 +200,40 @@ func TestAmbiguousQueryJSONStaysOnStdout(t *testing.T) {
 	}
 	if !strings.HasPrefix(strings.TrimSpace(stdout), "[") {
 		t.Errorf("want a JSON array on stdout, got %q", stdout)
+	}
+}
+
+func TestAmbiguousQueryWithCopyExitsTwo(t *testing.T) {
+	cases := []struct {
+		args []string
+		tty  bool
+	}{
+		{[]string{"code", "acme", "-c", "--json"}, false},
+		{[]string{"code", "acme", "-c", "--json"}, true},
+		{[]string{"code", "acme", "-c"}, true},
+		{[]string{"acme", "-c"}, true},
+	}
+	for _, c := range cases {
+		t.Run(fmt.Sprintf("%s tty=%v", strings.Join(c.args, " "), c.tty), func(t *testing.T) {
+			withVault(t)
+			sealVault(t, vaultPath, []account.Account{handled("a", "ACME", "one", "ac"), handled("b", "ACME", "two", "ac2")})
+			stubTTY(t, c.tty)
+			stubClipboard(t, func(string) error {
+				t.Error("an ambiguous query must not copy anything")
+				return nil
+			})
+			stdout, stderr, err := runRootStreams(t, c.args...)
+			var exit *exitError
+			if !errors.As(err, &exit) || exit.code != 2 {
+				t.Fatalf("err = %v, want exit status 2", err)
+			}
+			if stdout != "" {
+				t.Errorf("the match table belongs on stderr, stdout = %q", stdout)
+			}
+			if !strings.Contains(stderr, "ac2") || !strings.HasSuffix(stderr, "error: 2 accounts match \"acme\"; pass an alias\n") {
+				t.Errorf("stderr = %q", stderr)
+			}
+		})
 	}
 }
 

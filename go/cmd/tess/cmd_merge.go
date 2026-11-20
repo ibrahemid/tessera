@@ -54,39 +54,26 @@ var errNothingToWrite = errors.New("nothing to write")
 
 // mergeFromSource unlocks the source with no lock held, since that may ask for its
 // passphrase, then merges under the destination lock and, with twoWay, the
-// source lock taken after it.
+// source lock as well, both taken in the order withVaultPair sets.
 func mergeFromSource(cmd *cobra.Command, srcPath string, twoWay bool) error {
 	s, err := openSession()
 	if err != nil {
 		return err
 	}
+	defer s.close()
 	if twoWay {
 		if err := checkTwoWaySource(s.path, srcPath); err != nil {
-			s.close()
 			return err
 		}
 	}
-	s.close()
+	s.releaseLock()
 	key, err := unlockMergeSource(srcPath, s.passphrase)
 	if err != nil {
 		return err
 	}
 	defer zeroBytes(key.dek)
 	var report string
-	err = s.mutate(func(fresh *session) error {
-		if twoWay {
-			// The source lock is taken AFTER the destination's, and always in
-			// that order, so two runs pointed at each other cannot deadlock.
-			lock, err := store.Acquire(srcPath)
-			if err != nil {
-				return err
-			}
-			defer func() {
-				if rerr := lock.Release(); rerr != nil {
-					fmt.Fprintln(os.Stderr, "warning:", rerr)
-				}
-			}()
-		}
+	apply := func(fresh *session) error {
 		srcAccts, env, dek, err := loadMergeSource(srcPath, key)
 		if err != nil {
 			return err
@@ -105,7 +92,12 @@ func mergeFromSource(cmd *cobra.Command, srcPath string, twoWay bool) error {
 			return errNothingToWrite
 		}
 		return nil
-	})
+	}
+	if twoWay {
+		err = withVaultPair(s.path, srcPath, func() error { return s.mutateHeld(apply) })
+	} else {
+		err = s.mutate(apply)
+	}
 	if err != nil && !errors.Is(err, errNothingToWrite) {
 		return err
 	}
@@ -172,6 +164,40 @@ func saveMergeSource(path string, env *vault.Envelope, dek []byte, accts []accou
 		return err
 	}
 	return store.Save(path, env)
+}
+
+// withVaultPair runs fn holding the locks of the vaults at a and b. The locks
+// are taken in the order of the fully resolved paths, the same order for every
+// run, so two runs locking the same two vaults cannot wait on each other.
+func withVaultPair(a, b string, fn func() error) error {
+	ka, err := resolvePath(a)
+	if err != nil {
+		return err
+	}
+	kb, err := resolvePath(b)
+	if err != nil {
+		return err
+	}
+	if kb < ka {
+		a, b = b, a
+	}
+	first, err := store.Acquire(a)
+	if err != nil {
+		return err
+	}
+	defer releaseVaultLock(first)
+	second, err := store.Acquire(b)
+	if err != nil {
+		return err
+	}
+	defer releaseVaultLock(second)
+	return fn()
+}
+
+func releaseVaultLock(l *store.Lock) {
+	if err := l.Release(); err != nil {
+		fmt.Fprintln(os.Stderr, "warning:", err)
+	}
 }
 
 // sameVaultFile reports whether two paths name the same file. Symlinks are

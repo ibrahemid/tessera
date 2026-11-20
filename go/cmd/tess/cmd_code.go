@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -65,19 +66,22 @@ type codeOptions struct {
 }
 
 var (
-	errAllWithQuery = errors.New("--all prints every account; drop the query or drop --all")
-	errAllWithNext  = errors.New("--all never advances a counter; advance one with `tess code <query> --next`")
-	errAllWithCopy  = errors.New("--all never copies; copy one code with `tess code <query> -c`")
-	errAtNoQuery    = errors.New("--at needs an account: `tess code <query> --at <time>`")
-	errAtWithNext   = errors.New("--at already picks the time; drop --next")
-	errAtWithCopy   = errors.New("--at never copies; drop -c")
-	errAtTime       = errors.New("--at takes an RFC 3339 time such as 2026-01-02T15:04:05Z, or unix seconds")
-	errAtCounter    = errors.New("--at works only for time-based accounts, and this one counts codes (HOTP)")
+	errNoCopyAndCopy = errors.New("--no-copy and -c ask for opposite things; drop one")
+	errAllWithQuery  = errors.New("--all prints every account; drop the query or drop --all")
+	errAllWithNext   = errors.New("--all never advances a counter; advance one with `tess code <query> --next`")
+	errAllWithCopy   = errors.New("--all never copies; copy one code with `tess code <query> -c`")
+	errAtNoQuery     = errors.New("--at needs an account: `tess code <query> --at <time>`")
+	errAtWithNext    = errors.New("--at already picks the time; drop --next")
+	errAtWithCopy    = errors.New("--at never copies; drop -c")
+	errAtTime        = errors.New("--at takes an RFC 3339 time such as 2026-01-02T15:04:05Z, or unix seconds")
+	errAtCounter     = errors.New("--at works only for time-based accounts, and this one counts codes (HOTP)")
 )
 
 // validate rejects flag combinations that ask for something the run would not do.
 func (o codeOptions) validate(hasQuery bool) error {
 	switch {
+	case o.noCopy && o.forceCopy:
+		return errNoCopyAndCopy
 	case o.all && hasQuery:
 		return errAllWithQuery
 	case o.all && o.next:
@@ -95,7 +99,7 @@ func (o codeOptions) validate(hasQuery bool) error {
 }
 
 // shouldCopy reports whether this run puts the code on the clipboard.
-// --no-copy always wins and -c always copies; left to itself, only an
+// --no-copy never copies and -c always copies; left to itself, only an
 // interactive run that did not ask for JSON copies. A piped run is a script's,
 // and a script that wants the clipboard says so with -c.
 func (o codeOptions) shouldCopy() bool {
@@ -190,23 +194,33 @@ func runCode(cmd *cobra.Command, args []string, opts *codeOptions) error {
 		return err
 	}
 	if len(idxs) > 1 {
-		return printAmbiguousCodes(cmd, s.accounts, idxs, args[0], opts.asJSON)
+		return printAmbiguousCodes(cmd, s.accounts, idxs, args[0], opts)
 	}
 	return printOneCode(cmd, s, idxs[0], opts)
 }
 
 // printAmbiguousCodes reports every match rather than guessing which account
 // the user meant. There is no single code to copy, so this path leaves the
-// clipboard alone. On a terminal or with --json it exits zero: the listed codes
-// answer the request. Otherwise a script expected one code on stdout, so the
-// table goes to stderr and the command exits 2.
-func printAmbiguousCodes(cmd *cobra.Command, accts []account.Account, idxs []int, query string, asJSON bool) error {
-	if asJSON {
+// clipboard alone. With -c the copy that was asked for cannot happen, so the
+// table goes to stderr and the command exits 2. Otherwise, on a terminal or
+// with --json it exits zero: the listed codes answer the request. Off a
+// terminal a script expected one code on stdout, so the table goes to stderr
+// and the command exits 2.
+func printAmbiguousCodes(cmd *cobra.Command, accts []account.Account, idxs []int, query string, opts *codeOptions) error {
+	if opts.forceCopy {
+		printMatchTableTo(cmd.ErrOrStderr(), accts, idxs, true)
+		return errAmbiguous(len(idxs), query)
+	}
+	if opts.asJSON {
 		matched := make([]account.Account, 0, len(idxs))
 		for _, i := range idxs {
 			matched = append(matched, accts[i])
 		}
-		out(cmd, "%s", mustJSON(codeRows(matched, now())))
+		rows, err := codeRows(matched, now())
+		if err != nil {
+			return err
+		}
+		out(cmd, "%s", mustJSON(rows))
 		return nil
 	}
 	if !stdoutIsTTY() {
@@ -246,14 +260,22 @@ func printOneCode(cmd *cobra.Command, s *session, idx int, opts *codeOptions) er
 	}
 	at := t
 	if upcoming {
-		at = t.Add(time.Duration(a.Period) * time.Second)
+		next, ok := stepStart(t, a.Period, 1)
+		if !ok {
+			return fmt.Errorf("%s has no next code: its period runs past the last time Tessera can count to", label(*a))
+		}
+		at = next
 	}
 	c, err := genCode(*a, at)
 	if err != nil {
 		return err
 	}
 	if opts.asJSON {
-		out(cmd, "%s", mustJSON(newCodeRow(*a, t)))
+		row, err := newCodeRow(*a, t)
+		if err != nil {
+			return err
+		}
+		out(cmd, "%s", mustJSON(row))
 	} else {
 		printCodeLine(cmd, c, code.Remaining(*a, t), a.Type, willCopy, upcoming)
 	}
@@ -313,7 +335,11 @@ func printCodeAt(cmd *cobra.Command, s *session, query string, t time.Time, asJS
 	}
 	switch {
 	case asJSON:
-		out(cmd, "%s", mustJSON(newCodeRow(a, t)))
+		row, err := newCodeRow(a, t)
+		if err != nil {
+			return err
+		}
+		out(cmd, "%s", mustJSON(row))
 	case stdoutIsTTY():
 		out(cmd, "%s", ui.CodeStyle.Render(ui.GroupCode(c)))
 	default:
@@ -379,23 +405,54 @@ type codeRow struct {
 }
 
 // newCodeRow is a's code at t; an HOTP account's is the code at its stored
-// counter.
-func newCodeRow(a account.Account, t time.Time) codeRow {
-	c, _ := genCode(a, t)
+// counter. A time-based row carries the following step's code when that step
+// starts within int64 seconds.
+func newCodeRow(a account.Account, t time.Time) (codeRow, error) {
+	c, err := genCode(a, t)
+	if err != nil {
+		return codeRow{}, fmt.Errorf("%s: %w", label(a), err)
+	}
 	row := codeRow{ID: a.ID, Handle: a.Handle, Issuer: a.Issuer, Account: a.Account, Type: string(a.Type), Code: c}
 	if a.Type != account.HOTP {
-		row.NextCode, _ = genCode(a, t.Add(time.Duration(a.Period)*time.Second))
+		if next, ok := stepStart(t, a.Period, 1); ok {
+			if row.NextCode, err = genCode(a, next); err != nil {
+				return codeRow{}, fmt.Errorf("%s: %w", label(a), err)
+			}
+		}
 		row.Expires = code.Remaining(a, t)
 	}
-	return row
+	return row, nil
 }
 
-func codeRows(accts []account.Account, t time.Time) []codeRow {
+func codeRows(accts []account.Account, t time.Time) ([]codeRow, error) {
 	rows := make([]codeRow, 0, len(accts))
 	for _, a := range accts {
-		rows = append(rows, newCodeRow(a, t))
+		row, err := newCodeRow(a, t)
+		if err != nil {
+			return nil, err
+		}
+		rows = append(rows, row)
 	}
-	return rows
+	return rows, nil
+}
+
+// stepStart is the first second of the time step offset steps from the one t
+// falls in, computed in whole seconds; false when that step starts before the
+// epoch or after the largest int64 second.
+func stepStart(t time.Time, period int, offset int64) (time.Time, bool) {
+	p := int64(period)
+	if p <= 0 {
+		return time.Time{}, false
+	}
+	cur := t.Unix() / p
+	if (offset > 0 && cur > math.MaxInt64-offset) || (offset < 0 && cur < math.MinInt64-offset) {
+		return time.Time{}, false
+	}
+	n := cur + offset
+	if n < 0 || n > math.MaxInt64/p {
+		return time.Time{}, false
+	}
+	return time.Unix(n*p, 0), true
 }
 
 func runCodeAll(cmd *cobra.Command, asJSON bool) error {
@@ -406,7 +463,11 @@ func runCodeAll(cmd *cobra.Command, asJSON bool) error {
 	defer s.close()
 	accts := filterAccounts(s.accounts, "", "")
 	if asJSON {
-		out(cmd, "%s", mustJSON(codeRows(accts, now())))
+		rows, err := codeRows(accts, now())
+		if err != nil {
+			return err
+		}
+		out(cmd, "%s", mustJSON(rows))
 		return nil
 	}
 	if len(accts) == 0 {

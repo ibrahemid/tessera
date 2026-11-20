@@ -92,9 +92,14 @@ func readProblem(err error) string {
 	return "could not read input"
 }
 
-// looksLikeSecret reports whether text is an otpauth or migration URI or a bare
-// setup key: input that carries a secret and must never be echoed back.
+// looksLikeSecret reports whether text is an otpauth or migration URI, a bare
+// setup key, or contains a secret= or data= parameter in any case: input that
+// carries a secret and must never be echoed back.
 func looksLikeSecret(text string) bool {
+	lower := strings.ToLower(text)
+	if strings.Contains(lower, "secret=") || strings.Contains(lower, "data=") {
+		return true
+	}
 	switch detect.Classify(strings.TrimSpace(text)) {
 	case detect.OTPAuth, detect.Migration, detect.SetupKey:
 		return true

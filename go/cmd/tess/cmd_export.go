@@ -55,7 +55,7 @@ Formats for --format:
 				return err
 			}
 			if filePath != "" {
-				return exportEncrypted(cmd, filePath)
+				return exportEncrypted(cmd, filePath, force)
 			}
 			if !asURI && !asSecret && qrDir == "" && format == "" {
 				return fmt.Errorf("use --uri, --secret, --qr, --file, or --format (see `tess export --help`)")
@@ -96,7 +96,7 @@ Formats for --format:
 	cmd.Flags().StringVar(&filePath, "file", "", "write an encrypted copy of the vault to this path")
 	cmd.Flags().StringVar(&format, "format", "", "rewrite the vault as another app's export: "+strings.Join(exporters.Names(), ", "))
 	cmd.Flags().StringVar(&outPath, "out", "", "where --format writes: a file, or a directory for multi-file formats (default stdout)")
-	cmd.Flags().BoolVar(&force, "force", false, "replace files that already exist (--qr and --out)")
+	cmd.Flags().BoolVar(&force, "force", false, "replace files that already exist (--file, --qr and --out)")
 	return cmd
 }
 
@@ -278,7 +278,9 @@ func qrFileName(a account.Account, i int) string {
 	return base + fmt.Sprintf("-%d.png", i+1)
 }
 
-func exportEncrypted(cmd *cobra.Command, dst string) error {
+// exportEncrypted writes the vault envelope as it is on disk to dst, owner-only
+// through a temporary file. An existing dst is replaced only with force.
+func exportEncrypted(cmd *cobra.Command, dst string, force bool) error {
 	path, err := store.Resolve(vaultPath)
 	if err != nil {
 		return err
@@ -287,8 +289,15 @@ func exportEncrypted(cmd *cobra.Command, dst string) error {
 	if err != nil {
 		return err
 	}
-	if err := store.Save(dst, env); err != nil {
-		return err
+	data, err := env.Marshal()
+	if err != nil {
+		return fmt.Errorf("encode the vault copy: %w", err)
+	}
+	if err := store.WriteSecretFile(dst, data, force); err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			return &exportExistsError{path: dst}
+		}
+		return fmt.Errorf("write %q: %w", dst, err)
 	}
 	out(cmd, "Wrote encrypted vault copy to %s", ui.Sanitize(dst))
 	return nil

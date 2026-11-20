@@ -39,17 +39,20 @@ type v2VaultVectors struct {
 			UnknownWrapTypes []string `json:"unknown_wrap_types"`
 		} `json:"preserve"`
 	} `json:"envelope_strict"`
-	Rotation struct {
-		Passphrase            string          `json:"passphrase"`
-		NewPassphrase         string          `json:"new_passphrase"`
-		OldDEKB64             string          `json:"old_dek_b64"`
-		Envelope              json.RawMessage `json:"envelope"`
-		ExpectedCanonicalJSON string          `json:"expected_canonical_json"`
-		ExpectedVersion       int             `json:"expected_version"`
-		ExpectedRemoved       []string        `json:"expected_removed"`
-		ExpectedWrapTypes     []string        `json:"expected_wrap_types"`
-		KeptTopLevel          []string        `json:"kept_top_level"`
-	} `json:"rotation"`
+	Rotation                v2RotationVectors `json:"rotation"`
+	RotationExtraPassphrase v2RotationVectors `json:"rotation_extra_passphrase"`
+}
+
+type v2RotationVectors struct {
+	Passphrase            string          `json:"passphrase"`
+	NewPassphrase         string          `json:"new_passphrase"`
+	OldDEKB64             string          `json:"old_dek_b64"`
+	Envelope              json.RawMessage `json:"envelope"`
+	ExpectedCanonicalJSON string          `json:"expected_canonical_json"`
+	ExpectedVersion       int             `json:"expected_version"`
+	ExpectedRemoved       []string        `json:"expected_removed"`
+	ExpectedWrapTypes     []string        `json:"expected_wrap_types"`
+	KeptTopLevel          []string        `json:"kept_top_level"`
 }
 
 var v2EnvelopeErrors = map[string]error{
@@ -250,7 +253,22 @@ func TestV2VectorsEnvelopePreserve(t *testing.T) {
 }
 
 func TestV2VectorsRotation(t *testing.T) {
-	v := loadV2VaultVectors(t).Rotation
+	checkRotationVectors(t, loadV2VaultVectors(t).Rotation)
+}
+
+func TestV2VectorsRotationExtraPassphrase(t *testing.T) {
+	v := loadV2VaultVectors(t).RotationExtraPassphrase
+	if len(v.ExpectedRemoved) == 0 || v.ExpectedRemoved[0] != "passphrase" {
+		t.Fatalf("expected_removed = %v, want it to start with passphrase", v.ExpectedRemoved)
+	}
+	checkRotationVectors(t, v)
+}
+
+func checkRotationVectors(t *testing.T, v v2RotationVectors) {
+	t.Helper()
+	if len(v.Envelope) == 0 {
+		t.Fatal("rotation vector set is missing")
+	}
 	oldDEK, err := base64.StdEncoding.DecodeString(v.OldDEKB64)
 	if err != nil {
 		t.Fatalf("old dek: %v", err)

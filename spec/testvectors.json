@@ -1592,5 +1592,74 @@
     "kept_top_level": [
       "x_future"
     ]
+  },
+  "rotation_extra_passphrase": {
+    "passphrase": "correct horse battery staple",
+    "new_passphrase": "a new passphrase after rotation",
+    "old_dek_b64": "ISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+P0A=",
+    "envelope": {
+      "version": 2,
+      "aead": "xchacha20poly1305",
+      "wraps": [
+        {
+          "type": "passphrase",
+          "kdf": "argon2id",
+          "params": {
+            "v": 1,
+            "m": 8,
+            "t": 1,
+            "p": 1
+          },
+          "salt": "kJGSk5SVlpeYmZqbnJ2enw==",
+          "nonce": "Ojs8PT4/QEFCQ0RFRkdISUpLTE1OT1BR",
+          "ct": "9FvgiX6RZ1NmNtnDeh+Xw+0LIE2/r2ZMPhfexJZHolumSg2f/fdrxMUowzkSG8uC"
+        },
+        {
+          "type": "passphrase",
+          "kdf": "argon2id",
+          "params": {
+            "v": 1,
+            "m": 8,
+            "t": 1,
+            "p": 1
+          },
+          "salt": "dGVzc2VyYS1zYWx0LXYyIQ==",
+          "nonce": "OTo7PD0+P0BBQkNERUZHSElKS0xNTk9Q",
+          "ct": "/C2yiaGHekwpRbJn3zUJfyKztqpL8cOB6Pmwm3EPU+EjKBSSpvFr+XSBZyRLeybU"
+        },
+        {
+          "type": "secure-enclave",
+          "kdf": "se-keychain-v1",
+          "se_key": "YGFiY2RlZmdoaWprbG1ubw==",
+          "nonce": "cHFyc3R1dnd4eXp7fH1+f4CBgoOEhYaH",
+          "ct": "gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp+goaKjpKWmp6ipqqusra6v"
+        },
+        {
+          "type": "hardware-key",
+          "slot": 1,
+          "blob": "AQIDBAUGBwg="
+        }
+      ],
+      "payload": {
+        "nonce": "WltcXV5fYGFiY2RlZmdoaWprbG1ub3Bx",
+        "ct": "mFKfqMS4f8kRXwpJnnGztHBie3TGPDeGtqmIFJBoIuo6+/Pd1J3uIBYSeNag08aQt7S3t6fgqm4zn7Cbg5Fg46Mn05U1xn0YHTlbArUUcQVlJZHQX35yf10CrEIzI3cZq9e06EH/8LLeXxrC/EH7wwyWuqx9UdPJNWpYKKqT6Sq5MQWJPtCKeDBe32B60YzpwlNs8BZetPS4tFPHN75vfrGjPB3qyW2u/ntVuXE840RvaW2hWOxSogL/oc16NL8PpcUiFHrBSRaJ8oUk2BT2M2E4VQYDZK/RUhKcNvKwubCeDLZqcpx87ZOfXTrc6gKFilObiiBHCLpKF2FuwdKIW8ruxEs61fllyPmpA9O55b6sma49FPkaMlbIvZ/51Abi4gjnARYGeoKGcM0dZbxUXHOkvjCa5DlxXGVIGr1Qvg=="
+      },
+      "x_future": {
+        "note": "kept"
+      }
+    },
+    "expected_canonical_json": "[{\"account\":\"alice@example.com\",\"algorithm\":\"SHA1\",\"counter\":0,\"created_at\":1700000000,\"digits\":6,\"folder\":\"\",\"id\":\"00000000-0000-4000-8000-000000000051\",\"issuer\":\"ACME\",\"note\":\"rotated\",\"period\":30,\"pinned\":false,\"secret\":\"MTIzNDU2Nzg5MDEyMzQ1Njc4OTA=\",\"tags\":[],\"type\":\"totp\",\"updated_at\":1700000000}]",
+    "expected_version": 2,
+    "expected_removed": [
+      "passphrase",
+      "secure-enclave",
+      "hardware-key"
+    ],
+    "expected_wrap_types": [
+      "passphrase"
+    ],
+    "kept_top_level": [
+      "x_future"
+    ]
   }
 }

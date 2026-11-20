@@ -70,13 +70,13 @@ func purgeAccounts(cmd *cobra.Command, queries []string, yes bool) error {
 	if err != nil {
 		return err
 	}
+	defer s.close()
 	idxs, err := s.resolveEach(cmd, queries, liveThenTrashScope)
 	if err != nil {
-		s.close()
 		return err
 	}
 	snap := snapshotAccounts(s.accounts, idxs)
-	s.close()
+	s.releaseLock()
 	ok, err := confirmPurge(cmd, yes, snap)
 	if err != nil || !ok {
 		return err

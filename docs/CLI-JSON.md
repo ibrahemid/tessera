@@ -20,7 +20,7 @@ Presence:
 
 | Command | Prints |
 |---|---|
-| `tess code <query> --json` | a code row; an array of code rows when the query matches several accounts |
+| `tess code <query> --json` | a code row; an array of code rows when the query matches several accounts, unless `-c` was passed |
 | `tess code --all --json`, `tess code --json` | an array of code rows, one per live account, in display order |
 | `tess code <query> --at <time> --json` | the code row at that time |
 | `tess list --json` | an array of list rows in display order |
@@ -43,12 +43,12 @@ A `<query>` equal to an account's full `id` (case-sensitive) selects that accoun
 | `account` | string | always | |
 | `type` | string | always | `totp`, `hotp` or `steam` |
 | `code` | string | always | the code, without grouping spaces |
-| `next_code` | string | `totp` and `steam` | the code for the following time step |
+| `next_code` | string | `totp` and `steam`, unless the following step starts after the largest unix time in seconds | the code for the following time step |
 | `expires_in` | integer | `totp` and `steam` | seconds until `code` stops being current |
 
 For `hotp`, `code` is the code at the stored counter. `tess code <query> --next --json` advances and saves the counter first; `--all` and `--at` never advance it. `--at` takes RFC 3339 (`2026-03-01T09:00:00Z`) or unix seconds, and refuses `hotp` accounts.
 
-`tess code <query> --json -c` copies `code`. For `totp` and `steam`, `--next` leaves the row unchanged and `-c --next` copies `next_code`.
+`tess code <query> --json -c` copies `code`. For `totp` and `steam`, `--next` leaves the row unchanged and `-c --next` copies `next_code`. With `-c`, a query that matches several accounts prints nothing on stdout, lists the matches on stderr and exits 2. `-c` with `--no-copy` is an error.
 
 ## List row
 

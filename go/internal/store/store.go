@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/ibrahemid/tessera/go/internal/vault"
 )
@@ -71,8 +72,21 @@ func (e *ExistsError) Error() string {
 
 func (e *ExistsError) Unwrap() error { return fs.ErrExist }
 
+// DanglingLinkError reports a vault path that is a symbolic link whose target
+// does not exist.
+type DanglingLinkError struct {
+	Link   string
+	Target string
+}
+
+func (e *DanglingLinkError) Error() string {
+	return fmt.Sprintf("store: the vault path %s is a symbolic link to %s, which does not exist; restore that file or point the link at the vault", e.Link, e.Target)
+}
+
 // Resolve returns override if non-empty, else $TESSERA_VAULT, else DefaultPath,
-// as an absolute, cleaned path.
+// as an absolute, cleaned path. A path whose last element is a symbolic link
+// resolves to the file the link points at, so every write lands next to the
+// real file; a link to a missing file is a *DanglingLinkError.
 func Resolve(override string) (string, error) {
 	path, source := override, "--vault"
 	if path == "" {
@@ -92,7 +106,43 @@ func Resolve(override string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("store: make the vault path absolute: %w", err)
 	}
-	return abs, nil
+	return resolveLink(abs)
+}
+
+const maxLinkHops = 255
+
+func resolveLink(path string) (string, error) {
+	info, err := os.Lstat(path)
+	if err != nil || info.Mode()&fs.ModeSymlink == 0 {
+		return path, nil
+	}
+	target, err := filepath.EvalSymlinks(path)
+	if err == nil {
+		return filepath.Abs(target)
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", &DanglingLinkError{Link: path, Target: missingLinkTarget(path)}
+	}
+	return "", fmt.Errorf("store: follow the symbolic link at the vault path %s: %w", path, err)
+}
+
+func missingLinkTarget(link string) string {
+	cur := link
+	for range maxLinkHops {
+		dest, err := os.Readlink(cur)
+		if err != nil {
+			return cur
+		}
+		if !filepath.IsAbs(dest) {
+			dest = filepath.Join(filepath.Dir(cur), dest)
+		}
+		info, err := os.Lstat(dest)
+		if err != nil || info.Mode()&fs.ModeSymlink == 0 {
+			return dest
+		}
+		cur = dest
+	}
+	return cur
 }
 
 // BackupPath returns the backup file kept next to the vault at path.
@@ -192,6 +242,7 @@ func Save(path string, env *vault.Envelope) error {
 	if err := mkdirPrivate(filepath.Dir(path)); err != nil {
 		return fmt.Errorf("store: create vault dir: %w", err)
 	}
+	removeStaleTemps(filepath.Dir(path), time.Now())
 	if err := backupCurrent(path); err != nil {
 		return err
 	}

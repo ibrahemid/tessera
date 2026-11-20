@@ -116,6 +116,7 @@ terminal.`,
 			if err != nil {
 				return err
 			}
+			defer s.close()
 			cutoff := now().Add(-age).Unix()
 			var snap []account.Account
 			for _, a := range trashedNewestFirst(s.accounts) {
@@ -123,7 +124,7 @@ terminal.`,
 					snap = append(snap, a)
 				}
 			}
-			s.close()
+			s.releaseLock()
 			if len(snap) == 0 {
 				if age > 0 {
 					out(cmd, "Nothing in the Trash is older than %s", olderThan)

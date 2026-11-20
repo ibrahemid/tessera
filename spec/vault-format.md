@@ -208,7 +208,7 @@ The first stage that yields exactly one account resolves. If a stage yields more
 
 ## Vault path
 
-Canonical shared path: `$XDG_DATA_HOME/tessera/vault.json` (default `~/.local/share/tessera/vault.json`; on Windows `%LOCALAPPDATA%\Tessera\vault.json`), overridable by `--vault` / `$TESSERA_VAULT`. The Mac app keeps its own vault in its sandbox container until the user points it at a shared one. For a shared vault the app obtains a user-granted **security-scoped bookmark** to the folder that holds the vault (for the default path, `~/.local/share/tessera/`) and persists it; it does not relocate the vault. Folder access is what lets the app use the lock and backup files below. A bookmark to the vault file alone (granted by app versions before 1.2.0) still opens the vault, without the lock.
+Canonical shared path: `$XDG_DATA_HOME/tessera/vault.json` (default `~/.local/share/tessera/vault.json`; on Windows `%LOCALAPPDATA%\Tessera\vault.json`), overridable by `--vault` / `$TESSERA_VAULT`. The Mac app keeps its own vault in its sandbox container until the user points it at a shared one. For a shared vault the app obtains a user-granted **security-scoped bookmark** to the folder that holds the vault (for the default path, `~/.local/share/tessera/`) and persists it; it does not relocate the vault. Folder access is what lets the app use the lock and backup files below. A bookmark to the vault file alone (granted by app versions before 1.2.0) still opens the vault, without the lock. A vault path that is a symbolic link is resolved once, when the path is resolved, and the target is used for the lock sidecar, the temporary file, `<vault>.bak` and the rename; a link whose target does not exist is an error that names the link and its target.
 
 ## Writing the vault
 
@@ -243,8 +243,9 @@ A backup folder is optional and configured per surface: `$TESSERA_BACKUP_DIR` (a
 - **Content.** The envelope that was just written, with every wrap that is not a passphrase wrap removed. A Secure Enclave wrap opens on one Mac only and has no use in a backup. An envelope with no passphrase wrap is not backed up; the surface says so where backups are configured.
 - **Name.** `tessera-backup-YYYYMMDD.json`, the date in UTC. One file per day: a later write on the same day replaces it. A day on which a write went wrong still leaves the files of earlier days.
 - **Write.** Temp file in the backup folder, `fsync`, rename over the day file, mode `0600`. No lock: concurrent writers produce equivalent files.
-- **Retention.** After a backup write, keep the 30 newest files whose names match `tessera-backup-[0-9]{8}.json` exactly and delete older ones. No other file in the folder is read, changed or deleted.
+- **Retention.** After a backup write, rank the files whose names match `tessera-backup-[0-9]{8}.json` exactly and whose eight digits are a real calendar day no later than the current UTC day, keep the 30 newest and delete older ones. A matching name with any other date is neither counted nor deleted. No other file in the folder is read, changed or deleted.
 - **Rotation.** After a DEK rotation the day file is written under the new key and every other matching file is deleted: they open with the old passphrase. Copies kept by a sync provider's version history are outside Tessera's reach.
+- **The vault itself.** Neither retention nor the cleanup after a rotation deletes the vault file, under any of its names, compared by file identity rather than by name.
 - **Failure.** A failed backup write never undoes or fails the vault write. The CLI prints a warning on stderr; the app shows a notice.
 - **Restore.** A backup is an ordinary vault file: it opens with the passphrase it was written under, can be merged into a vault, or can replace one.
 

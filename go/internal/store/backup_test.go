@@ -120,10 +120,10 @@ func TestWriteBackupStartsANewFileAtTheUTCDayBoundary(t *testing.T) {
 	env := sealOne(t, "first")
 	late := time.Date(2026, 11, 20, 23, 59, 59, 999_000_000, time.UTC)
 
-	if _, err := WriteBackup(dir, env, late, false); err != nil {
+	if _, err := WriteBackup(dir, "", env, late, false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := WriteBackup(dir, sealOne(t, "second"), late.Add(time.Millisecond).In(time.FixedZone("west", -8*3600)), false); err != nil {
+	if _, err := WriteBackup(dir, "", sealOne(t, "second"), late.Add(time.Millisecond).In(time.FixedZone("west", -8*3600)), false); err != nil {
 		t.Fatal(err)
 	}
 	want := []string{"tessera-backup-20261120.json", "tessera-backup-20261121.json"}
@@ -142,10 +142,10 @@ func TestWriteBackupReplacesTheSameDayFile(t *testing.T) {
 	dir := t.TempDir()
 	morning := time.Date(2026, 11, 20, 0, 0, 0, 0, time.UTC)
 
-	if _, err := WriteBackup(dir, sealOne(t, "first"), morning, false); err != nil {
+	if _, err := WriteBackup(dir, "", sealOne(t, "first"), morning, false); err != nil {
 		t.Fatal(err)
 	}
-	res, err := WriteBackup(dir, sealOne(t, "second"), morning.Add(23*time.Hour), false)
+	res, err := WriteBackup(dir, "", sealOne(t, "second"), morning.Add(23*time.Hour), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestWriteBackupKeepsOnlyPassphraseWraps(t *testing.T) {
 	dir := t.TempDir()
 	env := rewrap(t, sealOne(t, "x"), true, seWrap, unknownWrap)
 
-	res, err := WriteBackup(dir, env, time.Now(), false)
+	res, err := WriteBackup(dir, "", env, time.Now(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +186,7 @@ func TestWriteBackupRefusesAVaultWithoutAPassphraseWrap(t *testing.T) {
 	dir := t.TempDir()
 	env := rewrap(t, sealOne(t, "x"), false, seWrap)
 
-	if _, err := WriteBackup(dir, env, time.Now(), false); !errors.Is(err, ErrBackupNeedsPassphrase) {
+	if _, err := WriteBackup(dir, "", env, time.Now(), false); !errors.Is(err, ErrBackupNeedsPassphrase) {
 		t.Fatalf("WriteBackup = %v, want ErrBackupNeedsPassphrase", err)
 	}
 	if got := dirNames(t, dir); len(got) != 0 {
@@ -218,7 +218,7 @@ func TestWriteBackupKeepsTheThirtyNewestExactMatches(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	res, err := WriteBackup(dir, sealOne(t, "x"), time.Date(2026, 3, 1, 9, 0, 0, 0, time.UTC), false)
+	res, err := WriteBackup(dir, "", sealOne(t, "x"), time.Date(2026, 3, 1, 9, 0, 0, 0, time.UTC), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,11 +250,11 @@ func TestWriteBackupAfterARotationDeletesEveryOtherBackup(t *testing.T) {
 		touch(t, filepath.Join(dir, name))
 	}
 	at := time.Date(2026, 11, 20, 10, 0, 0, 0, time.UTC)
-	if _, err := WriteBackup(dir, sealOne(t, "old"), at, false); err != nil {
+	if _, err := WriteBackup(dir, "", sealOne(t, "old"), at, false); err != nil {
 		t.Fatal(err)
 	}
 
-	res, err := WriteBackup(dir, sealOne(t, "rotated"), at.Add(time.Hour), true)
+	res, err := WriteBackup(dir, "", sealOne(t, "rotated"), at.Add(time.Hour), true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +296,7 @@ func TestCheckBackupDirNamesTheProblem(t *testing.T) {
 func TestWriteBackupToAnUnusableFolderWritesNothing(t *testing.T) {
 	dir := t.TempDir()
 	missing := filepath.Join(dir, "missing")
-	_, err := WriteBackup(missing, sealOne(t, "x"), time.Now(), false)
+	_, err := WriteBackup(missing, "", sealOne(t, "x"), time.Now(), false)
 	var dirErr *BackupDirError
 	if !errors.As(err, &dirErr) || dirErr.Problem != BackupDirMissing {
 		t.Fatalf("WriteBackup = %v", err)

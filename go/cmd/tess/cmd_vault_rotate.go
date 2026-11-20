@@ -107,7 +107,7 @@ func rotateVault(cmd *cobra.Command, changePassphrase bool) error {
 		out(cmd, "Vault key replaced")
 	}
 	for _, typ := range removed {
-		out(cmd, "%s", removedWrapLine(typ))
+		out(cmd, "%s", removedWrapLine(typ, changePassphrase))
 	}
 	if res != nil && len(res.Removed) > 0 {
 		out(cmd, "Deleted %s in %s that opened with the old key", backupCount(len(res.Removed)), ui.Sanitize(filepath.Dir(res.Path)))
@@ -140,9 +140,15 @@ func rotateLocked(cmd *cobra.Command, path string, dek []byte, old, newPass stri
 	return removed, res, nil
 }
 
-func removedWrapLine(typ string) string {
-	if typ == "secure-enclave" {
+func removedWrapLine(typ string, changePassphrase bool) string {
+	switch typ {
+	case "secure-enclave":
 		return "Removed the Touch ID unlock of the Tessera app; the app adds it back the next time you unlock it with the passphrase"
+	case "passphrase":
+		if changePassphrase {
+			return "Removed every other passphrase; only the new one opens the vault"
+		}
+		return "Removed every other passphrase; only the one you entered opens the vault"
 	}
 	return fmt.Sprintf("Removed the %s unlock; add it again from the app that created it", ui.Sanitize(typ))
 }
