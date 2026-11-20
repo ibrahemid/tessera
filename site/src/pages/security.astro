@@ -26,7 +26,7 @@ const sections = [
       "Secure Enclave, app only: a non-extractable P-256 key created with privateKeyUsage wraps the DEK through HKDF-SHA256 over a self key agreement. Require Touch ID adds biometryCurrentSet, so the wrap stops opening after a fingerprint change. Set a recovery passphrase in Settings and the same file gains an argon2id wrap, which is also how the CLI opens an app-created vault.",
       "Keychain, CLI only and opt in: tess vault remember stores the passphrase in the macOS login keychain after verifying it against the vault; tess vault forget removes it. The entry is protected at the same level as an ssh key on disk. Scripts can set TESSERA_PASSPHRASE instead.",
     ],
-    links: [[`${blob}/swift/App/Sources/SecureEnclaveWrap.swift`, "swift/App/Sources/SecureEnclaveWrap.swift"], [`${blob}/swift/Sources/CArgon2`, "swift/Sources/CArgon2"], [`${blob}/go/internal/keychain`, "go/internal/keychain"]],
+    links: [[`${blob}/swift/App/Sources/SecureEnclaveWrap.swift`, "swift/App/Sources/SecureEnclaveWrap.swift"], [`${blob}/swift/Sources/CArgon2`, "swift/Sources/CArgon2"], [`${blob}/go/internal/secretstore`, "go/internal/secretstore"]],
   },
   {
     id: "app",
