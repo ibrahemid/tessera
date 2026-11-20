@@ -513,7 +513,7 @@ func helpLines() []helpLine {
 		{keys: "pgup pgdn", desc: "Move a page"},
 		{keys: "g G  home end", desc: "First or last"},
 		{section: "Accounts"},
-		{keys: "enter  c", desc: "Copy the code; under 3s left, copy the next one"},
+		{keys: "enter  c", desc: fmt.Sprintf("Copy the code; under %ds left, copy the next one", FreshnessFloor)},
 		{keys: "n", desc: "Copy the next code; a counter account asks first"},
 		{keys: "/", desc: "Search issuer, account, alias, folder and tags"},
 		{keys: "esc", desc: "Clear the search, then the filters, then quit"},

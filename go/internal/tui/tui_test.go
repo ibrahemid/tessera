@@ -935,6 +935,19 @@ func TestTrashScrollsAtLowHeights(t *testing.T) {
 	checkFrame(t, h, 40, 8, "trash moves")
 }
 
+func TestHelpStatesTheFreshnessFloor(t *testing.T) {
+	want := fmt.Sprintf("under %ds left", FreshnessFloor)
+	for _, line := range helpLines() {
+		if strings.Contains(line.desc, "left, copy the next one") {
+			if !strings.Contains(line.desc, want) {
+				t.Fatalf("help says %q, want it to state %q", line.desc, want)
+			}
+			return
+		}
+	}
+	t.Fatal("no help line describes the copy near expiry")
+}
+
 func TestHelpScrollsAndCloses(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {40, 12}, {40, 6}} {
 		h := newSizedHarness(t, fixture(), size[0], size[1])

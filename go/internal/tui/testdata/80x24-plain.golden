@@ -57,7 +57,7 @@ Moving in a list
   pgup pgdn        Move a page
   g G  home end    First or last
 Accounts
-  enter  c         Copy the code; under 3s left, copy the next one
+  enter  c         Copy the code; under 4s left, copy the next one
   n                Copy the next code; a counter account asks first
   /                Search issuer, account, alias, folder and tags
   esc              Clear the search, then the filters, then quit

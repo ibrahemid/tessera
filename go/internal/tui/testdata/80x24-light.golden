@@ -57,7 +57,7 @@
   [38;2;169;121;31mpgup pgdn      [m  [38;2;26;28;34mMove a page[m
   [38;2;169;121;31mg G  home end  [m  [38;2;26;28;34mFirst or last[m
 [1;38;2;138;142;152mAccounts[m
-  [38;2;169;121;31menter  c       [m  [38;2;26;28;34mCopy the code; under 3s left, copy the next one[m
+  [38;2;169;121;31menter  c       [m  [38;2;26;28;34mCopy the code; under 4s left, copy the next one[m
   [38;2;169;121;31mn              [m  [38;2;26;28;34mCopy the next code; a counter account asks first[m
   [38;2;169;121;31m/              [m  [38;2;26;28;34mSearch issuer, account, alias, folder and tags[m
   [38;2;169;121;31mesc            [m  [38;2;26;28;34mClear the search, then the filters, then quit[m
