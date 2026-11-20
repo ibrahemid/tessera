@@ -136,6 +136,30 @@ check_app_unit() {
   grep -E "Executed [0-9]+ tests" "$unit_log" | tail -n 1
 }
 
+# The Release configuration is compiled under the development bundle id, so the system never registers a second copy of the shipping id. Never launched.
+check_app_release_build() {
+  build_log="$LOG_DIR/xcodebuild-release.log"
+  dd="$(derived_data)-release" || return 1
+  mkdir -p "$dd" || return 1
+  cd "$ROOT/swift" || return 1
+  xcodebuild -project Tessera.xcodeproj -scheme Tessera -configuration Release \
+    -derivedDataPath "$dd" CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="-" \
+    CODE_SIGN_ENTITLEMENTS="$AD_HOC_ENTITLEMENTS" DEVELOPMENT_TEAM= \
+    PRODUCT_BUNDLE_IDENTIFIER=com.ibrahemid.tessera.dev ONLY_ACTIVE_ARCH=YES \
+    SWIFT_TREAT_WARNINGS_AS_ERRORS=YES build >"$build_log" 2>&1 || {
+    grep -E "\.swift:[0-9]+:[0-9]+: (error|warning)" "$build_log" | sort -u | head -n 40
+    tail -n 5 "$build_log"
+    return 1
+  }
+}
+
+check_app_release_symbols() {
+  bin="$(derived_data)-release/Build/Products/Release/Tessera.app/Contents/MacOS/Tessera"
+  [ -f "$bin" ] || { printf 'no Release binary at %s\n' "$bin"; return 1; }
+  found="$(strings -a "$bin" | grep -E "InMemoryKeyItemStore|SoftwareEnclaveKey|UITestOwnerAuthenticator" | sort -u | head -n 10)"
+  [ -z "$found" ] || { printf 'test doubles in the Release binary:\n%s\n' "$found"; return 1; }
+}
+
 # A hosted test that needs window focus skips when another app holds it. GATE_STRICT=1 turns a skip into a failure.
 report_app_skips() {
   unit_log="$LOG_DIR/xcodebuild-unit.log"
@@ -155,6 +179,8 @@ gate_app() {
   run_check app-build check_app_build
   run_check app-unit check_app_unit
   report_app_skips
+  run_check app-release-build check_app_release_build
+  run_check app-release-symbols check_app_release_symbols
 }
 
 gate_shell() {
