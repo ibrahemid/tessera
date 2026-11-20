@@ -4,6 +4,8 @@ import UniformTypeIdentifiers
 import TesseraCore
 
 extension AppModel {
+    enum FolderGrant: Equatable { case granted, wrongFolder, cancelled, failed }
+
     /// Point Tessera at an existing vault file (typically one created by the tess
     /// CLI), store a security-scoped bookmark, and open it through the normal
     /// unlock flow. Never copies the file — it opens in place so the CLI keeps
@@ -17,30 +19,107 @@ extension AppModel {
         panel.allowedContentTypes = [.json]
         panel.allowsOtherFileTypes = true
         panel.canChooseDirectories = false
-        panel.message = "Choose a vault created by the tess CLI (usually vault.json)."
-        let hint = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/share/tessera")
-        if FileManager.default.fileExists(atPath: hint.path) { panel.directoryURL = hint }
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
+        panel.showsHiddenFiles = true
+        panel.message = UserMessage.vaultFilePanelMessage
+        panel.directoryURL = RealHome.nearestExistingAncestor(of: RealHome.cliVaultDirectory())
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
         // Reject anything that isn't a Tessera vault before touching the bookmark,
         // so a stray file never becomes the configured vault.
-        guard let data = try? Data(contentsOf: url), (try? Envelope.decode(data)) != nil else {
-            return "That file isn’t a Tessera vault."
-        }
+        guard Self.isVault(at: url) else { return UserMessage.notAVault }
         if guardSwitch, !confirmVaultSwitch(to: url) { return nil }
-        guard store.setExternal(url) else { return "Couldn’t open that vault." }
-        pendingSwitchMessage = "Now using \(homeRelative(url))"
+        guard store.setExternal(url) else { return UserMessage.couldNotOpenVault }
+        let grantMessage = folderGrantMessage(requestFolderAccess(for: url), file: url)
+        pendingSwitchMessage = UserMessage.nowUsing(homeRelative(url))
+        reopenFromStore()
+        return grantMessage
+    }
+
+    func grantFolderAccess() -> String? {
+        guard store.location.access == .fileOnly else { return nil }
+        let file = DurableFile.resolvedTarget(store.vaultURL)
+        let result = requestFolderAccess(for: file)
+        if result == .granted { objectWillChange.send() }
+        return folderGrantMessage(result, file: file)
+    }
+
+    func restoreDamagedVault(from source: URL) async -> String? {
+        guard let info = damagedVault else { return nil }
+        if !store.location.hasDirectoryAccess {
+            let file = DurableFile.resolvedTarget(store.vaultURL)
+            let result = requestFolderAccess(for: file)
+            guard result == .granted else {
+                return folderGrantMessage(result, file: file)
+                    ?? UserMessage.restoreNeedsFolderAccess(fileName: file.lastPathComponent,
+                                                            folder: homeRelative(file.deletingLastPathComponent()))
+            }
+            objectWillChange.send()
+        }
+        let vaultName = store.vaultURL.lastPathComponent
+        let title = UserMessage.restoreDamagedTitle(vaultName: vaultName)
+        let body = UserMessage.restoreDamagedBody(source: source == info.rollback ? .rollback : .backup,
+                                                  vaultName: vaultName)
+        do {
+            let restored = try await DamagedVaultRestore(location: store.location).run(from: source) {
+                Self.confirmRestore(title: title, body: body)
+            }
+            guard restored else { return nil }
+        } catch {
+            return UserMessage.text(for: error, context: .restore)
+        }
         reopenFromStore()
         return nil
+    }
+
+    func requestFolderAccess(for file: URL) -> FolderGrant {
+        let folder = file.deletingLastPathComponent()
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = false
+        panel.showsHiddenFiles = true
+        panel.directoryURL = folder
+        panel.message = UserMessage.vaultFolderPanelMessage(fileName: file.lastPathComponent,
+                                                            folder: homeRelative(folder))
+        panel.prompt = UserMessage.vaultFolderPanelPrompt
+        guard panel.runModal() == .OK, let chosen = panel.url else { return .cancelled }
+        guard VaultStore.isParentFolder(chosen, of: file) else { return .wrongFolder }
+        return store.setFolder(chosen, fileName: file.lastPathComponent) ? .granted : .failed
+    }
+
+    private func folderGrantMessage(_ result: FolderGrant, file: URL) -> String? {
+        let folder = homeRelative(file.deletingLastPathComponent())
+        switch result {
+        case .granted, .cancelled: return nil
+        case .wrongFolder: return UserMessage.wrongVaultFolder(fileName: file.lastPathComponent, folder: folder)
+        case .failed: return UserMessage.folderAccessFailed(folder: folder)
+        }
+    }
+
+    private static func isVault(at url: URL) -> Bool {
+        guard let data = try? DurableFile.read(url) else { return false }
+        return (try? Envelope.decode(data)) != nil
     }
 
     /// Modal confirmation naming the file before the app repoints at it. Returns
     /// true if the user chose to switch.
     private func confirmVaultSwitch(to url: URL) -> Bool {
         let alert = NSAlert()
-        alert.messageText = "Use “\(url.lastPathComponent)” as your vault?"
-        alert.informativeText = "The app will use this file from now on. To copy accounts out of a backup instead, use Restore from backup."
-        alert.addButton(withTitle: "Use this vault")
-        alert.addButton(withTitle: "Cancel")
+        alert.messageText = UserMessage.vaultSwitchTitle(url.lastPathComponent)
+        alert.informativeText = UserMessage.vaultSwitchBody
+        alert.addButton(withTitle: UserMessage.vaultSwitchConfirm)
+        alert.addButton(withTitle: UserMessage.cancelButton)
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    private static func confirmRestore(title: String, body: String) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = body
+        alert.addButton(withTitle: UserMessage.restoreDamagedConfirm)
+        alert.addButton(withTitle: UserMessage.cancelButton)
         return alert.runModal() == .alertFirstButtonReturn
     }
 
@@ -58,6 +137,7 @@ extension AppModel {
         isLocked = true; errorMessage = nil; notice = nil
         vaultUnreachable = false; needsReset = false; needsPassphrase = false; needsRecovery = false
         passphraseIsRecovery = false
+        damagedVault = nil
         vaultExists = store.exists
         isOpening = true
         Task { await open(reason: "Unlock your Tessera vault") }
@@ -76,10 +156,8 @@ extension AppModel {
         self.lastVaultModified = modified
     }
 
-    /// A vault URL rendered relative to the user's home directory.
-    func homeRelative(_ url: URL) -> String {
-        url.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
-    }
+    /// A vault URL rendered relative to the user's real home directory.
+    func homeRelative(_ url: URL) -> String { RealHome.homeRelative(url) }
 
     var vaultPathDisplay: String { homeRelative(store.vaultURL) }
 
@@ -95,4 +173,6 @@ extension AppModel {
 
     /// Running against a user-selected external vault (shared with the tess CLI).
     var isExternalVault: Bool { store.isExternal }
+
+    var vaultLocation: VaultLocation { store.location }
 }

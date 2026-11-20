@@ -1,6 +1,46 @@
 import Foundation
 
 extension UserMessage {
+    enum RestoreSource: Equatable { case backup, rollback }
+
+    static let notAVault = "That file isn’t a Tessera vault."
+    static let couldNotOpenVault = "Couldn’t open that vault."
+    static let cancelButton = "Cancel"
+    static let vaultSwitchBody =
+        "The app will use this file from now on. To copy accounts out of a backup instead, use Restore from backup."
+    static let vaultSwitchConfirm = "Use this vault"
+    static let vaultFilePanelMessage =
+        "Choose the tess vault file. The CLI keeps it at ~/.local/share/tessera/vault.json."
+    static let vaultFolderPanelPrompt = "Allow access"
+    static let restoreDamagedConfirm = "Restore"
+
+    static func nowUsing(_ path: String) -> String { "Now using \(path)" }
+
+    static func vaultSwitchTitle(_ fileName: String) -> String { "Use “\(fileName)” as your vault?" }
+
+    static func vaultFolderPanelMessage(fileName: String, folder: String) -> String {
+        "Choose \(folder) to let Tessera save \(fileName) with the same lock and backup files as the tess CLI."
+    }
+
+    static func wrongVaultFolder(fileName: String, folder: String) -> String {
+        "Choose the folder that holds \(fileName): \(folder)."
+    }
+
+    static func folderAccessFailed(folder: String) -> String {
+        "Couldn’t keep access to \(folder). Try again."
+    }
+
+    static func restoreNeedsFolderAccess(fileName: String, folder: String) -> String {
+        "To restore \(fileName), allow access to \(folder)."
+    }
+
+    static func restoreDamagedTitle(vaultName: String) -> String { "Restore \(vaultName)?" }
+
+    static func restoreDamagedBody(source: RestoreSource, vaultName: String) -> String {
+        let copy = source == .backup ? "the previous version" : "the copy from before the key change"
+        return "Tessera replaces it with \(copy) and keeps the damaged file as \(vaultName).damaged."
+    }
+
     static func text(for e: VaultWriteError) -> String {
         switch e {
         case .keyChanged:
