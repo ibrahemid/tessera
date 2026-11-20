@@ -5,8 +5,8 @@ import TesseraCore
 /// the confirmation can name it. Same rule as `AppModel.removeDuplicates`: the
 /// first account with a given key stays, every later one with that key goes.
 enum DuplicateScan {
-    static func redundant(in accounts: [Account], key: (Account) -> String) -> [Account] {
-        var seen = Set<String>()
+    static func redundant<Key: Hashable>(in accounts: [Account], key: (Account) -> Key) -> [Account] {
+        var seen = Set<Key>()
         var extra: [Account] = []
         for a in accounts {
             if seen.insert(key(a)).inserted { continue }

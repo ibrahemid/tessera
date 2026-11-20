@@ -89,27 +89,7 @@ enum VaultChange {
         return a
     }
 
-    static func dedupeKey(_ a: Account) -> String {
-        [a.type.rawValue, cliLowercased(a.issuer), cliLowercased(a.account),
-         Base32.encodeNoPad(a.secret)].joined(separator: "|")
-    }
-
-    static func cliLowercased(_ text: String) -> String {
-        var scalars = String.UnicodeScalarView()
-        scalars.append(contentsOf: text.unicodeScalars.map(cliLowercasedScalar))
-        return String(scalars)
-    }
-
-    // Matches Go `strings.ToLower`: simple one-to-one mapping from Unicode 15.0 tables.
-    private static func cliLowercasedScalar(_ scalar: Unicode.Scalar) -> Unicode.Scalar {
-        if scalar == "\u{130}" { return "i" }
-        guard let age = scalar.properties.age, age <= cliUnicodeVersion else { return scalar }
-        let mapped = scalar.properties.lowercaseMapping.unicodeScalars
-        guard mapped.count == 1, let lower = mapped.first else { return scalar }
-        return lower
-    }
-
-    private static let cliUnicodeVersion: Unicode.Version = (15, 0)
+    static func dedupeKey(_ a: Account) -> Merge.ContentKey { Merge.ContentKey(a) }
 
     static func appendingNew(_ candidates: [Account]) -> AccountChange {
         { accounts in
@@ -119,7 +99,7 @@ enum VaultChange {
     }
 
     static func droppingDuplicates(_ accounts: [Account]) -> [Account] {
-        var seen = Set<String>()
+        var seen = Set<Merge.ContentKey>()
         return accounts.filter { seen.insert(dedupeKey($0)).inserted }
     }
 

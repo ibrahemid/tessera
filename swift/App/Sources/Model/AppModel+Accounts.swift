@@ -67,7 +67,7 @@ extension AppModel {
     /// The cleartext otpauth:// URI for an account (for QR export / move to phone).
     func otpauthURI(for account: Account) -> String { OTPAuth.format(account) }
 
-    func dedupeKey(_ a: Account) -> String { VaultChange.dedupeKey(a) }
+    func dedupeKey(_ a: Account) -> Merge.ContentKey { VaultChange.dedupeKey(a) }
 
     func remove(_ account: Account) {
         let id = account.id

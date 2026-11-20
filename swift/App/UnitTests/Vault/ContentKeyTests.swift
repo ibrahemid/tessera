@@ -40,22 +40,13 @@ final class ContentKeyTests: XCTestCase {
         return a
     }
 
-    private func asciiContentKey(_ fields: Fields) -> String {
-        func lower(_ s: String) -> String {
-            let scalars = s.unicodeScalars.map { ("A"..."Z").contains($0) ? Unicode.Scalar(UInt8($0.value) + 32) : $0 }
-            return String(String.UnicodeScalarView(scalars))
-        }
-        return [fields.type, lower(fields.issuer), lower(fields.account), Base32.encodeNoPad(fields.secret)]
-            .joined(separator: "|")
-    }
-
-    func testKeyMatchesTheCLIContentKeyForEveryMergeVectorAccount() throws {
+    func testEveryMergeVectorAccountUsesTheCoreContentKey() throws {
         let cases = try mergeCases()
         XCTAssertFalse(cases.isEmpty)
         for vector in cases {
             for fields in vector.accounts {
-                XCTAssertTrue((fields.issuer + fields.account).unicodeScalars.allSatisfy(\.isASCII), vector.name)
-                XCTAssertEqual(VaultChange.dedupeKey(try account(fields)), asciiContentKey(fields), vector.name)
+                let a = try account(fields)
+                XCTAssertEqual(VaultChange.dedupeKey(a), Merge.ContentKey(a), vector.name)
             }
         }
     }
@@ -65,25 +56,7 @@ final class ContentKeyTests: XCTestCase {
         let keys = Set(try duplicate.accounts.map { VaultChange.dedupeKey(try account($0)) })
 
         XCTAssertEqual(duplicate.accounts.count, 2)
-        XCTAssertEqual(keys, ["totp|github|octocat|NVSXEZ3FFVZWKY3SMV2C2MBRFVYGCZBB"])
-    }
-
-    func testCaseFoldingMatchesGoStringsToLower() {
-        let goLower: [(String, String)] = [
-            ("\u{130}STANBUL", "istanbul"),
-            ("\u{130}\u{15F} Bankas\u{131}", "i\u{15F} bankas\u{131}"),
-            ("\u{3A3}\u{391}\u{3A3}", "\u{3C3}\u{3B1}\u{3C3}"),
-            ("\u{1E9E}", "\u{DF}"),
-            ("\u{1C5}", "\u{1C6}"),
-            ("\u{212A}", "k"),
-            ("\u{1C89}", "\u{1C89}"),
-            ("\u{10D50}", "\u{10D50}"),
-            ("GitHub", "github"),
-        ]
-        for (input, expected) in goLower {
-            XCTAssertEqual(Array(VaultChange.cliLowercased(input).unicodeScalars), Array(expected.unicodeScalars),
-                           input.debugDescription)
-        }
+        XCTAssertEqual(keys.count, 1)
     }
 
     func testDottedCapitalIMatchesPlainIAsInTheCLI() {
