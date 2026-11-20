@@ -28,13 +28,13 @@ func stubWatchView(t *testing.T) *tui.Options {
 	return got
 }
 
-func runWatchCmd(t *testing.T, env string) error {
+func runWatchCmd(t *testing.T, env string, args ...string) error {
 	t.Helper()
 	t.Setenv(clipClearEnv, env)
 	c := newWatchCmd()
 	c.SetOut(&bytes.Buffer{})
 	c.SetErr(&bytes.Buffer{})
-	c.SetArgs(nil)
+	c.SetArgs(args)
 	return c.Execute()
 }
 
@@ -112,8 +112,8 @@ func TestWatchHandsTheViewEveryAccountAndEveryCallback(t *testing.T) {
 			t.Errorf("%s has no handle", a.ID)
 		}
 	}
-	if opts.Reload == nil || opts.Mutate == nil || opts.Unlock == nil || opts.Copy == nil || opts.Now == nil {
-		t.Fatal("watch must hand the view reload, mutate, unlock, copy and a clock")
+	if opts.Reload == nil || opts.Mutate == nil || opts.Unlock == nil || opts.UnlockStored == nil || opts.Lock == nil || opts.Copy == nil || opts.Now == nil {
+		t.Fatal("watch must hand the view reload, mutate, both unlocks, lock, copy and a clock")
 	}
 	if err := opts.Copy("654321"); err != nil {
 		t.Fatalf("copy: %v", err)
@@ -191,13 +191,255 @@ func TestWatchReloadPicksUpAnotherProcessWrite(t *testing.T) {
 	}
 }
 
-func TestWatchReloadFollowsANewKeyUnderTheSamePassphrase(t *testing.T) {
+func TestWatchReloadReportsANewKeyUnderTheSamePassphrase(t *testing.T) {
 	w, path := openTestWatch(t)
 	sealVault(t, path, []account.Account{totp("z", "Fresh", "me", 9)})
 
-	accts, changed, err := w.reload()
-	if err != nil || !changed || len(accts) != 1 || accts[0].ID != "z" {
-		t.Fatalf("reload = %+v changed=%v err=%v, want the re-keyed vault", accts, changed, err)
+	if _, _, err := w.reload(); !errors.Is(err, tui.ErrKeyReplaced) {
+		t.Fatalf("reload err = %v, want ErrKeyReplaced", err)
+	}
+	w.lock()
+	accts, err := w.unlockStored()
+	if err != nil || len(accts) != 1 || accts[0].ID != "z" {
+		t.Fatalf("unlock from $TESSERA_PASSPHRASE = %+v, %v; want the re-keyed vault", accts, err)
+	}
+	if w.s.passphrase != "" {
+		t.Error("the unlock kept the passphrase")
+	}
+	if _, err := w.mutate(tui.Change{Kind: tui.ChangePin, ID: "z", Pinned: true}); err != nil {
+		t.Fatalf("mutate after unlock: %v", err)
+	}
+	if a, ok := diskAccount(t, path, "z"); !ok || !a.Pinned {
+		t.Error("the pin was not saved under the new key")
+	}
+}
+
+func TestWatchKeepsNoPassphrase(t *testing.T) {
+	w, _ := openTestWatch(t)
+	if w.s.passphrase != "" {
+		t.Fatal("opening the view kept the passphrase")
+	}
+	if w.s.dek == nil || len(w.s.accounts) != 3 {
+		t.Fatalf("opening the view dropped the key or the accounts: dek=%v accounts=%d", w.s.dek != nil, len(w.s.accounts))
+	}
+	w.lock()
+	if _, err := w.unlock("testpass123"); err != nil {
+		t.Fatalf("unlock: %v", err)
+	}
+	if w.s.passphrase != "" {
+		t.Error("a typed unlock kept the passphrase")
+	}
+	w.lock()
+	if _, err := w.unlockStored(); err != nil {
+		t.Fatalf("unlock from $TESSERA_PASSPHRASE: %v", err)
+	}
+	if w.s.passphrase != "" {
+		t.Error("an unlock from $TESSERA_PASSPHRASE kept the passphrase")
+	}
+}
+
+func TestWatchLockDropsTheKeyAndTheAccounts(t *testing.T) {
+	w, path := openTestWatch(t)
+	dek := w.s.dek
+	w.lock()
+	if w.s.dek != nil || w.s.env != nil || w.s.accounts != nil {
+		t.Fatal("lock kept the key, the sealed vault or the accounts")
+	}
+	if slices.ContainsFunc(dek, func(b byte) bool { return b != 0 }) {
+		t.Error("lock dropped the key without zeroing it")
+	}
+
+	other, err := openSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	other.accounts = append(other.accounts, totp("c", "Mail", "me", 3))
+	if err := other.save(); err != nil {
+		t.Fatal(err)
+	}
+	other.close()
+	if accts, changed, err := w.reload(); err != nil || changed || accts != nil {
+		t.Errorf("reload while locked = %d accounts, changed=%v, err=%v; want nothing", len(accts), changed, err)
+	}
+	if _, err := w.mutate(tui.Change{Kind: tui.ChangePin, ID: "a", Pinned: true}); !errors.Is(err, tui.ErrKeyReplaced) {
+		t.Errorf("mutate while locked = %v, want ErrKeyReplaced", err)
+	}
+	if a, _ := diskAccount(t, path, "a"); a.Pinned {
+		t.Error("a write went through while locked")
+	}
+
+	if _, err := w.unlock("wrong-passphrase"); err == nil {
+		t.Fatal("a wrong passphrase unlocked the vault")
+	}
+	if w.s.dek != nil || w.s.accounts != nil {
+		t.Fatal("a wrong passphrase left a key or accounts behind")
+	}
+	accts, err := w.unlock("testpass123")
+	if err != nil || indexByID(accts, "c") < 0 {
+		t.Fatalf("unlock = %d accounts, %v; want the vault as it is now", len(accts), err)
+	}
+}
+
+func TestWatchUnlockStoredUsesTheRememberedPassphrase(t *testing.T) {
+	w, _ := openTestWatch(t)
+	t.Setenv("TESSERA_PASSPHRASE", "")
+	fake := secretService()
+	fake.Put(w.s.path, "testpass123")
+	swapStores(t, fake)
+	w.lock()
+
+	accts, err := w.unlockStored()
+	if err != nil || len(accts) != 3 {
+		t.Fatalf("unlock = %d accounts, %v; want all three", len(accts), err)
+	}
+	if w.s.passphrase != "" {
+		t.Error("the unlock kept the passphrase")
+	}
+	for _, c := range fake.Calls() {
+		if c.Method == "Store" || c.Method == "Delete" {
+			t.Errorf("unlocking from the view changed the secret store: %+v", c)
+		}
+	}
+}
+
+func TestWatchUnlockStoredAsksWhenNothingIsRemembered(t *testing.T) {
+	w, _ := openTestWatch(t)
+	t.Setenv("TESSERA_PASSPHRASE", "")
+	swapStores(t, secretService())
+	w.lock()
+
+	if _, err := w.unlockStored(); !errors.Is(err, tui.ErrPassphraseNeeded) {
+		t.Fatalf("err = %v, want ErrPassphraseNeeded", err)
+	}
+	if w.s.dek != nil {
+		t.Error("the vault unlocked without a passphrase")
+	}
+}
+
+func TestWatchUnlockStoredReportsAPassphraseThatNoLongerOpens(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		env    string
+		stored string
+	}{
+		{"environment", "wrong-passphrase", ""},
+		{"secret store", "", "wrong-passphrase"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w, _ := openTestWatch(t)
+			t.Setenv("TESSERA_PASSPHRASE", tc.env)
+			fake := secretService()
+			if tc.stored != "" {
+				fake.Put(w.s.path, tc.stored)
+			}
+			swapStores(t, fake)
+			w.lock()
+
+			_, err := w.unlockStored()
+			var shown watchErr
+			if !errors.As(err, &shown) || !errors.Is(err, vault.ErrWrongPassphrase) {
+				t.Fatalf("err = %v, want a wrong-passphrase message for the view", err)
+			}
+			if strings.Contains(shown.Error(), "wrong-passphrase") {
+				t.Error("the message shows the passphrase")
+			}
+			if w.s.dek != nil {
+				t.Error("the vault unlocked with a wrong passphrase")
+			}
+		})
+	}
+}
+
+func TestResolveWatchLock(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		flag    string
+		flagSet bool
+		env     string
+		want    time.Duration
+		bad     string
+	}{
+		{name: "default", want: watchLockDefault},
+		{name: "blank environment", env: "  ", want: watchLockDefault},
+		{name: "environment", env: "1h", want: time.Hour},
+		{name: "environment zero", env: "0", want: 0},
+		{name: "flag over environment", flag: "5m", flagSet: true, env: "1h", want: 5 * time.Minute},
+		{name: "flag zero over environment", flag: "0", flagSet: true, env: "1h", want: 0},
+		{name: "flag over a bad environment", flag: "30s", flagSet: true, env: "soon", want: 30 * time.Second},
+		{name: "bad flag", flag: "soon", flagSet: true, bad: "--lock-after"},
+		{name: "empty flag", flag: "", flagSet: true, env: "1h", bad: "--lock-after"},
+		{name: "negative flag", flag: "-1m", flagSet: true, bad: "--lock-after"},
+		{name: "bad environment", env: "soon", bad: watchLockEnv},
+		{name: "unitless environment", env: "15", bad: watchLockEnv},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(watchLockEnv, tc.env)
+			got, err := resolveWatchLock(tc.flag, tc.flagSet)
+			if tc.bad != "" {
+				var lockErr *watchLockError
+				if !errors.As(err, &lockErr) || lockErr.source != tc.bad {
+					t.Fatalf("err = %v, want a watchLockError naming %s", err, tc.bad)
+				}
+				return
+			}
+			if err != nil || got != tc.want {
+				t.Fatalf("got %v, %v; want %v", got, err, tc.want)
+			}
+		})
+	}
+}
+
+func TestWatchHandsTheViewTheLockDelay(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		env  string
+		args []string
+		want time.Duration
+	}{
+		{"default", "", nil, watchLockDefault},
+		{"environment", "90s", nil, 90 * time.Second},
+		{"flag over environment", "90s", []string{"--lock-after", "2m"}, 2 * time.Minute},
+		{"never", "90s", []string{"--lock-after=0"}, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := withVault(t)
+			sealVault(t, path, []account.Account{totp("a", "ACME", "x", 1)})
+			opts := stubWatchView(t)
+			t.Setenv(watchLockEnv, tc.env)
+
+			if err := runWatchCmd(t, "", tc.args...); err != nil {
+				t.Fatalf("watch: %v", err)
+			}
+			if opts.LockAfter != tc.want {
+				t.Errorf("LockAfter = %v, want %v", opts.LockAfter, tc.want)
+			}
+		})
+	}
+}
+
+func TestWatchRejectsABadLockDelayBeforeOpening(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		env  string
+		args []string
+	}{
+		{"flag", "", []string{"--lock-after", "soon"}},
+		{"environment", "soon", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			withVault(t)
+			opts := stubWatchView(t)
+			t.Setenv(watchLockEnv, tc.env)
+
+			err := runWatchCmd(t, "", tc.args...)
+			var lockErr *watchLockError
+			if !errors.As(err, &lockErr) {
+				t.Fatalf("err = %v, want a watchLockError ahead of the missing vault", err)
+			}
+			if opts.Mutate != nil {
+				t.Error("the view must not open")
+			}
+		})
 	}
 }
 

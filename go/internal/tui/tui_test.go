@@ -78,8 +78,26 @@ func TestHeaderCounts(t *testing.T) {
 
 	h = newSizedHarness(t, fixture(), 40, 12)
 	h.press("h")
-	if l := h.lines(); l[0] != "Tessera  6 accounts  1 in the Trash" || l[1] != "Codes hidden" {
-		t.Fatalf("header at 40 columns does not wrap: %q", l[:2])
+	if got := h.m.headerLines(); len(got) != 1 || ansi.Strip(got[0]) != "Tessera  6 accounts  1 in the Trash" {
+		t.Fatalf("header at 40 columns %q", got)
+	}
+	h.mustNotContain("Codes hidden")
+	h.press("h", "f", "j", "enter")
+	if got := h.m.headerLines(); len(got) != 1 || ansi.Strip(got[0]) != "Tessera  1 of 6 accounts  1 in the Trash" {
+		t.Fatalf("filtered header at 40 columns %q", got)
+	}
+	for _, tc := range []struct {
+		width int
+		want  string
+	}{
+		{39, "Tessera  1 of 6 accounts"},
+		{24, "Tessera  1 of 6 accounts"},
+		{23, "Tessera"},
+	} {
+		h.send(tea.WindowSizeMsg{Width: tc.width, Height: 12})
+		if got := h.m.headerLines(); len(got) != 1 || ansi.Strip(got[0]) != tc.want {
+			t.Errorf("header at %d columns %q, want %q", tc.width, got, tc.want)
+		}
 	}
 
 	h = newHarness(t, many(1))
@@ -530,7 +548,7 @@ func TestHiddenCodesShowOnlyTheSelectedOne(t *testing.T) {
 			t.Fatalf("%s shows its code: %q", name, l)
 		}
 	}
-	if l := rowLine(h, "Cloud"); !strings.Contains(l, "••••••••") || strings.Contains(l, h.codeOf("e", h.now)) {
+	if l := rowLine(h, "Cloud"); !strings.Contains(l, "•••• ••••") || strings.Contains(l, ui.GroupCode(h.codeOf("e", h.now))) {
 		t.Fatalf("Cloud shows its code: %q", l)
 	}
 	h.press("down")
@@ -1040,7 +1058,11 @@ func TestQAndCtrlCQuit(t *testing.T) {
 	h.reloadFn = func() ([]account.Account, bool, error) { return nil, false, ErrKeyReplaced }
 	h.send(pollMsg(h.now))
 	h.press("q")
-	if h.quit {
+	if h.quit || !h.m.asking {
+		t.Fatalf("q on the locked screen: quit=%v asking=%v", h.quit, h.m.asking)
+	}
+	h.press("q")
+	if h.quit || h.m.pass.String() != "q" {
 		t.Fatal("q at the passphrase prompt quit instead of typing")
 	}
 	h.press("ctrl+c")
@@ -1050,6 +1072,17 @@ func TestQAndCtrlCQuit(t *testing.T) {
 	h = newHarness(t, fixture())
 	h.reloadFn = func() ([]account.Account, bool, error) { return nil, false, ErrKeyReplaced }
 	h.send(pollMsg(h.now))
+	h.press("ctrl+c")
+	if !h.quit {
+		t.Fatal("ctrl+c on the locked screen did not quit")
+	}
+	h = newHarness(t, fixture())
+	h.reloadFn = func() ([]account.Account, bool, error) { return nil, false, ErrKeyReplaced }
+	h.send(pollMsg(h.now))
+	h.press("esc")
+	if h.quit {
+		t.Fatal("esc on the locked screen quit instead of unlocking")
+	}
 	h.press("esc")
 	if !h.quit {
 		t.Fatal("esc at the passphrase prompt did not quit")
@@ -1123,21 +1156,31 @@ func TestPollWaitsWhileBusyOrLocked(t *testing.T) {
 	}
 }
 
-func TestReunlockAfterTheKeyChanged(t *testing.T) {
+func TestRekeyedVaultLocks(t *testing.T) {
 	h := newHarness(t, fixture())
 	h.press("e")
 	h.typeText("X")
 	h.reloadFn = func() ([]account.Account, bool, error) { return nil, false, ErrKeyReplaced }
 	h.send(pollMsg(h.now))
-	if h.m.mode != modeUnlock {
-		t.Fatalf("mode %d, want the passphrase prompt", h.m.mode)
+	if h.m.mode != modeLocked || h.m.locked != lockRekeyed || h.locks != 1 {
+		t.Fatalf("mode %d reason %d locks %d, want the re-keyed lock", h.m.mode, h.m.locked, h.locks)
 	}
-	h.mustContain("Unlock", "The vault key changed. Enter the passphrase to keep watching.", "enter unlock")
+	if h.m.accounts != nil || h.m.form.fields != nil {
+		t.Fatal("the lock kept the accounts or the form")
+	}
+	h.mustContain("Locked", "The vault was re-keyed.", "any key unlock")
+	h.mustNotContain("GitHub", "Edit")
 
 	h.send(pollMsg(h.now))
 	if h.reloads != 1 {
-		t.Fatal("polled while asking for the passphrase")
+		t.Fatal("polled while locked")
 	}
+	h.press("x")
+	if h.storedCalls != 1 || !h.m.asking || h.status() != "" {
+		t.Fatalf("stored=%d asking=%v status %q", h.storedCalls, h.m.asking, h.status())
+	}
+	h.mustContain("The vault was re-keyed.", "Passphrase", "enter unlock")
+	h.mustNotContain("any key unlock")
 	h.press("enter")
 	if len(h.unlockCalls) != 0 {
 		t.Fatal("an empty passphrase was tried")
@@ -1151,7 +1194,7 @@ func TestReunlockAfterTheKeyChanged(t *testing.T) {
 	}
 	h.typeText("bad")
 	h.press("enter")
-	if h.m.mode != modeUnlock || h.status() != "✗ Not unlocked: wrong passphrase" || h.m.pass.String() != "" {
+	if h.m.mode != modeLocked || !h.m.asking || h.status() != "✗ Not unlocked: wrong passphrase" || h.m.pass.String() != "" {
 		t.Fatalf("mode %d status %q", h.m.mode, h.status())
 	}
 	h.typeText("new")
@@ -1161,40 +1204,287 @@ func TestReunlockAfterTheKeyChanged(t *testing.T) {
 	if !slices.Equal(h.unlockCalls, []string{"bad", "new pass"}) {
 		t.Fatalf("unlock calls %q", h.unlockCalls)
 	}
-	if h.m.mode != modeEdit || h.status() != "✓ Unlocked" {
-		t.Fatalf("mode %d status %q, want the edit back", h.m.mode, h.status())
+	if h.m.mode != modeList || h.status() != "✓ Unlocked" || len(h.m.rows()) != 6 {
+		t.Fatalf("mode %d status %q rows %d", h.m.mode, h.status(), len(h.m.rows()))
 	}
-	h.press("enter")
-	if c := lastChange(t, h); c.Kind != ChangeEdit || *c.Edit.Issuer != "GitHubX" {
-		t.Fatalf("change %+v", c)
+	if len(h.changes) != 0 {
+		t.Fatal("the open edit was saved")
 	}
 }
 
-func TestWriteAfterAKeyChangeAsksAndResumes(t *testing.T) {
+func TestWriteAfterAKeyChangeLocks(t *testing.T) {
 	h := newHarness(t, fixture())
 	h.mutateErr = ErrKeyReplaced
 	h.press("T", "d", "y")
-	if h.m.mode != modeUnlock || h.m.confirm != nil {
-		t.Fatalf("mode %d, want the passphrase prompt", h.m.mode)
+	if h.m.mode != modeLocked || h.m.locked != lockRekeyed || h.m.confirm != nil {
+		t.Fatalf("mode %d, want the re-keyed lock", h.m.mode)
 	}
 	h.mutateErr = nil
+	h.press("x")
 	h.typeText("pw")
 	h.press("enter")
-	if h.m.mode != modeTrash {
-		t.Fatalf("mode %d, want the Trash back", h.m.mode)
+	if h.m.mode != modeList || len(h.m.rows()) != 6 {
+		t.Fatalf("mode %d rows %d after unlocking", h.m.mode, len(h.m.rows()))
+	}
+}
+
+// idleHarness is a harness that locks after a minute without a key press.
+func idleHarness(t *testing.T) *harness {
+	t.Helper()
+	h := newHarness(t, fixture())
+	h.m.opts.LockAfter = time.Minute
+	return h
+}
+
+func TestIdleLocksAtTheLimitAndNotBefore(t *testing.T) {
+	h := idleHarness(t)
+	h.at(69)
+	h.now = base.Add(70*time.Second - time.Nanosecond)
+	h.send(tickMsg(h.now))
+	if h.m.mode == modeLocked || h.locks != 0 {
+		t.Fatal("locked before the limit")
+	}
+	h.at(70)
+	if h.m.mode != modeLocked || h.m.locked != lockIdle || h.locks != 1 {
+		t.Fatalf("mode %d locks %d at the limit", h.m.mode, h.locks)
+	}
+	h.mustContain("Locked", "any key unlock  ctrl+c quit")
+	h.mustNotContain("re-keyed", "GitHub", "accounts")
+	h.at(200)
+	if h.locks != 1 {
+		t.Fatal("a locked view locked again without input")
+	}
+}
+
+func TestKeysResetTheIdleTimerAndTicksDoNot(t *testing.T) {
+	h := idleHarness(t)
+	for s := 11; s <= 40; s++ {
+		h.at(s)
+	}
+	h.press("down")
+	for s := 41; s <= 99; s++ {
+		h.at(s)
+	}
+	if h.m.mode == modeLocked {
+		t.Fatal("locked 59s after a key press")
+	}
+	h.at(100)
+	if h.m.mode != modeLocked {
+		t.Fatal("a tick counted as input")
+	}
+
+	h = idleHarness(t)
+	h.press("/")
+	h.at(50)
+	h.paste("git")
+	h.at(109)
+	if h.m.mode == modeLocked {
+		t.Fatal("locked 59s after a paste")
+	}
+	h.at(110)
+	if h.m.mode != modeLocked {
+		t.Fatal("did not lock a minute after the paste")
+	}
+}
+
+func TestAKeyAfterTheLimitLocksInsteadOfActing(t *testing.T) {
+	h := idleHarness(t)
+	h.selectID("b")
+	h.now = base.Add(70 * time.Second)
+	h.press("d")
+	if h.m.mode != modeLocked || len(h.changes) != 0 {
+		t.Fatalf("mode %d changes %d", h.m.mode, len(h.changes))
+	}
+	h.now = base.Add(70 * time.Second)
+	h.paste("x")
+	if h.locks != 1 {
+		t.Fatal("a paste on the locked screen locked again")
+	}
+}
+
+func TestLockDropsTheAccountsAndWhatWasTyped(t *testing.T) {
+	h := idleHarness(t)
+	h.press("f", "j", "enter", "e")
+	h.typeText("Zq")
+	typed := h.m.form.fields[0].value
+	h.at(70)
+	if h.m.accounts != nil || len(h.m.rows()) != 0 {
+		t.Fatal("the accounts survived the lock")
+	}
+	if h.m.form.fields != nil || h.m.folder != "" || h.m.selectedID != "" {
+		t.Fatalf("form %v folder %q selected %q", h.m.form.fields, h.m.folder, h.m.selectedID)
+	}
+	for _, r := range typed {
+		if r != 0 {
+			t.Fatalf("the form text was not wiped: %q", string(typed))
+		}
+	}
+	h.mustNotContain("GitHub", "Zq", "Folder Dev", "Edit")
+	if len(h.changes) != 0 {
+		t.Fatal("the open form was saved")
+	}
+
+	h = idleHarness(t)
+	h.press("/")
+	h.typeText("aws")
+	h.at(70)
+	if h.m.search.String() != "" || h.m.searching {
+		t.Fatal("the search survived the lock")
+	}
+
+	h = idleHarness(t)
+	h.selectID("c")
+	h.press("n")
+	if h.m.confirm == nil {
+		t.Fatal("no question")
+	}
+	h.at(80)
+	if h.m.confirm != nil {
+		t.Fatal("the question survived the lock")
+	}
+	h.storedFn = func() ([]account.Account, error) { return slices.Clone(h.vault), nil }
+	h.press("y")
+	h.press("y")
+	if len(h.changes) != 0 {
+		t.Fatalf("an answer after the lock wrote %+v", h.changes)
+	}
+}
+
+func TestUnlockWithTheStoredPassphrase(t *testing.T) {
+	h := idleHarness(t)
+	h.at(70)
+	h.storedFn = func() ([]account.Account, error) { return slices.Clone(h.vault), nil }
+	h.press("d")
+	if h.storedCalls != 1 || len(h.unlockCalls) != 0 {
+		t.Fatalf("stored=%d typed=%d", h.storedCalls, len(h.unlockCalls))
+	}
+	if h.m.mode != modeList || h.status() != "✓ Unlocked" || len(h.m.rows()) != 6 || len(h.changes) != 0 {
+		t.Fatalf("mode %d status %q rows %d changes %d", h.m.mode, h.status(), len(h.m.rows()), len(h.changes))
+	}
+	h.at(129)
+	if h.m.mode == modeLocked {
+		t.Fatal("locked within a minute of unlocking")
+	}
+	h.at(130)
+	if h.m.mode != modeLocked || h.locks != 2 {
+		t.Fatalf("mode %d locks %d a minute after unlocking", h.m.mode, h.locks)
+	}
+
+	h.storedFn = func() ([]account.Account, error) {
+		return nil, errors.New("the remembered passphrase no longer opens the vault")
+	}
+	h.press("x")
+	if !h.m.asking || h.status() != "✗ Not unlocked: the remembered passphrase no longer opens the vault" {
+		t.Fatalf("asking=%v status %q", h.m.asking, h.status())
+	}
+}
+
+func TestUnlockWithATypedPassphrase(t *testing.T) {
+	h := idleHarness(t)
+	h.at(70)
+	h.unlockFn = func(p string) ([]account.Account, error) {
+		if p != "pw" {
+			return nil, errors.New("wrong passphrase")
+		}
+		return slices.Clone(h.vault), nil
+	}
+	h.press("x")
+	if h.storedCalls != 1 || !h.m.asking || h.status() != "" || h.m.pass.String() != "" {
+		t.Fatalf("stored=%d asking=%v status %q", h.storedCalls, h.m.asking, h.status())
+	}
+	h.mustContain("Passphrase", "enter unlock  esc quit")
+	h.mustNotContain("re-keyed")
+	h.typeText("no")
+	h.press("enter")
+	if h.m.mode != modeLocked || !h.m.asking || h.status() != "✗ Not unlocked: wrong passphrase" || h.m.pass.String() != "" {
+		t.Fatalf("mode %d status %q", h.m.mode, h.status())
+	}
+	h.typeText("pw")
+	h.press("enter")
+	if !slices.Equal(h.unlockCalls, []string{"no", "pw"}) || h.m.mode != modeList || h.status() != "✓ Unlocked" {
+		t.Fatalf("calls %q mode %d status %q", h.unlockCalls, h.m.mode, h.status())
+	}
+
+	h = idleHarness(t)
+	h.m.opts.UnlockStored = nil
+	h.at(70)
+	h.press("x")
+	if h.storedCalls != 0 || !h.m.asking {
+		t.Fatal("a view without a stored passphrase did not ask")
+	}
+}
+
+func TestIdleAtThePassphraseLocksAgain(t *testing.T) {
+	h := idleHarness(t)
+	h.at(70)
+	h.press("x")
+	h.typeText("sec")
+	typed := h.m.pass.value
+	h.at(129)
+	if !h.m.asking {
+		t.Fatal("the prompt closed before the limit")
+	}
+	h.at(130)
+	if h.m.asking || h.m.pass.String() != "" || h.locks != 2 {
+		t.Fatalf("asking=%v locks=%d", h.m.asking, h.locks)
+	}
+	for _, r := range typed {
+		if r != 0 {
+			t.Fatal("the typed passphrase was not wiped")
+		}
+	}
+	h.mustContain("any key unlock")
+}
+
+func TestAnUnlockStartedBeforeALockIsDropped(t *testing.T) {
+	h := idleHarness(t)
+	h.at(70)
+	h.press("x")
+	pending := h.m.unlockCmd(false, "pw")
+	h.at(200)
+	h.send(pending())
+	if h.m.mode != modeLocked || h.m.accounts != nil {
+		t.Fatal("an unlock that started before the lock opened the view")
+	}
+}
+
+func TestZeroNeverLocks(t *testing.T) {
+	h := newHarness(t, fixture())
+	if h.m.opts.LockAfter != 0 {
+		t.Fatal("the harness locks by default")
+	}
+	h.at(1_000_000)
+	h.selectID("b")
+	h.now = base.Add(2_000_000 * time.Second)
+	h.press("p")
+	if h.m.mode == modeLocked || h.locks != 0 || len(h.changes) != 1 {
+		t.Fatalf("mode %d locks %d changes %d", h.m.mode, h.locks, len(h.changes))
 	}
 
 	h = newHarness(t, fixture())
-	h.press("e")
-	h.typeText("X")
-	h.mutateErr = ErrKeyReplaced
-	h.press("enter")
-	gone := slices.DeleteFunc(slices.Clone(h.vault), func(a account.Account) bool { return a.ID == "a" })
-	h.unlockFn = func(string) ([]account.Account, error) { return gone, nil }
+	h.m.opts.LockAfter = time.Minute
+	h.m.opts.Unlock = nil
+	h.at(1_000)
+	if h.m.mode == modeLocked {
+		t.Fatal("a view that cannot unlock locked")
+	}
+}
+
+func TestErrPassphraseNeededIsQuiet(t *testing.T) {
+	if !errors.Is(fmt.Errorf("wrap: %w", ErrPassphraseNeeded), ErrPassphraseNeeded) {
+		t.Fatal("ErrPassphraseNeeded does not match through a wrap")
+	}
+	if ErrPassphraseNeeded.Error() != "enter the passphrase to unlock the vault" {
+		t.Fatalf("message %q", ErrPassphraseNeeded.Error())
+	}
+	h := idleHarness(t)
+	h.at(70)
+	h.typeText("x")
+	h.unlockFn = func(string) ([]account.Account, error) { return nil, ErrPassphraseNeeded }
 	h.typeText("pw")
 	h.press("enter")
-	if h.m.mode != modeList {
-		t.Fatalf("mode %d: an edit of an account gone after unlocking stayed open", h.m.mode)
+	if h.status() != "✗ Not unlocked: enter the passphrase to unlock the vault" {
+		t.Fatalf("a typed unlock hid its error: %q", h.status())
 	}
 }
 

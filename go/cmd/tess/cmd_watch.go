@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
 	"github.com/ibrahemid/tessera/go/internal/detect"
@@ -20,7 +21,8 @@ import (
 var runWatchView = tui.Run
 
 func newWatchCmd() *cobra.Command {
-	return &cobra.Command{
+	var lockAfter string
+	cmd := &cobra.Command{
 		Use:   "watch",
 		Short: "Live, auto-refreshing view with countdown bars and copy",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -28,18 +30,62 @@ func newWatchCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			idle, err := resolveWatchLock(lockAfter, cmd.Flags().Changed("lock-after"))
+			if err != nil {
+				return err
+			}
 			w, err := openWatchVault()
 			if err != nil {
 				return err
 			}
-			return runWatchView(w.options(wipe.schedule))
+			return runWatchView(w.options(wipe.schedule, idle))
 		},
 	}
+	cmd.Flags().StringVar(&lockAfter, "lock-after", "",
+		"lock the view after this long without a key press, such as 5m, 0 to never lock (default $TESSERA_WATCH_LOCK, else 15m)")
+	return cmd
+}
+
+const (
+	// watchLockEnv names the variable that sets how long the view waits for a
+	// key press before it locks.
+	watchLockEnv     = "TESSERA_WATCH_LOCK"
+	watchLockDefault = 15 * time.Minute
+)
+
+// watchLockError reports a lock delay that is not a duration of zero or more.
+type watchLockError struct {
+	// source is "--lock-after" or the environment variable name.
+	source string
+	value  string
+}
+
+func (e *watchLockError) Error() string {
+	return fmt.Sprintf("%s %q is not a duration; use a value such as 5m or 1h, or 0 to never lock", e.source, e.value)
+}
+
+// resolveWatchLock picks the idle time before the view locks: the flag, then
+// $TESSERA_WATCH_LOCK, then 15 minutes. Zero never locks.
+func resolveWatchLock(flag string, flagSet bool) (time.Duration, error) {
+	source, raw := "--lock-after", flag
+	if !flagSet {
+		source, raw = watchLockEnv, os.Getenv(watchLockEnv)
+		if strings.TrimSpace(raw) == "" {
+			return watchLockDefault, nil
+		}
+	}
+	d, err := time.ParseDuration(strings.TrimSpace(raw))
+	if err != nil || d < 0 {
+		return 0, &watchLockError{source: source, value: raw}
+	}
+	return d, nil
 }
 
 // watchVault connects the watch view to the vault. The view stays open
 // indefinitely, so it never holds the vault lock while idle: every write
-// re-reads the vault under the lock, and reads rely on atomic renames.
+// re-reads the vault under the lock, and reads rely on atomic renames. It
+// keeps the vault key but not the passphrase; a vault re-keyed elsewhere is
+// unlocked again from the view.
 type watchVault struct {
 	mu   sync.Mutex
 	s    *session
@@ -58,6 +104,7 @@ func openWatchVault() (*watchVault, error) {
 		return nil, err
 	}
 	defer s.close()
+	s.passphrase = ""
 	info, err := os.Stat(s.path)
 	if err != nil {
 		return nil, err
@@ -65,15 +112,18 @@ func openWatchVault() (*watchVault, error) {
 	return &watchVault{s: s, stat: info}, nil
 }
 
-func (w *watchVault) options(clearCopy func(string) error) tui.Options {
+func (w *watchVault) options(clearCopy func(string) error, lockAfter time.Duration) tui.Options {
 	return tui.Options{
-		Accounts:  slices.Clone(w.s.accounts),
-		Reload:    w.reload,
-		Mutate:    w.mutate,
-		Unlock:    w.unlock,
-		Copy:      func(text string) error { return copyToClipboard(text) },
-		ClearCopy: clearCopy,
-		Now:       now,
+		Accounts:     slices.Clone(w.s.accounts),
+		Reload:       w.reload,
+		Mutate:       w.mutate,
+		Unlock:       w.unlock,
+		UnlockStored: w.unlockStored,
+		Lock:         w.lock,
+		LockAfter:    lockAfter,
+		Copy:         func(text string) error { return copyToClipboard(text) },
+		ClearCopy:    clearCopy,
+		Now:          now,
 	}
 }
 
@@ -91,7 +141,7 @@ func (e watchErr) Error() string { return e.msg }
 func (e watchErr) Unwrap() error { return e.err }
 
 // watchError turns a vault error into what the view shows. A vault the held
-// key and passphrase no longer open was re-keyed elsewhere.
+// key no longer opens was re-keyed elsewhere.
 func watchError(err error) error {
 	if errors.Is(err, vault.ErrWrongPassphrase) {
 		return tui.ErrKeyReplaced
@@ -102,6 +152,9 @@ func watchError(err error) error {
 func (w *watchVault) reload() ([]account.Account, bool, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.s.dek == nil {
+		return nil, false, nil
+	}
 	info, err := os.Stat(w.s.path)
 	if err != nil {
 		return nil, false, watchError(err)
@@ -113,50 +166,87 @@ func (w *watchVault) reload() ([]account.Account, bool, error) {
 	if err != nil {
 		return nil, false, watchError(err)
 	}
-	dek := w.s.dek
-	accts, err := env.OpenWithDEK(dek)
+	accts, err := env.OpenWithDEK(w.s.dek)
 	if err != nil {
-		dek, err = env.UnwrapDEK(w.s.passphrase)
-		if err == nil {
-			accts, err = env.OpenWithDEK(dek)
-		}
-		if err != nil {
-			w.stat = info
-			return nil, false, watchError(err)
-		}
+		w.stat = info
+		return nil, false, watchError(err)
 	}
 	account.AssignHandles(accts)
-	w.s.env, w.s.dek, w.s.accounts, w.stat = env, dek, accts, info
+	w.s.env, w.s.accounts, w.stat = env, accts, info
 	return slices.Clone(accts), true, nil
 }
 
+// unlock opens the vault with a typed passphrase and keeps only its key.
 func (w *watchVault) unlock(passphrase string) ([]account.Account, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	info, err := os.Stat(w.s.path)
+	accts, err := w.open(passphrase)
 	if err != nil {
 		return nil, watchErr{userMessage(err), err}
+	}
+	return accts, nil
+}
+
+// unlockStored opens the vault the way every command does without a prompt:
+// with $TESSERA_PASSPHRASE, else the passphrase remembered for the vault. It
+// returns tui.ErrPassphraseNeeded when neither is set.
+func (w *watchVault) unlockStored() ([]account.Account, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	p := interactiveUnlock(w.s.path)
+	p.path = w.s.path
+	p.rememberIn = nil
+	p.prompt = func(string) (string, error) { return "", tui.ErrPassphraseNeeded }
+	p.tryOpen = w.open
+	_, accts, err := resolvePassphrase(p)
+	switch {
+	case errors.Is(err, tui.ErrPassphraseNeeded):
+		return nil, err
+	case err != nil:
+		return nil, watchErr{userMessage(err), err}
+	}
+	return accts, nil
+}
+
+// open reads the vault, unwraps its key with passphrase and keeps the key and
+// the accounts. The caller holds w.mu.
+func (w *watchVault) open(passphrase string) ([]account.Account, error) {
+	info, err := os.Stat(w.s.path)
+	if err != nil {
+		return nil, err
 	}
 	env, err := store.Load(w.s.path)
 	if err != nil {
-		return nil, watchErr{userMessage(err), err}
+		return nil, err
 	}
 	dek, err := env.UnwrapDEK(passphrase)
 	if err != nil {
-		return nil, watchErr{userMessage(err), err}
+		return nil, err
 	}
 	accts, err := env.OpenWithDEK(dek)
 	if err != nil {
-		return nil, watchErr{userMessage(err), err}
+		return nil, err
 	}
 	account.AssignHandles(accts)
-	w.s.env, w.s.dek, w.s.passphrase, w.s.accounts, w.stat = env, dek, passphrase, accts, info
+	clear(w.s.dek)
+	w.s.env, w.s.dek, w.s.accounts, w.stat = env, dek, accts, info
 	return slices.Clone(accts), nil
+}
+
+// lock drops the key and the accounts until the next unlock.
+func (w *watchVault) lock() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	clear(w.s.dek)
+	w.s.env, w.s.dek, w.s.accounts = nil, nil, nil
 }
 
 func (w *watchVault) mutate(c tui.Change) (tui.Result, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.s.dek == nil {
+		return tui.Result{}, tui.ErrKeyReplaced
+	}
 	var res tui.Result
 	var adding []account.Account
 	if c.Kind == tui.ChangeAdd {

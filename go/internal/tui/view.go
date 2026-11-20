@@ -122,21 +122,36 @@ func wrap(text string, width int) []string {
 	return lines
 }
 
+// headerLines is the title and the counts on one line. Counts that do not fit
+// whole are left out from the last one back.
 func (m Model) headerLines() []string {
 	t := m.theme
+	line := t.Title.Render("Tessera")
+	if m.mode == modeLocked {
+		return []string{line}
+	}
 	live := len(account.Live(m.accounts))
 	count := plural(live, "account")
 	if m.filtersActive() {
 		count = itoa(int64(len(m.rows()))) + " of " + count
 	}
-	parts := []string{t.Title.Render("Tessera"), t.Subtle.Render(count)}
+	parts := []string{count}
 	if n := len(account.Trashed(m.accounts)); n > 0 {
-		parts = append(parts, t.Subtle.Render(itoa(int64(n))+" in the Trash"))
+		parts = append(parts, itoa(int64(n))+" in the Trash")
 	}
 	if m.hidden {
-		parts = append(parts, t.Subtle.Render("Codes hidden"))
+		parts = append(parts, "Codes hidden")
 	}
-	return m.flow(parts, "  ")
+	used := ansi.StringWidth(line)
+	for _, p := range parts {
+		w := 2 + ansi.StringWidth(p)
+		if used+w > m.width {
+			break
+		}
+		line += "  " + t.Subtle.Render(p)
+		used += w
+	}
+	return []string{line}
 }
 
 func (m Model) contextLines() []string {
@@ -158,8 +173,8 @@ func (m Model) contextLines() []string {
 		return section("Edit")
 	case modeTrash:
 		return section("Trash")
-	case modeUnlock:
-		return section("Unlock")
+	case modeLocked:
+		return section("Locked")
 	}
 	if m.searching {
 		return []string{t.Accent.Render("/") + " " + m.search.render(m.width-2, true, t.Primary, cursorStyle)}
@@ -239,8 +254,11 @@ func (m Model) hints() []hint {
 			return []hint{{"esc", "back"}, {"?", "keys"}, {"q", "quit"}}
 		}
 		return []hint{{"r", "restore"}, {"d", "delete"}, {"esc", "back"}, {"?", "keys"}, {"q", "quit"}}
-	case modeUnlock:
-		return []hint{{"enter", "unlock"}, {"esc", "quit"}}
+	case modeLocked:
+		if m.asking {
+			return []hint{{"enter", "unlock"}, {"esc", "quit"}}
+		}
+		return []hint{{"any key", "unlock"}, {"ctrl+c", "quit"}}
 	}
 	empty := len(m.rows()) == 0
 	switch {
@@ -290,8 +308,8 @@ func (m Model) body(height int) []string {
 		return m.formBody(height)
 	case modeTrash:
 		return m.trashBody(height)
-	case modeUnlock:
-		return m.unlockBody()
+	case modeLocked:
+		return m.lockedBody()
 	}
 	return m.listBody(height)
 }
@@ -324,8 +342,8 @@ func codeWidth(a account.Account) int {
 	if a.Type == account.Steam {
 		return 5
 	}
-	if a.Digits == 6 {
-		return 7
+	if a.Digits >= 6 && a.Digits%2 == 0 {
+		return a.Digits + 1
 	}
 	return a.Digits
 }
@@ -534,9 +552,10 @@ func helpLines() []helpLine {
 		{keys: "esc", desc: "Cancel"},
 		{section: "This list"},
 		{keys: "esc  ?", desc: "Close"},
-		{section: "Unlock"},
-		{keys: "enter", desc: "Unlock"},
-		{keys: "esc", desc: "Quit"},
+		{section: "Locked"},
+		{keys: "any key", desc: "Unlock"},
+		{keys: "enter", desc: "Unlock with the typed passphrase"},
+		{keys: "esc", desc: "Quit at the passphrase"},
 		{section: "Questions"},
 		{keys: "y", desc: "Yes"},
 		{keys: "any other key", desc: "No"},
@@ -652,14 +671,26 @@ func (m Model) fieldNote() string {
 	return ""
 }
 
-func (m Model) unlockBody() []string {
+func (m Model) lockedBody() []string {
 	t := m.theme
-	label := "Passphrase"
-	var lines []string
-	for _, l := range wrap("The vault key changed. Enter the passphrase to keep watching.", m.width) {
-		lines = append(lines, t.Primary.Render(l))
+	var text []string
+	if m.locked == lockRekeyed {
+		text = append(text, "The vault was re-keyed.")
 	}
-	return append(lines, "",
+	var lines []string
+	for _, s := range text {
+		for _, l := range wrap(s, m.width) {
+			lines = append(lines, t.Primary.Render(l))
+		}
+	}
+	if !m.asking {
+		return lines
+	}
+	if len(lines) > 0 {
+		lines = append(lines, "")
+	}
+	label := "Passphrase"
+	return append(lines,
 		t.Accent.Render(label)+"  "+m.pass.render(max(m.width-len(label)-2, 1), !m.unlocking, t.Primary, cursorStyle))
 }
 

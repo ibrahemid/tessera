@@ -67,11 +67,14 @@ type harness struct {
 	changes     []Change
 	reloads     int
 	unlockCalls []string
+	storedCalls int
+	locks       int
 
 	copyErr   error
 	mutateErr error
 	reloadFn  func() ([]account.Account, bool, error)
 	unlockFn  func(string) ([]account.Account, error)
+	storedFn  func() ([]account.Account, error)
 }
 
 func newHarness(t *testing.T, accts []account.Account) *harness {
@@ -99,6 +102,14 @@ func newSizedHarness(t *testing.T, accts []account.Account, width, height int) *
 			}
 			return slices.Clone(h.vault), nil
 		},
+		UnlockStored: func() ([]account.Account, error) {
+			h.storedCalls++
+			if h.storedFn != nil {
+				return h.storedFn()
+			}
+			return nil, ErrPassphraseNeeded
+		},
+		Lock: func() { h.locks++ },
 		Copy: func(s string) error {
 			if h.copyErr != nil {
 				return h.copyErr

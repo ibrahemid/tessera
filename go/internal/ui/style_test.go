@@ -117,9 +117,23 @@ func TestHandleHueIsStablePerAccount(t *testing.T) {
 }
 
 func TestGroupCode(t *testing.T) {
-	for in, want := range map[string]string{"123456": "123 456", "12345678": "12345678", "ABC12": "ABC12", "": ""} {
-		if got := GroupCode(in); got != want {
-			t.Errorf("GroupCode(%q) = %q, want %q", in, got, want)
+	for _, tc := range []struct{ in, want string }{
+		{"123456", "123 456"},
+		{"12345678", "1234 5678"},
+		{"1234567890", "12345 67890"},
+		{"000000", "000 000"},
+		{"1234567", "1234567"},
+		{"123456789", "123456789"},
+		{"1234", "1234"},
+		{"12345", "12345"},
+		{"ABC12", "ABC12"},
+		{"2B7MQ", "2B7MQ"},
+		{"12a456", "12a456"},
+		{"１２３４５６", "１２３４５６"},
+		{"", ""},
+	} {
+		if got := GroupCode(tc.in); got != tc.want {
+			t.Errorf("GroupCode(%q) = %q, want %q", tc.in, got, tc.want)
 		}
 	}
 }

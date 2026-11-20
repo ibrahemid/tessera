@@ -167,12 +167,19 @@ func Handle(key, handle string) string {
 	return render(func(t Theme) string { return t.Handle(key, handle) })
 }
 
-// GroupCode formats a 6-digit code as "123 456"; others pass through.
+// GroupCode splits an all-digit code of an even length of 6 or more into two
+// halves, "123 456" or "1234 5678"; other codes pass through.
 func GroupCode(code string) string {
-	if len(code) == 6 {
-		return code[:3] + " " + code[3:]
+	n := len(code)
+	if n < 6 || n%2 != 0 {
+		return code
 	}
-	return code
+	for i := range n {
+		if code[i] < '0' || code[i] > '9' {
+			return code
+		}
+	}
+	return code[:n/2] + " " + code[n/2:]
 }
 
 // Bar renders a countdown bar for stdout; see [Theme.Bar].

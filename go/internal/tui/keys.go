@@ -16,12 +16,18 @@ func (m Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if key == "ctrl+c" {
 		return m, tea.Quit
 	}
+	at := m.clock()
+	if m.idle(at) {
+		m.lock(lockIdle)
+		return m, nil
+	}
+	m.lastInput = at
 	if m.confirm != nil {
 		return m.answer(key)
 	}
 	switch m.mode {
-	case modeUnlock:
-		return m.unlockKey(k)
+	case modeLocked:
+		return m.lockedKey(k)
 	case modeHelp:
 		return m.helpKey(key)
 	case modeFolders, modeTags:
@@ -482,9 +488,19 @@ func (m Model) trashKey(key string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) unlockKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+// lockedKey unlocks on any key: with the stored passphrase when there is one,
+// else with the one typed into the field the first key shows.
+func (m Model) lockedKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.unlocking {
 		return m, nil
+	}
+	if !m.asking {
+		if m.opts.UnlockStored == nil {
+			m.asking = true
+			return m, nil
+		}
+		m.unlocking = true
+		return m, m.unlockCmd(true, "")
 	}
 	switch k.String() {
 	case "esc":
@@ -495,7 +511,7 @@ func (m Model) unlockKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.unlocking = true
-		return m, m.unlockCmd(pass)
+		return m, m.unlockCmd(false, pass)
 	}
 	m.pass.handle(k)
 	return m, nil

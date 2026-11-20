@@ -32,6 +32,12 @@ func (f *field) set(s string) {
 	f.cursor = len(f.value)
 }
 
+// wipe zeroes the text before it drops it.
+func (f *field) wipe() {
+	clear(f.value)
+	f.value, f.cursor = nil, 0
+}
+
 func (f *field) insert(s string) {
 	r := []rune(s)
 	v := make([]rune, 0, len(f.value)+len(r))

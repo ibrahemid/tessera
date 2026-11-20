@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -36,9 +37,11 @@ func goldenFrames() []goldenFrame {
 		{"hidden", fixture, func(h *harness) { h.press("h", "down") }},
 		{"hotp", fixture, func(h *harness) { h.selectID("c"); h.press("n") }},
 		{"copied-next", fixture, func(h *harness) { h.at(28); h.press("enter") }},
-		{"unlock", fixture, func(h *harness) {
+		{"locked", fixture, func(h *harness) { h.m.opts.LockAfter = time.Minute; h.at(70) }},
+		{"rekeyed", fixture, func(h *harness) {
 			h.reloadFn = func() ([]account.Account, bool, error) { return nil, false, ErrKeyReplaced }
 			h.send(pollMsg(h.now))
+			h.press("x")
 			h.typeText("pass")
 		}},
 		{"error", fixture, func(h *harness) {

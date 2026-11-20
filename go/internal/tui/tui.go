@@ -18,8 +18,12 @@ import (
 )
 
 // ErrKeyReplaced reports a vault whose key changed since the view unlocked it.
-// The view asks for the passphrase again.
+// The view locks and unlocks again.
 var ErrKeyReplaced = errors.New("the vault key changed; enter the passphrase again")
+
+// ErrPassphraseNeeded reports an unlock without a passphrase to use: none in
+// the environment and none remembered. The view asks for one.
+var ErrPassphraseNeeded = errors.New("enter the passphrase to unlock the vault")
 
 // ClearFunc schedules the clipboard clear for a code the view just copied.
 type ClearFunc func(code string) error
@@ -93,8 +97,17 @@ type Options struct {
 	Reload func() (accounts []account.Account, changed bool, err error)
 	// Mutate writes a change through the vault's locked write path.
 	Mutate func(Change) (Result, error)
-	// Unlock opens the vault with a passphrase after ErrKeyReplaced.
+	// Unlock opens the locked vault with a typed passphrase. Without it the
+	// view never locks.
 	Unlock func(passphrase string) ([]account.Account, error)
+	// UnlockStored opens the locked vault without asking, or returns
+	// ErrPassphraseNeeded; nil always asks.
+	UnlockStored func() ([]account.Account, error)
+	// Lock runs when the view locks: the vault drops the key it holds.
+	Lock func()
+	// LockAfter is how long the view waits for a key press before it locks;
+	// zero never locks.
+	LockAfter time.Duration
 	// Copy places text on the clipboard; nil uses the detected clipboard.
 	Copy func(string) error
 	// ClearCopy, when not nil, runs after each successful copy.
@@ -121,7 +134,14 @@ const (
 	modeEdit
 	modeAdd
 	modeTrash
-	modeUnlock
+	modeLocked
+)
+
+type lockReason int
+
+const (
+	lockIdle lockReason = iota
+	lockRekeyed
 )
 
 type statusKind int
@@ -173,6 +193,8 @@ type (
 		clearErr error
 	}
 	unlockDoneMsg struct {
+		gen      int
+		stored   bool
 		accounts []account.Account
 		err      error
 	}
@@ -192,7 +214,6 @@ type Model struct {
 
 	mode      mode
 	helpFrom  mode
-	resume    mode
 	searching bool
 	search    field
 	folder    string
@@ -212,9 +233,15 @@ type Model struct {
 	pass    field
 	confirm *confirmation
 
+	// lastInput is the last key press or paste; the countdown does not count.
+	lastInput time.Time
+	locked    lockReason
+	// asking shows the passphrase field on the locked screen.
+	asking bool
+
 	lastTrashed string
-	// gen counts the writes and unlocks this view made; a reload that started
-	// before the latest one carries stale accounts and is dropped.
+	// gen counts the writes, locks and unlocks this view made; a reload or an
+	// unlock that started before the latest one is dropped.
 	gen       int
 	busy      bool
 	reloading bool
@@ -247,6 +274,7 @@ func New(opts Options) Model {
 		search:   newField("", ""),
 		pass:     field{label: "Passphrase", masked: true, verbatim: true},
 	}
+	m.lastInput = m.now
 	m.syncList()
 	return m
 }
@@ -309,12 +337,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.theme = ui.NewTheme(msg.IsDark())
 	case tickMsg:
 		m.now = m.clock()
+		if m.idle(m.now) {
+			m.lock(lockIdle)
+		}
 		if m.status != "" && !m.now.Before(m.statusUntil) {
 			m.clearStatus()
 		}
 		return m, m.tick()
 	case pollMsg:
-		if m.reloading || m.busy || m.mode == modeUnlock {
+		if m.reloading || m.busy || m.mode == modeLocked {
 			return m, m.poll()
 		}
 		m.reloading = true
@@ -328,7 +359,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case unlockDoneMsg:
 		m.unlocked(msg)
 	case tea.PasteMsg:
-		m.pasted(msg.Content)
+		if at := m.clock(); m.idle(at) {
+			m.lock(lockIdle)
+		} else {
+			m.lastInput = at
+			m.pasted(msg.Content)
+		}
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 	}
@@ -350,7 +386,11 @@ func (m Model) reloaded(msg reloadDoneMsg) (tea.Model, tea.Cmd) {
 	}
 	if msg.err != nil {
 		if errors.Is(msg.err, ErrKeyReplaced) {
-			m.openUnlock()
+			if m.opts.Unlock == nil {
+				m.fail(ErrKeyReplaced.Error())
+			} else {
+				m.lock(lockRekeyed)
+			}
 			return m, nil
 		}
 		if text := msg.err.Error(); text != m.reloadErr {
@@ -383,47 +423,81 @@ func (m *Model) ok(text string)   { m.setStatus(statusOK, text) }
 func (m *Model) fail(text string) { m.setStatus(statusFail, text) }
 func (m *Model) info(text string) { m.setStatus(statusInfo, text) }
 
-func (m *Model) openUnlock() {
-	if m.opts.Unlock == nil {
-		m.fail(ErrKeyReplaced.Error())
-		return
+// idle reports whether LockAfter has passed at at since the last key press or
+// paste. A view that cannot unlock never locks.
+func (m Model) idle(at time.Time) bool {
+	if m.opts.LockAfter <= 0 || m.opts.Unlock == nil || m.unlocking {
+		return false
 	}
-	if m.mode != modeUnlock {
-		m.resume = m.mode
-		if m.resume == modeHelp || m.resume == modeFolders || m.resume == modeTags {
-			m.resume = modeList
-		}
+	if m.mode == modeLocked && !m.asking {
+		return false
 	}
-	m.mode = modeUnlock
-	m.confirm = nil
-	m.searching = false
-	m.pass.set("")
+	return !at.Before(m.lastInput.Add(m.opts.LockAfter))
 }
 
-func (m Model) unlockCmd(pass string) tea.Cmd {
-	unlock := m.opts.Unlock
+// lock drops the accounts and everything typed or open, an unanswered question
+// included, and has the vault drop its key.
+func (m *Model) lock(reason lockReason) {
+	if m.opts.Lock != nil {
+		m.opts.Lock()
+	}
+	if m.mode != modeLocked {
+		m.locked = reason
+	}
+	m.mode = modeLocked
+	m.asking, m.unlocking = false, false
+	m.gen++
+	m.accounts = nil
+	m.searching = false
+	m.search.wipe()
+	m.folder, m.tag = "", ""
+	m.cursor, m.offset, m.selectedID = 0, 0, ""
+	m.trashCursor, m.trashOffset, m.helpOffset = 0, 0, 0
+	m.picker = picker{}
+	for i := range m.form.fields {
+		m.form.fields[i].wipe()
+	}
+	m.form = form{}
+	m.pass.wipe()
+	m.confirm = nil
+	m.lastTrashed = ""
+	m.reloadErr = ""
+	m.clearStatus()
+}
+
+// unlockCmd opens the vault with the stored passphrase, or with pass.
+func (m Model) unlockCmd(stored bool, pass string) tea.Cmd {
+	unlock, unlockStored, gen := m.opts.Unlock, m.opts.UnlockStored, m.gen
 	return func() tea.Msg {
-		accts, err := unlock(pass)
-		return unlockDoneMsg{accounts: accts, err: err}
+		var accts []account.Account
+		var err error
+		if stored {
+			accts, err = unlockStored()
+		} else {
+			accts, err = unlock(pass)
+		}
+		return unlockDoneMsg{gen: gen, stored: stored, accounts: accts, err: err}
 	}
 }
 
 func (m *Model) unlocked(msg unlockDoneMsg) {
+	if msg.gen != m.gen || m.mode != modeLocked {
+		return
+	}
 	m.unlocking = false
 	if msg.err != nil {
-		m.pass.set("")
-		m.fail("Not unlocked: " + ui.Sanitize(msg.err.Error()))
+		m.pass.wipe()
+		m.asking = true
+		if !msg.stored || !errors.Is(msg.err, ErrPassphraseNeeded) {
+			m.fail("Not unlocked: " + ui.Sanitize(msg.err.Error()))
+		}
 		return
 	}
 	m.gen++
-	m.mode = m.resume
-	m.reloadErr = ""
+	m.mode = modeList
+	m.asking = false
+	m.lastInput = m.clock()
 	m.setAccounts(msg.accounts)
-	if m.mode == modeEdit {
-		if _, ok := m.byID(m.form.id); !ok {
-			m.mode, m.form = modeList, form{}
-		}
-	}
 	m.ok("Unlocked")
 }
 
@@ -449,9 +523,12 @@ func (m Model) startMutate(c Change) (tea.Model, tea.Cmd) {
 
 func (m Model) mutated(msg mutateDoneMsg) (tea.Model, tea.Cmd) {
 	m.busy = false
+	if m.mode == modeLocked {
+		return m, nil
+	}
 	if msg.err != nil {
 		if errors.Is(msg.err, ErrKeyReplaced) && m.opts.Unlock != nil {
-			m.openUnlock()
+			m.lock(lockRekeyed)
 			return m, nil
 		}
 		text := ui.Sanitize(msg.err.Error())
@@ -563,6 +640,7 @@ func (m Model) copyCmd(code, what string) tea.Cmd {
 
 func (m *Model) copied(msg copyDoneMsg) {
 	switch {
+	case m.mode == modeLocked:
 	case msg.err != nil:
 		m.fail("Copy failed: " + ui.Sanitize(msg.err.Error()))
 	case msg.clearErr != nil:
@@ -574,8 +652,10 @@ func (m *Model) copied(msg copyDoneMsg) {
 
 func (m *Model) pasted(text string) {
 	switch {
-	case m.mode == modeUnlock:
-		m.pass.paste(text)
+	case m.mode == modeLocked:
+		if m.asking && !m.unlocking {
+			m.pass.paste(text)
+		}
 	case m.mode == modeEdit || m.mode == modeAdd:
 		m.form.fields[m.form.focus].paste(text)
 	case m.mode == modeList && m.searching:

@@ -1,12 +1,12 @@
 === list
 Tessera  6 accounts  1 in the Trash
 
-▸ ★ gh    GitHub me@exam…  768 147   20s
-    aws   AWS root         768 147   20s
-    bank  Bank me          338 314    #4
-    cl    Cloud ops        93444174  20s
-    nw    Northwind Trad…  768 147   20s
-    st    Steam player     KP643     20s
+▸ ★ gh    GitHub me@exa…  768 147    20s
+    aws   AWS root        768 147    20s
+    bank  Bank me         338 314     #4
+    cl    Cloud ops       9344 4174  20s
+    nw    Northwind Tra…  768 147    20s
+    st    Steam player    KP643      20s
 
 
 
@@ -104,26 +104,26 @@ is removed from the vault. y/N
 y yes  any other key no
 === hidden
 Tessera  6 accounts  1 in the Trash
-Codes hidden
 
-  ★ gh    GitHub me@exam…  ••• •••   20s
-▸   aws   AWS root         768 147   20s
-    bank  Bank me          ••• •••    #4
-    cl    Cloud ops        ••••••••  20s
-    nw    Northwind Trad…  ••• •••   20s
-    st    Steam player     •••••     20s
+  ★ gh    GitHub me@exa…  ••• •••    20s
+▸   aws   AWS root        768 147    20s
+    bank  Bank me         ••• •••     #4
+    cl    Cloud ops       •••• ••••  20s
+    nw    Northwind Tra…  ••• •••    20s
+    st    Steam player    •••••      20s
+
 
 
 enter copy  / search  ? keys  q quit
 === hotp
 Tessera  6 accounts  1 in the Trash
 
-  ★ gh    GitHub me@exam…  768 147   20s
-    aws   AWS root         768 147   20s
-▸   bank  Bank me          338 314    #4
-    cl    Cloud ops        93444174  20s
-    nw    Northwind Trad…  768 147   20s
-    st    Steam player     KP643     20s
+  ★ gh    GitHub me@exa…  768 147    20s
+    aws   AWS root        768 147    20s
+▸   bank  Bank me         338 314     #4
+    cl    Cloud ops       9344 4174  20s
+    nw    Northwind Tra…  768 147    20s
+    st    Steam player    KP643      20s
 
 Generate the next code for Bank? The
 counter moves to 5. y/N
@@ -131,23 +131,36 @@ y yes  any other key no
 === copied-next
 Tessera  6 accounts  1 in the Trash
 
-▸ ★ gh    GitHub me@exam…  768 147    2s
-    aws   AWS root         768 147    2s
-    bank  Bank me          338 314    #4
-    cl    Cloud ops        93444174   2s
-    nw    Northwind Trad…  768 147    2s
-    st    Steam player     KP643      2s
+▸ ★ gh    GitHub me@exa…  768 147     2s
+    aws   AWS root        768 147     2s
+    bank  Bank me         338 314     #4
+    cl    Cloud ops       9344 4174   2s
+    nw    Northwind Tra…  768 147     2s
+    st    Steam player    KP643       2s
 
 ✓ Copied the next code for GitHub; the
 current one ends in 2s
 enter copy  / search  ? keys  q quit
-=== unlock
-Tessera  6 accounts  1 in the Trash
-Unlock
-The vault key changed. Enter the
-passphrase to keep watching.
+=== locked
+Tessera
+Locked
+
+
+
+
+
+
+
+
+
+any key unlock  ctrl+c quit
+=== rekeyed
+Tessera
+Locked
+The vault was re-keyed.
 
 Passphrase  •••• 
+
 
 
 

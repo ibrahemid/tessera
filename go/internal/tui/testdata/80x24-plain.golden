@@ -2,12 +2,12 @@
 Tessera  6 accounts  1 in the Trash
 
 
-▸ ★ gh    GitHub me@example.com                         768 147   ███████░░░ 20s
-    aws   AWS root                                      768 147   ███████░░░ 20s
-    bank  Bank me                                       338 314          hotp #4
-    cl    Cloud ops                                     93444174  ███████░░░ 20s
-    nw    Northwind Traders International someone.wit…  768 147   ███████░░░ 20s
-    st    Steam player                                  KP643     ███████░░░ 20s
+▸ ★ gh    GitHub me@example.com                        768 147    ███████░░░ 20s
+    aws   AWS root                                     768 147    ███████░░░ 20s
+    bank  Bank me                                      338 314           hotp #4
+    cl    Cloud ops                                    9344 4174  ███████░░░ 20s
+    nw    Northwind Traders International someone.wi…  768 147    ███████░░░ 20s
+    st    Steam player                                 KP643      ███████░░░ 20s
 
 
 
@@ -202,12 +202,12 @@ y yes  any other key no
 Tessera  6 accounts  1 in the Trash  Codes hidden
 
 
-  ★ gh    GitHub me@example.com                         ••• •••   ███████░░░ 20s
-▸   aws   AWS root                                      768 147   ███████░░░ 20s
-    bank  Bank me                                       ••• •••          hotp #4
-    cl    Cloud ops                                     ••••••••  ███████░░░ 20s
-    nw    Northwind Traders International someone.wit…  ••• •••   ███████░░░ 20s
-    st    Steam player                                  •••••     ███████░░░ 20s
+  ★ gh    GitHub me@example.com                        ••• •••    ███████░░░ 20s
+▸   aws   AWS root                                     768 147    ███████░░░ 20s
+    bank  Bank me                                      ••• •••           hotp #4
+    cl    Cloud ops                                    •••• ••••  ███████░░░ 20s
+    nw    Northwind Traders International someone.wi…  ••• •••    ███████░░░ 20s
+    st    Steam player                                 •••••      ███████░░░ 20s
 
 
 
@@ -227,12 +227,12 @@ enter copy  / search  ? keys  q quit  n next  a add  e edit  d trash
 Tessera  6 accounts  1 in the Trash
 
 
-  ★ gh    GitHub me@example.com                         768 147   ███████░░░ 20s
-    aws   AWS root                                      768 147   ███████░░░ 20s
-▸   bank  Bank me                                       338 314          hotp #4
-    cl    Cloud ops                                     93444174  ███████░░░ 20s
-    nw    Northwind Traders International someone.wit…  768 147   ███████░░░ 20s
-    st    Steam player                                  KP643     ███████░░░ 20s
+  ★ gh    GitHub me@example.com                        768 147    ███████░░░ 20s
+    aws   AWS root                                     768 147    ███████░░░ 20s
+▸   bank  Bank me                                      338 314           hotp #4
+    cl    Cloud ops                                    9344 4174  ███████░░░ 20s
+    nw    Northwind Traders International someone.wi…  768 147    ███████░░░ 20s
+    st    Steam player                                 KP643      ███████░░░ 20s
 
 
 
@@ -252,12 +252,12 @@ y yes  any other key no
 Tessera  6 accounts  1 in the Trash
 
 
-▸ ★ gh    GitHub me@example.com                         768 147   █░░░░░░░░░  2s
-    aws   AWS root                                      768 147   █░░░░░░░░░  2s
-    bank  Bank me                                       338 314          hotp #4
-    cl    Cloud ops                                     93444174  █░░░░░░░░░  2s
-    nw    Northwind Traders International someone.wit…  768 147   █░░░░░░░░░  2s
-    st    Steam player                                  KP643     █░░░░░░░░░  2s
+▸ ★ gh    GitHub me@example.com                        768 147    █░░░░░░░░░  2s
+    aws   AWS root                                     768 147    █░░░░░░░░░  2s
+    bank  Bank me                                      338 314           hotp #4
+    cl    Cloud ops                                    9344 4174  █░░░░░░░░░  2s
+    nw    Northwind Traders International someone.wi…  768 147    █░░░░░░░░░  2s
+    st    Steam player                                 KP643      █░░░░░░░░░  2s
 
 
 
@@ -273,11 +273,36 @@ Tessera  6 accounts  1 in the Trash
 
 ✓ Copied the next code for GitHub; the current one ends in 2s
 enter copy  / search  ? keys  q quit  n next  a add  e edit  d trash
-=== unlock
-Tessera  6 accounts  1 in the Trash
-Unlock
+=== locked
+Tessera
+Locked
 
-The vault key changed. Enter the passphrase to keep watching.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+any key unlock  ctrl+c quit
+=== rekeyed
+Tessera
+Locked
+
+The vault was re-keyed.
 
 Passphrase  •••• 
 
