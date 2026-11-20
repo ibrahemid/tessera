@@ -17,13 +17,13 @@ enum QRImage {
         return NSImage(cgImage: cg, size: NSSize(width: scaled.extent.width, height: scaled.extent.height))
     }
 
-    /// Save an NSImage as a PNG to disk.
+    /// Save an NSImage as a PNG readable only by the owner.
     static func writePNG(_ image: NSImage, to url: URL) throws {
         guard let tiff = image.tiffRepresentation,
               let rep = NSBitmapImageRep(data: tiff),
               let png = rep.representation(using: .png, properties: [:]) else {
             throw CocoaError(.fileWriteUnknown)
         }
-        try png.write(to: url)
+        try DurableFile.writePrivate(png, to: url)
     }
 }

@@ -126,9 +126,7 @@ extension AppModel {
             a.tags = TagDraft.normalized(tags)
             guard a != accounts[i] else { return nil }
             a.updatedAt = Int64(Date().timeIntervalSince1970)
-            var next = accounts
-            next[i] = a
-            try persist(next)
+            try stage(VaultChange.replacing(account.id, from: accounts[i], with: a))
             return nil
         } catch let e as ParameterEditError {
             return e.text

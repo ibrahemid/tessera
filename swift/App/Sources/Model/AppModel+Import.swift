@@ -123,8 +123,8 @@ extension AppModel {
     /// persists once. A persist failure surfaces via `errorMessage`.
     private func mergeReporting(_ parsed: [Account]) -> (added: Int, duplicates: Int, failures: [ImportItemFailure]) {
         var seen = Set(accounts.map(dedupeKey))
-        var next = accounts
-        var added = 0, duplicates = 0
+        var candidates: [Account] = []
+        var duplicates = 0
         var failures: [ImportItemFailure] = []
         for a0 in parsed {
             let key = dedupeKey(a0)
@@ -137,14 +137,13 @@ extension AppModel {
                 continue
             }
             seen.insert(key)
-            next.append(a)
-            added += 1
+            candidates.append(a)
         }
-        if added > 0 {
-            do { try persist(next) }
+        if !candidates.isEmpty {
+            do { try stage(VaultChange.appendingNew(candidates)) }
             catch { errorMessage = UserMessage.text(for: error, context: .add); return (0, 0, failures) }
         }
-        return (added, duplicates, failures)
+        return (candidates.count, duplicates, failures)
     }
 
     /// A user-facing reason from a thrown error, never exposing a secret.

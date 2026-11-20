@@ -15,6 +15,7 @@ struct QRExportView: View {
     // second with the ticking model — render the QR once, not per tick.
     @State private var qrImage: NSImage?
     @State private var saveError: String?
+    @State private var copyError: String?
 
     init(account: Account) {
         self.account = account
@@ -41,6 +42,7 @@ struct QRExportView: View {
             // rotating code — copying the code here would be useless.
             copyButton("Copy setup key", field: .secret, value: model.secretBase32(for: account))
             copyButton("Copy setup link", field: .link, value: model.otpauthURI(for: account))
+            if let e = copyError { ErrorLine(e) }
             if hasCopied {
                 Text("The clipboard clears \(Int(AppModel.pasteboardExpiry)) seconds after each copy.")
                     .multilineTextAlignment(.center).font(Typo.label(11)).foregroundStyle(Palette.textSecondary)
@@ -90,7 +92,11 @@ struct QRExportView: View {
     }
 
     private func copy(_ value: String, _ field: Field) {
-        model.copyToPasteboard(value, kind: .secret)
+        guard model.copyToPasteboard(value, kind: .secret) else {
+            copyError = UserMessage.copyFailed
+            return
+        }
+        copyError = nil
         withAnimation(reduceMotion ? nil : .default) { copied = field; hasCopied = true }
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(1.3))

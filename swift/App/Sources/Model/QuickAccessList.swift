@@ -110,11 +110,7 @@ extension AppModel {
     @discardableResult
     func copyFromQuickAccess(_ account: Account, at time: Date, to pasteboard: NSPasteboard = .general) -> Bool {
         guard !isLocked else { return false }
-        if account.type == .hotp {
-            let before = accounts.first { $0.id == account.id }?.counter
-            advanceHOTP(account)
-            return accounts.first { $0.id == account.id }?.counter != before
-        }
+        if account.type == .hotp { return advanceHOTP(account, to: pasteboard) != nil }
         return copyCode(account, at: time, to: pasteboard) != nil
     }
 }

@@ -49,6 +49,23 @@ enum BackupFile {
     }
 }
 
+enum BackupExport {
+    static func write(_ accounts: [Account], password: String, argon2: Argon2idProvider, to url: URL) throws {
+        let data = try Envelope.create(accounts: accounts, passphrase: password, argon2: argon2).encoded()
+        try DurableFile.writePrivate(data, to: url)
+    }
+}
+
+enum LinkExport {
+    static func body(for accounts: [Account]) -> String {
+        accounts.map { OTPAuth.format($0) }.joined(separator: "\n") + "\n"
+    }
+
+    static func write(_ accounts: [Account], to url: URL) throws(VaultWriteError) {
+        try DurableFile.writePrivate(Data(body(for: accounts).utf8), to: url)
+    }
+}
+
 extension AppModel {
     // MARK: Encrypted backup
 
@@ -69,10 +86,9 @@ extension AppModel {
         let accts = accounts
         let a = argon2
         do {
-            let data = try await Task.detached(priority: .userInitiated) {
-                try Envelope.create(accounts: accts, passphrase: password, argon2: a).encoded()
+            try await Task.detached(priority: .userInitiated) {
+                try BackupExport.write(accts, password: password, argon2: a, to: url)
             }.value
-            try data.write(to: url, options: [.atomic])
             backupLedger.recordExport(forVaultAt: store.vaultURL.path)
             return .saved(url)
         } catch {
@@ -105,10 +121,21 @@ extension AppModel {
         } catch {
             return .failed(UserMessage.text(for: error, context: .restore))
         }
+        let candidates: [Account]
+        let outcome: CommitOutcome
         do {
-            let (added, _) = try merge(imported, resetIDs: true)
-            return added == 0 ? .nothingNew(imported.count) : .restored(added)
+            candidates = try restoreCandidates(imported)
+            guard !candidates.isEmpty else { return .nothingNew(imported.count) }
+            outcome = try await stage(VaultChange.appendingNew(candidates), onFailure: .reload).value
         } catch {
+            return .failed(UserMessage.text(for: error, context: .save))
+        }
+        switch outcome {
+        case .committed(let committed):
+            let ids = Set(candidates.map(\.id))
+            let added = committed.accounts.filter { ids.contains($0.id) }.count
+            return added == 0 ? .nothingNew(imported.count) : .restored(added)
+        case .failed(let error):
             return .failed(UserMessage.text(for: error, context: .save))
         }
     }
@@ -119,12 +146,12 @@ extension AppModel {
     /// authenticator can import. The secrets are readable, so the panel says so.
     func exportPlaintextLinks() -> Notice? {
         guard !accounts.isEmpty else { return nil }
-        let body = accounts.map { OTPAuth.format($0) }.joined(separator: "\n") + "\n"
+        let exported = accounts
         guard let url = promptSave(name: "tessera-accounts.txt", types: [.plainText],
                                    message: "Plain text. Anyone with this file can read the setup keys and generate your codes.") else { return nil }
         do {
-            try Data(body.utf8).write(to: url, options: [.atomic])
-            return .info("Exported \(accounts.count) link\(accounts.count == 1 ? "" : "s") to \(url.lastPathComponent)")
+            try LinkExport.write(exported, to: url)
+            return .info("Exported \(exported.count) link\(exported.count == 1 ? "" : "s") to \(url.lastPathComponent)")
         } catch {
             return .failure(UserMessage.text(for: error, context: .export, url: url))
         }
@@ -147,23 +174,17 @@ extension AppModel {
         return panel.runModal() == .OK ? panel.urls : []
     }
 
-    /// Merge parsed accounts into the vault, skipping exact duplicates. The one
-    /// place the dedupe/stamp/validate/persist sequence lives.
-    private func merge(_ parsed: [Account], resetIDs: Bool = false) throws -> (added: Int, skipped: Int) {
+    /// Backup accounts not already in the vault, with fresh ids so a restore
+    /// never collides, stamped and validated.
+    private func restoreCandidates(_ parsed: [Account]) throws -> [Account] {
         var seen = Set(accounts.map(dedupeKey))
-        var next = accounts
-        var added = 0
-        for var a in parsed {
-            let key = dedupeKey(a)
-            if seen.contains(key) { continue }
-            seen.insert(key)
-            if resetIDs { a.id = "" }        // fresh id so a restore never collides
+        var candidates: [Account] = []
+        for var a in parsed where seen.insert(dedupeKey(a)).inserted {
+            a.id = ""
             a = stamped(a)
             try a.validate()
-            next.append(a)
-            added += 1
+            candidates.append(a)
         }
-        if added > 0 { try persist(next) }
-        return (added, parsed.count - added)
+        return candidates
     }
 }

@@ -12,7 +12,10 @@ extension AppModel {
 
     // MARK: Account operations
 
-    func addAccount(_ account: Account) { mutate { $0.append(stamped(account)) } }
+    func addAccount(_ account: Account) {
+        let a = stamped(account)
+        mutate { $0.append(a) }
+    }
 
     /// Add one account from manually typed fields (the "setup key" path). The
     /// secret is base32 as shown by the service. Validates and rejects duplicates.
@@ -31,9 +34,11 @@ extension AppModel {
             if type == .hotp { a.counter = counter }
             a = stamped(a)
             try a.validate()
-            let key = dedupeKey(a)
-            if accounts.contains(where: { dedupeKey($0) == key }) { throw AccountEntryError.duplicate }
-            try persist(accounts + [a])
+            let key = VaultChange.dedupeKey(a), added = a
+            try stage { accounts in
+                if accounts.contains(where: { VaultChange.dedupeKey($0) == key }) { throw AccountEntryError.duplicate }
+                accounts.append(added)
+            }
             errorMessage = nil
             notice = .info("Added \(a.displayName)")   // same feedback as link / scan import
             return true
@@ -46,14 +51,9 @@ extension AppModel {
     /// Remove accounts that duplicate another (same type, issuer, account, secret),
     /// keeping the first. Returns the number removed.
     func removeDuplicates() throws -> Int {
-        var seen = Set<String>(), next: [Account] = []
-        var removed = 0
-        for a in accounts {
-            let k = dedupeKey(a)
-            if seen.contains(k) { removed += 1; continue }
-            seen.insert(k); next.append(a)
-        }
-        if removed > 0 { try persist(next) }
+        let removed = accounts.count - VaultChange.droppingDuplicates(accounts).count
+        guard removed > 0 else { return 0 }
+        try stage { $0 = VaultChange.droppingDuplicates($0) }
         return removed
     }
 
@@ -61,18 +61,18 @@ extension AppModel {
     func move(inSection ids: [String], fromOffsets: IndexSet, toOffset: Int) {
         let next = VaultList.reorder(accounts, section: ids, fromOffsets: fromOffsets, toOffset: toOffset)
         guard next.map(\.id) != accounts.map(\.id) else { return }
-        mutate { $0 = next }
+        mutate { $0 = VaultList.reorder($0, section: ids, fromOffsets: fromOffsets, toOffset: toOffset) }
     }
 
     /// The cleartext otpauth:// URI for an account (for QR export / move to phone).
     func otpauthURI(for account: Account) -> String { OTPAuth.format(account) }
 
-    func dedupeKey(_ a: Account) -> String {
-        [String(describing: a.type), a.issuer.lowercased(), a.account.lowercased(),
-         Base32.encodeNoPad(a.secret)].joined(separator: "|")
-    }
+    func dedupeKey(_ a: Account) -> String { VaultChange.dedupeKey(a) }
 
-    func remove(_ account: Account) { mutate { $0.removeAll { $0.id == account.id } } }
+    func remove(_ account: Account) {
+        let id = account.id
+        mutate { $0.removeAll { $0.id == id } }
+    }
 
     func togglePin(_ account: Account) {
         setPinned(!account.pinned, ids: [account.id])
@@ -128,10 +128,12 @@ extension AppModel {
 
     var allTags: [String] { VaultList.tags(in: accounts) }
 
-    private func bulkEdit(_ change: (inout [Account], Int64) -> Int, notice text: (Int) -> String) {
-        var next = accounts
-        let changed = change(&next, Int64(Date().timeIntervalSince1970))
-        guard changed > 0, mutate({ $0 = next }) else { return }
+    private func bulkEdit(_ change: @escaping @Sendable (inout [Account], Int64) -> Int,
+                          notice text: (Int) -> String) {
+        let stamp = Int64(Date().timeIntervalSince1970)
+        var probe = accounts
+        let changed = change(&probe, stamp)
+        guard changed > 0, mutate({ _ = change(&$0, stamp) }) else { return }
         notice = .info(text(changed))
     }
 
@@ -153,11 +155,15 @@ extension AppModel {
         if let other = accounts.first(where: { $0.id != account.id && $0.handle == h }) {
             return "\(h) is already used by \(other.displayName)."
         }
-        var next = accounts
-        guard let i = next.firstIndex(where: { $0.id == account.id }) else { return nil }
-        next[i].handle = h
-        next[i].updatedAt = Int64(Date().timeIntervalSince1970)
-        do { try persist(next) } catch { return UserMessage.textUnlessCancelled(for: error, context: .save) }
+        guard accounts.contains(where: { $0.id == account.id }) else { return nil }
+        let id = account.id, stamp = Int64(Date().timeIntervalSince1970)
+        do {
+            try stage { accounts in
+                guard let i = accounts.firstIndex(where: { $0.id == id }) else { return }
+                accounts[i].handle = h
+                accounts[i].updatedAt = stamp
+            }
+        } catch { return UserMessage.textUnlessCancelled(for: error, context: .save) }
         return nil
     }
 
@@ -181,50 +187,22 @@ extension AppModel {
             return "\(h) is already used by \(other.displayName)."
         }
         let fold = rawFolder.trimmingCharacters(in: .whitespaces)
-        var next = accounts
-        guard let i = next.firstIndex(where: { $0.id == account.id }) else { return nil }
-        next[i].issuer = iss
-        next[i].account = acct
-        next[i].handle = h
-        next[i].folder = fold
-        next[i].updatedAt = Int64(Date().timeIntervalSince1970)
-        do { try persist(next) } catch { return UserMessage.textUnlessCancelled(for: error, context: .save) }
+        guard accounts.contains(where: { $0.id == account.id }) else { return nil }
+        let id = account.id, stamp = Int64(Date().timeIntervalSince1970)
+        do {
+            try stage { accounts in
+                guard let i = accounts.firstIndex(where: { $0.id == id }) else { return }
+                accounts[i].issuer = iss
+                accounts[i].account = acct
+                accounts[i].handle = h
+                accounts[i].folder = fold
+                accounts[i].updatedAt = stamp
+            }
+        } catch { return UserMessage.textUnlessCancelled(for: error, context: .save) }
         return nil
     }
 
-    func advanceHOTP(_ account: Account) {
-        guard account.type == .hotp else { return }
-        let saved = mutate { accts in
-            if let i = accts.firstIndex(where: { $0.id == account.id }) {
-                accts[i].counter = try Account.nextCounter(after: accts[i].counter)
-                accts[i].updatedAt = Int64(Date().timeIntervalSince1970)
-            }
-        }
-        guard saved else { return }
-        // Copy the freshly advanced code, with the same feedback as a TOTP copy.
-        if let updated = accounts.first(where: { $0.id == account.id }),
-           let code = try? OTP.code(for: updated, at: Date()) {
-            copyToPasteboard(code, kind: .code)
-            announce("Copied \(account.displayName)")
-        }
-    }
-
-    @discardableResult
-    func copyCode(_ account: Account, at time: Date, to pasteboard: NSPasteboard = .general) -> String? {
-        let next = CodeTiming.shouldCopyNext(account, at: time)
-        let value: String
-        do {
-            value = try OTP.code(for: account, at: next ? CodeTiming.windowEnd(account, at: time) : time)
-        } catch {
-            notice = .failure(UserMessage.text(for: error, context: .save))
-            return nil
-        }
-        copyToPasteboard(value, kind: .code, to: pasteboard)
-        announce(next ? "Copied the next code for \(account.displayName)" : "Copied \(account.displayName)")
-        return value
-    }
-
-    private func announce(_ text: String) {
+    func announce(_ text: String) {
         notice = .info(text)
         AccessibilityNotification.Announcement(text).post()
     }
@@ -263,5 +241,60 @@ extension AppModel {
         case .steam: return Int64(time.timeIntervalSince1970) / 30
         case .totp: return Int64(time.timeIntervalSince1970) / Int64(max(a.period, 1))
         }
+    }
+}
+
+extension VaultPersisting {
+    @discardableResult
+    func advanceHOTP(_ account: Account,
+                     to pasteboard: any SecretPasteboard = NSPasteboard.general) -> Task<Bool, Never>? {
+        guard account.type == .hotp else { return nil }
+        let id = account.id, name = account.displayName, stamp = Int64(Date().timeIntervalSince1970)
+        let commit: Task<CommitOutcome, Never>
+        do {
+            commit = try stage({ accounts in
+                guard let i = accounts.firstIndex(where: { $0.id == id }) else { return }
+                accounts[i].counter = try Account.nextCounter(after: accounts[i].counter)
+                accounts[i].updatedAt = stamp
+            }, showsBeforeCommit: false)
+        } catch {
+            reportFailure(error)
+            return nil
+        }
+        let generation = lockGeneration
+        return Task { @MainActor in
+            guard case .committed(let committed) = await commit.value, generation == self.lockGeneration,
+                  let fresh = committed.accounts.first(where: { $0.id == id }) else { return false }
+            if let i = self.accounts.firstIndex(where: { $0.id == id }), self.accounts[i].counter < fresh.counter {
+                self.accounts[i].counter = fresh.counter
+                self.accounts[i].updatedAt = fresh.updatedAt
+            }
+            guard let code = try? OTP.code(for: fresh, at: Date()) else { return false }
+            guard self.copyToPasteboard(code, kind: .code, to: pasteboard) else {
+                self.notice = .failure(UserMessage.copyFailed)
+                return false
+            }
+            self.announce("Copied \(name)")
+            return true
+        }
+    }
+
+    @discardableResult
+    func copyCode(_ account: Account, at time: Date,
+                  to pasteboard: any SecretPasteboard = NSPasteboard.general) -> String? {
+        let next = CodeTiming.shouldCopyNext(account, at: time)
+        let value: String
+        do {
+            value = try OTP.code(for: account, at: next ? CodeTiming.windowEnd(account, at: time) : time)
+        } catch {
+            notice = .failure(UserMessage.text(for: error, context: .save))
+            return nil
+        }
+        guard copyToPasteboard(value, kind: .code, to: pasteboard) else {
+            notice = .failure(UserMessage.copyFailed)
+            return nil
+        }
+        announce(next ? "Copied the next code for \(account.displayName)" : "Copied \(account.displayName)")
+        return value
     }
 }
