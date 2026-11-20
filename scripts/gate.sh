@@ -178,10 +178,12 @@ check_app_ellipsis() {
 report_app_skips() {
   unit_log="$LOG_DIR/xcodebuild-unit.log"
   [ -f "$unit_log" ] || return 0
-  summary="$(grep -E 'Executed [0-9]+ tests?, with ' "$unit_log" | tail -n 1)"
-  skipped="$(printf '%s' "$summary" | sed -n 's/.* \([0-9][0-9]*\) tests* skipped.*/\1/p')"
-  expected="$(printf '%s' "$summary" | sed -n 's/.* \([0-9][0-9]*\) expected failures*.*/\1/p')"
-  for unproven in "skipped ${skipped:-0} tests" "has ${expected:-0} expected failures"; do
+  skipped="$(grep -E 'Executed [0-9]+ tests?, with ' "$unit_log" | tail -n 1 |
+    sed -n 's/.* \([0-9][0-9]*\) tests* skipped.*/\1/p')"
+  expected_lines="$(grep -i 'expected failure' "$unit_log" | sort -u)"
+  expected=0
+  [ -z "$expected_lines" ] || expected="$(printf '%s\n' "$expected_lines" | wc -l | tr -d ' ')"
+  for unproven in "skipped ${skipped:-0} tests" "logged $expected expected failure lines"; do
     case $unproven in
       *' 0 '*) continue ;;
     esac
@@ -192,6 +194,7 @@ report_app_skips() {
       printf 'note  app-unit %s  (%s)\n' "$unproven" "$unit_log"
     fi
   done
+  [ -z "$expected_lines" ] || printf '%s\n' "$expected_lines" | head -n 12
 }
 
 gate_app() {
