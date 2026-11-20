@@ -4,6 +4,10 @@ set -eu
 SUITES='smoke static secret-service no-secret-service keyctl keyctl-blocked x11 wayland portal screen-wayland package'
 DISTROS='debian ubuntu fedora alpine arch'
 SUITE_TIMEOUT=600
+MOUNT_TIMEOUT=120
+IMAGE_TIMEOUT=1200
+GO_TEST_TIMEOUT=1800
+GO_IMAGE=golang:1.27
 VERSION=0.0.0-test
 PASSPHRASE=test-passphrase-1
 KEYRING_PASSWORD=keyring-test-pw
@@ -26,6 +30,49 @@ is_word_in() {
   return 1
 }
 
+# Stops "$@" after $1 seconds; 124 means it was stopped.
+bounded() {
+  b_limit=$1
+  shift
+  "$@" &
+  b_pid=$!
+  b_waited=0
+  while kill -0 "$b_pid" 2>/dev/null; do
+    if [ "$b_waited" -ge "$b_limit" ]; then
+      kill "$b_pid" 2>/dev/null || :
+      wait "$b_pid" 2>/dev/null || :
+      return 124
+    fi
+    sleep 1
+    b_waited=$((b_waited + 1))
+  done
+  wait "$b_pid"
+}
+
+# A bind mount the engine cannot serve leaves a run waiting forever, so one bounded run proves the mount first.
+check_mount() {
+  cm_image=$1 cm_platform=${2:-}
+  cm_name=tessera-it-mount-$$
+  cm_log=$LOG_DIR/mount.log
+  set -- --rm --name "$cm_name" --network none -v "$ROOT:/src:ro"
+  if [ -n "$cm_platform" ]; then
+    set -- "$@" --platform "$cm_platform"
+  fi
+  if bounded "$MOUNT_TIMEOUT" docker run "$@" "$cm_image" test -f /src/go/go.mod >"$cm_log" 2>&1; then
+    return 0
+  else
+    cm_rc=$?
+  fi
+  if [ "$cm_rc" -eq 124 ]; then
+    bounded 20 docker rm -f "$cm_name" >/dev/null 2>&1 || :
+    printf 'FAIL  mount: container %s did not start with %s mounted within %ss  (%s)\n' \
+      "$cm_name" "$ROOT" "$MOUNT_TIMEOUT" "$cm_log"
+  else
+    printf 'FAIL  mount: %s is not readable inside a container, exit %s  (%s)\n' "$ROOT" "$cm_rc" "$cm_log"
+  fi
+  return 1
+}
+
 build_binaries() {
   for bb_pkg in cmd/tess internal/dbusx internal/secretstore internal/clipboard internal/screenshot; do
     GOOS=linux GOARCH=$1 CGO_ENABLED=0 go -C "$ROOT/go" test -c -trimpath \
@@ -37,11 +84,17 @@ build_binaries() {
 
 build_image() {
   bi_log=$LOG_DIR/$1-image.log
-  if docker build --platform "$2" -t "tessera-it-$1" -f "$ROOT/test/linux/$1.Dockerfile" "$ROOT/test/linux" >"$bi_log" 2>&1; then
+  if bounded "$IMAGE_TIMEOUT" docker build --platform "$2" -t "tessera-it-$1" \
+    -f "$ROOT/test/linux/$1.Dockerfile" "$ROOT/test/linux" >"$bi_log" 2>&1; then
     return 0
+  else
+    bi_rc=$?
   fi
   FAILED=1
-  printf 'FAIL  %s image  (%s)\n' "$1" "$bi_log"
+  case $bi_rc in
+    124) printf 'FAIL  %s image: timed out after %ss  (%s)\n' "$1" "$IMAGE_TIMEOUT" "$bi_log" ;;
+    *) printf 'FAIL  %s image  (%s)\n' "$1" "$bi_log" ;;
+  esac
   return 1
 }
 
@@ -57,20 +110,26 @@ has_dist_packages() {
 run_suite() {
   rs_distro=$1 rs_suite=$2 rs_platform=$3 rs_arch=$4
   rs_log=$LOG_DIR/$rs_distro-$rs_suite.log
+  rs_bin_digest=$(sh "$ROOT/test/linux/digest.sh" dir "$BIN_DIR/$rs_arch")
   set -- --rm --init --network none --platform "$rs_platform" \
-    -v "$ROOT:/src:ro" -e "TESSERA_IT_BIN=/src/.status/gate/linux/bin/$rs_arch"
+    -v "$ROOT:/src:ro" -e "TESSERA_IT_BIN=/src/.status/gate/linux/bin/$rs_arch" \
+    -e "TESSERA_IT_TREE_DIGEST=$TREE_DIGEST" -e "TESSERA_IT_BIN_DIGEST=$rs_bin_digest"
   if [ -d "$DIST_DIR" ]; then
     set -- "$@" -v "$DIST_DIR:/dist:ro"
   fi
   case $rs_suite in
-    package) set -- "$@" -u 0:0 ;;
+    package)
+      rs_dist_digest=$(sh "$ROOT/test/linux/digest.sh" dir "$DIST_DIR")
+      set -- "$@" -u 0:0 -e "TESSERA_IT_DIST_DIGEST=$rs_dist_digest"
+      ;;
     *) set -- "$@" -u 1000:1000 ;;
   esac
   case $rs_suite in
     keyctl) set -- "$@" --security-opt seccomp=unconfined ;;
     wayland | screen-wayland) set -- "$@" --cap-add SYS_NICE ;;
   esac
-  if docker run "$@" "tessera-it-$rs_distro" timeout "$SUITE_TIMEOUT" sh /src/test/linux/run.sh --inside "$rs_suite" >"$rs_log" 2>&1; then
+  if bounded "$((SUITE_TIMEOUT + 60))" docker run "$@" "tessera-it-$rs_distro" \
+    timeout "$SUITE_TIMEOUT" sh /src/test/linux/run.sh --inside "$rs_suite" >"$rs_log" 2>&1; then
     printf 'ok    %s %s\n' "$rs_distro" "$rs_suite"
     return 0
   else
@@ -129,9 +188,15 @@ host_main() {
     fi
   done
 
+  TREE_DIGEST=$(sh "$ROOT/test/linux/digest.sh" tree "$ROOT")
+  mount_checked=0
   for d in $selected_distros; do
     if [ "$d" = arch ]; then a=amd64; else a=$native; fi
     build_image "$d" "linux/$a" || continue
+    if [ "$mount_checked" = 0 ]; then
+      check_mount "tessera-it-$d" "linux/$a" || exit 1
+      mount_checked=1
+    fi
     for s in $selected_suites; do
       if [ "$s" = package ] && ! has_dist_packages; then
         printf 'skip  %s package: no packages in %s\n' "$d" "$DIST_DIR"
@@ -141,6 +206,32 @@ host_main() {
     done
   done
   exit "$FAILED"
+}
+
+# The module's own tests on Linux, in the toolchain image, against the tree the host has.
+go_test_main() {
+  ROOT=$(cd "$(dirname "$0")/../.." && pwd -P)
+  LOG_DIR=${GATE_LOG_DIR:-$ROOT/.status/gate}/linux
+  mkdir -p "$LOG_DIR"
+  check_mount "$GO_IMAGE" || exit 1
+  gt_digest=$(sh "$ROOT/test/linux/digest.sh" tree "$ROOT")
+  if bounded "$GO_TEST_TIMEOUT" docker run --rm -v "$ROOT:/src:ro" -w /src/go -e GOFLAGS=-buildvcs=false \
+    -e GOCACHE=/tmp/gocache -e GOMODCACHE=/tmp/gomod -e "TESSERA_IT_TREE_DIGEST=$gt_digest" \
+    "$GO_IMAGE" sh /src/test/linux/run.sh --inside-go-test; then
+    return 0
+  else
+    gt_rc=$?
+  fi
+  if [ "$gt_rc" -eq 124 ]; then
+    printf 'FAIL: timed out after %ss\n' "$GO_TEST_TIMEOUT"
+  fi
+  exit 1
+}
+
+inside_go_test_main() {
+  SRC=$(cd "$(dirname "$0")/../.." && pwd -P)
+  same_as_host tree "$SRC" "${TESSERA_IT_TREE_DIGEST:-}"
+  go vet ./... && go test ./...
 }
 
 fail() {
@@ -803,6 +894,14 @@ suite_package() {
   done
 }
 
+# A container engine can serve files that no longer match the host; a run against them proves nothing.
+same_as_host() {
+  sh_got=$(sh "$SRC/test/linux/digest.sh" "$1" "$2" 2>/dev/null) || sh_got=
+  if [ -z "$3" ] || [ "$sh_got" != "$3" ]; then
+    fail "$2 in the container differs from the host: the files changed during the run, or the container engine serves stale files"
+  fi
+}
+
 inside_main() {
   SELF=$0
   SRC=$(cd "$(dirname "$0")/../.." && pwd -P)
@@ -811,6 +910,14 @@ inside_main() {
     fail "TESSERA_IT_BIN is not set; run test/linux/run.sh from the host"
   fi
   TESS=$BIN/tess
+  if [ -z "${TESSERA_IT_VERIFIED:-}" ]; then
+    same_as_host tree "$SRC" "${TESSERA_IT_TREE_DIGEST:-}"
+    same_as_host dir "$BIN" "${TESSERA_IT_BIN_DIGEST:-}"
+    if [ "$1" = package ]; then
+      same_as_host dir /dist "${TESSERA_IT_DIST_DIGEST:-}"
+    fi
+    export TESSERA_IT_VERIFIED=1
+  fi
   W=${TESSERA_IT_WORK:-}
   if [ -z "$W" ]; then
     W=$(mktemp -d)
@@ -843,6 +950,12 @@ inside_main() {
 if [ "${1:-}" = --inside ]; then
   [ $# -eq 2 ] || usage
   inside_main "$2"
+elif [ "${1:-}" = --go-test ]; then
+  [ $# -eq 1 ] || usage
+  go_test_main
+elif [ "${1:-}" = --inside-go-test ]; then
+  [ $# -eq 1 ] || usage
+  inside_go_test_main
 else
   host_main "$@"
 fi

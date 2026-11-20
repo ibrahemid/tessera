@@ -85,9 +85,7 @@ check_app_build() {
 }
 
 check_linux() {
-  docker run --rm -v "$ROOT":/src:ro -w /src/go -e GOFLAGS=-buildvcs=false \
-    -e GOCACHE=/tmp/gocache -e GOMODCACHE=/tmp/gomod golang:1.27 \
-    sh -c 'go vet ./... && go test ./...'
+  "$ROOT/test/linux/run.sh" --go-test
 }
 
 # The CLI links no HTTP, TLS or other network client code on any platform it ships for.
@@ -170,6 +168,12 @@ check_app_release_symbols() {
   [ -z "$found" ] || { printf 'test doubles in the Release binary:\n%s\n' "$found"; return 1; }
 }
 
+# Text a person reads uses the ellipsis character; three dots closing a string literal are a typing slip.
+check_app_ellipsis() {
+  found="$(grep -rnE --include='*.swift' '[A-Za-z0-9 ]\.\.\."' "$ROOT/swift/App/Sources")"
+  [ -z "$found" ] || { printf '%s\n' "$found"; return 1; }
+}
+
 # A hosted test that needs window focus skips when another app holds it. GATE_STRICT=1 turns a skip into a failure.
 report_app_skips() {
   unit_log="$LOG_DIR/xcodebuild-unit.log"
@@ -186,6 +190,7 @@ report_app_skips() {
 
 gate_app() {
   run_check app-entitlements check_entitlements
+  run_check app-ellipsis check_app_ellipsis
   run_check app-build check_app_build
   run_check app-unit check_app_unit
   report_app_skips
@@ -195,7 +200,8 @@ gate_app() {
 
 gate_shell() {
   run_check shellcheck shellcheck "$ROOT/install.sh" "$ROOT/test/install_test.sh" "$ROOT/scripts/gate.sh" \
-    "$ROOT/scripts/release-check.sh" "$ROOT/test/linux/run.sh" "$ROOT/test/linux/fake-slurp" \
+    "$ROOT/scripts/release-check.sh" "$ROOT/test/linux/run.sh" "$ROOT/test/linux/digest.sh" \
+    "$ROOT/test/linux/fake-slurp" \
     "$ROOT/integrations/alfred/build.sh"
   run_check install-test "$ROOT/test/install_test.sh"
 }
