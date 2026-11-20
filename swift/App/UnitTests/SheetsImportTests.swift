@@ -3,6 +3,7 @@ import AppKit
 import ImageIO
 import UniformTypeIdentifiers
 import TesseraCore
+import TesseraArgon2
 @testable import Tessera
 
 final class SheetsImportScannerTests: XCTestCase {
@@ -74,7 +75,7 @@ final class SheetsImportScannerTests: XCTestCase {
 
     func testTesseraBackupIsRecognised() throws {
         let sample = Account(id: "1", type: .totp, issuer: "GitHub", account: "a", secret: Data("12345678901234567890".utf8))
-        let data = try Envelope.createUnwrapped(accounts: [sample]).0.encoded()
+        let data = try Envelope.create(accounts: [sample], passphrase: "correct-horse", argon2: Argon2Reference()).encoded()
         let url = try write("tessera-backup.json", data)
         let scan = ImportScanner.scan([url])
         XCTAssertEqual(scan.backups, [url])

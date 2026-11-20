@@ -5,10 +5,10 @@ struct PersistenceState {}
 
 extension AppModel {
     @discardableResult
-    func mutate(_ change: (inout [Account]) -> Void) -> Bool {
+    func mutate(_ change: (inout [Account]) throws -> Void) -> Bool {
         run {
             var next = accounts
-            change(&next)
+            try change(&next)
             try persist(next)
         }
     }

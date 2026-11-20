@@ -15,7 +15,10 @@ final class LegacyVaultTransactionTests: XCTestCase {
     }
 
     private func makeVault(at location: VaultLocation, accounts: [Account] = []) async throws -> (LegacyVaultTransaction, CommittedVault) {
-        let (envelope, dek) = try Envelope.createUnwrapped(accounts: accounts)
+        var (envelope, dek) = try Envelope.createUnwrapped(accounts: accounts)
+        try envelope.addSecureEnclaveWrap(VaultWrap.secureEnclave(keyID: Data(repeating: 1, count: 16),
+                                                                  nonce: Data(repeating: 2, count: XChaCha.nonceSize),
+                                                                  ct: Data(repeating: 3, count: 48)))
         let transaction = LegacyVaultTransaction(location: location)
         let created = try await transaction.create(VaultCommit(envelope: envelope, accounts: accounts, dek: dek, backupPolicy: .keep))
         return (transaction, created)

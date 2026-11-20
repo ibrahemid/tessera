@@ -196,7 +196,7 @@ extension AppModel {
         guard account.type == .hotp else { return }
         let saved = mutate { accts in
             if let i = accts.firstIndex(where: { $0.id == account.id }) {
-                accts[i].counter += 1
+                accts[i].counter = try Account.nextCounter(after: accts[i].counter)
                 accts[i].updatedAt = Int64(Date().timeIntervalSince1970)
             }
         }

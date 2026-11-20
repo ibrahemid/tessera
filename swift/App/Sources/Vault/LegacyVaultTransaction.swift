@@ -13,7 +13,7 @@ struct LegacyVaultTransaction: VaultTransaction {
             let snapshot = try loadSnapshot()
             let accounts: [Account]
             do { accounts = try snapshot.envelope.open(dek: heldDEK) }
-            catch is XChaCha.CryptoError { throw VaultWriteError.keyChanged }
+            catch VaultError.wrongPassphrase { throw VaultWriteError.keyChanged }
             catch { throw VaultWriteError.unparseable(location.fileURL) }
             let next = try transform(OpenedVault(snapshot: snapshot, accounts: accounts))
             return try write(next)

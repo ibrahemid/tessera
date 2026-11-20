@@ -55,6 +55,19 @@ final class FeaturesLinkIntakeTests: XCTestCase {
     }
 
     @MainActor
+    func testAdvancingHOTPAtTheMaximumCounterDoesNotWrap() {
+        let model = AppModel(demo: .populated)
+        var account = VaultFixture.account("h", issuer: "Bank", type: .hotp, period: 0)
+        account.counter = Account.maxCounter
+        model.accounts = [account]
+
+        model.advanceHOTP(account)
+
+        XCTAssertEqual(model.accounts.first?.counter, Account.maxCounter)
+        guard case .failure = model.notice else { return XCTFail("no failure notice") }
+    }
+
+    @MainActor
     func testLinkReceivedWhileLockedStaysPendingAndLocked() throws {
         let model = AppModel(demo: .locked)
         XCTAssertTrue(model.receiveLinks([try url(otpauth)]))

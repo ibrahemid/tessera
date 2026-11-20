@@ -138,7 +138,11 @@ final class SheetsBackupFileTests: XCTestCase {
     }
 
     func testRejectsEnvelopeWithoutPasswordWrap() throws {
-        let data = try Envelope.createUnwrapped(accounts: [sample]).0.encoded()
+        var envelope = try Envelope.createUnwrapped(accounts: [sample]).0
+        try envelope.addSecureEnclaveWrap(VaultWrap.secureEnclave(keyID: Data(repeating: 1, count: 16),
+                                                                  nonce: Data(repeating: 2, count: XChaCha.nonceSize),
+                                                                  ct: Data(repeating: 3, count: 48)))
+        let data = try envelope.encoded()
         XCTAssertNotNil(BackupFile.problem(in: data))
     }
 
