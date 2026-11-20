@@ -58,18 +58,18 @@ struct EditAccountView: View {
                 .frame(maxWidth: .infinity)
 
             labeledField("Issuer") {
-                TextField("Service name", text: $issuer)
+                TextField("Issuer", text: $issuer)
                     .textFieldStyle(.plain).autocorrectionDisabled()
                     .focused($issuerFocused)
                     .onChange(of: issuer) { error = nil }
             }
             labeledField("Account") {
-                TextField("Username or email", text: $accountLabel)
+                TextField("Account", text: $accountLabel)
                     .textFieldStyle(.plain).autocorrectionDisabled()
                     .onChange(of: accountLabel) { error = nil }
             }
             labeledField("Alias") {
-                TextField("Short lookup name", text: $alias)
+                TextField("Alias", text: $alias)
                     .font(Typo.code(13)).textFieldStyle(.plain).autocorrectionDisabled()
                     .onChange(of: alias) { error = nil }
             }
@@ -81,7 +81,7 @@ struct EditAccountView: View {
                     .font(Typo.label(11)).foregroundStyle(Palette.textSecondary)
             }
             labeledField("Folder") {
-                TextField("None", text: $folder)
+                TextField("Folder", text: $folder)
                     .textFieldStyle(.plain).autocorrectionDisabled()
                     .onChange(of: folder) { error = nil }
             }
@@ -209,9 +209,9 @@ struct EditAccountView: View {
                     }
                 }
             }
-            labeledField("Replace secret") {
+            labeledField("Replace setup key") {
                 TextField("Setup key or otpauth link", text: $draft.secretText)
-                    .textFieldStyle(.plain).autocorrectionDisabled()
+                    .font(Typo.code(13)).textFieldStyle(.plain).autocorrectionDisabled()
                     .onChange(of: draft.secretText) {
                         error = nil
                         if case .link(let link) = secretInput { draft.adopt(link) }
@@ -290,10 +290,14 @@ private struct TagChip: View {
         HStack(spacing: 4) {
             Text(tag).font(Typo.label(11.5, .medium)).foregroundStyle(Palette.accentInk)
             Button(action: remove) {
-                Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).foregroundStyle(Palette.textSecondary)
+                Image(systemName: "xmark").font(Typo.label(8, .bold)).foregroundStyle(Palette.textSecondary)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Remove tag \(tag)")
+            .padding(.vertical, -10)
+            .padding(.trailing, -8)
         }
         .padding(.horizontal, 9).padding(.vertical, 4)
         .background(Palette.accentWash, in: Capsule())

@@ -22,6 +22,27 @@ struct VaultCounts: Equatable {
     var tags: [String: Int] = [:]
 }
 
+struct FolderRemoval: Equatable, Identifiable {
+    static let action = "Remove Folder"
+
+    let folder: String
+    let count: Int
+    var id: String { folder }
+
+    init(folder: String, accounts: [Account]) {
+        self.folder = folder
+        count = accounts.filter { $0.folder == folder }.count
+    }
+
+    var title: String { "Remove the \(folder) folder?" }
+
+    var message: String {
+        count == 1
+            ? "1 account in it stays in your vault, outside any folder."
+            : "\(count) accounts in it stay in your vault, outside any folder."
+    }
+}
+
 enum VaultList {
     static func matches(_ account: Account, query: String) -> Bool {
         let terms = query.split(whereSeparator: \.isWhitespace).compactMap { raw -> String? in

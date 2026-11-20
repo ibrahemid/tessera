@@ -51,7 +51,7 @@ final class SheetsUITests: XCTestCase {
     @MainActor
     func testResetConfirmationDefaultsToCancel() throws {
         let app = launch()
-        XCTAssertTrue(app.buttons["Add account"].waitForExistence(timeout: 15), "vault did not open")
+        XCTAssertTrue(app.buttons["Add account"].firstMatch.waitForExistence(timeout: 15), "vault did not open")
         openSettings(app)
         app.toolbars.buttons["Vault"].click()
 

@@ -13,7 +13,7 @@ final class FlowUITests: XCTestCase {
         app.launch()
 
         // First launch goes straight to the empty vault (no onboarding, no prompts).
-        let addAccount = app.buttons["Add account"]
+        let addAccount = app.buttons["Add account"].firstMatch
         XCTAssertTrue(addAccount.waitForExistence(timeout: 15), "vault empty state did not appear")
         addAccount.click()
 

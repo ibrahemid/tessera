@@ -70,11 +70,15 @@ struct VaultView: View {
     @State private var promptText = ""
     @State private var scanning = false
     @State private var linkPrefill: LinkPrefill?
+    @State private var folderRemoval: FolderRemoval?
+    @State private var noticeHeight: CGFloat = 0
+    @ScaledMetric(relativeTo: .body) private var emptyIconSize: CGFloat = 24
     /// Density: roomy windowed layout (sidebar) vs a narrow menu-bar-friendly
     /// one (sidebar folded into a filter row). Persisted across launches.
     @AppStorage(AppModel.compactPrefKey) private var compact = false
     @AppStorage(AppModel.hideCodesPrefKey) private var hideCodes = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var hidesSidebarToggle = false
     @FocusState private var searchFocused: Bool
     @State private var didFocusSearch = false
     private let previewHoverID: String?
@@ -115,7 +119,7 @@ struct VaultView: View {
 
     private var isPresenting: Bool {
         showingAdd || qrAccount != nil || editAccount != nil || exportingBackup || restoringBackup || prompt != nil
-            || linkPrefill != nil
+            || linkPrefill != nil || folderRemoval != nil
     }
 
     private var menuContext: VaultMenuContext {
@@ -125,96 +129,169 @@ struct VaultView: View {
     }
 
     var body: some View {
+        backupSheets
+            .focusedSceneValue(\.vaultMenu, isPresenting ? nil : menuContext)
+    }
+
+    private var navigation: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             sidebar
         } detail: {
             detailScaffold
                 .navigationTitle("")
-                .toolbar {
-                    ToolbarItem(placement: .primaryAction) {
-                        Button { showingAdd = true } label: { Image(systemName: "plus") }
-                            .help("Add account")
-                    }
-                    ToolbarItem(placement: .automatic) {
-                        Button { setCompact(!compact) } label: {
-                            Image(systemName: compact ? "arrow.up.left.and.arrow.down.right" : "arrow.down.right.and.arrow.up.left")
-                        }
-                        .help(compact ? "Expand to the full window" : "Shrink to a compact window")
-                        .accessibilityLabel(compact ? "Expand to full window" : "Shrink to compact window")
-                    }
-                    ToolbarItem(placement: .automatic) {
-                        Button { openSettings() } label: { Image(systemName: "gearshape") }
-                            .help("Settings")
-                            .accessibilityLabel("Settings")
-                    }
-                    ToolbarItem(placement: .automatic) {
-                        Button { model.lock() } label: { Image(systemName: "lock") }
-                            .help("Lock")
-                            .accessibilityLabel("Lock")
-                    }
-                }
+                .toolbar { detailToolbar }
         }
         // Sidebar is fixed open in window mode; folded entirely in compact. No
         // collapse toggle — the density button is the only control.
         .toolbar(removing: .sidebarToggle)
-        .onAppear { columnVisibility = compact ? .detailOnly : .all }
-        .onChange(of: compact) { _, c in
-            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) {
-                columnVisibility = c ? .detailOnly : .all
+    }
+
+    @ToolbarContentBuilder private var detailToolbar: some ToolbarContent {
+        ToolbarItem(placement: .primaryAction) {
+            Button { showingAdd = true } label: { Image(systemName: "plus") }
+                .help("Add account")
+                .accessibilityLabel("Add account")
+        }
+        ToolbarItem(placement: .automatic) {
+            Button { setCompact(!compact) } label: { Image(systemName: densityToggleSymbol) }
+                .help(densityToggleTitle)
+                .accessibilityLabel(densityToggleTitle)
+        }
+        ToolbarItem(placement: .automatic) {
+            Button { openSettings() } label: { Image(systemName: "gearshape") }
+                .help("Settings")
+                .accessibilityLabel("Settings")
+        }
+        ToolbarItem(placement: .automatic) {
+            Button { model.lock() } label: { Image(systemName: "lock") }
+                .help("Lock")
+                .accessibilityLabel("Lock")
+        }
+    }
+
+    private var layoutObservers: some View {
+        navigation
+            .onAppear {
+                columnVisibility = compact ? .detailOnly : .all
+                hidesSidebarToggle = compact
+            }
+            .onChange(of: compact) { (_: Bool, isCompact: Bool) in updateColumns(compact: isCompact) }
+    }
+
+    private var dataObservers: some View {
+        layoutObservers
+            // A list vanishes when its last account leaves it — don't strand the user
+            // on a dead selection.
+            .onChange(of: folders) { (_: [String], f: [String]) in leaveScopeIfGone(folders: f) }
+            .onChange(of: model.allTags) { (_: [String], t: [String]) in leaveScopeIfGone(tags: t) }
+            .onChange(of: model.pendingLink, initial: true) { presentPendingLink() }
+            .onChange(of: isPresenting) { presentPendingLink() }
+            .onChange(of: visibleIDs) { (_: [String], ids: [String]) in selection.prune(to: ids) }
+            .onChange(of: query) { (_: String, q: String) in selectFirstMatch(for: q) }
+    }
+
+    // Arrows are routed here: a key handler inside the split view's detail column never receives them.
+    private var keyHandling: some View {
+        dataObservers
+            .onKeyPress(phases: .down) { (press: KeyPress) -> KeyPress.Result in handleKeyPress(press) }
+    }
+
+    private var accountSheets: some View {
+        keyHandling
+            .sheet(isPresented: $showingAdd) { AddAccountView() }
+            .sheet(item: $qrAccount) { (account: Account) in QRExportView(account: account) }
+            .sheet(item: $editAccount) { (account: Account) in EditAccountView(account: account) }
+            .sheet(item: $linkPrefill) { (prefill: LinkPrefill) in AddAccountView(prefill: prefill.text) }
+    }
+
+    private var dialogs: some View {
+        accountSheets
+            .fileDropImport(isEnabled: acceptsDroppedFiles, picked: $pickedImport)
+            .alert(prompt?.title ?? "", isPresented: promptPresented, presenting: prompt,
+                   actions: promptActions)
+            .confirmationDialog(folderRemoval?.title ?? "", isPresented: folderRemovalPresented,
+                                titleVisibility: .visible, presenting: folderRemoval,
+                                actions: folderRemovalActions, message: folderRemovalMessage)
+    }
+
+    private var backupSheets: some View {
+        dialogs
+            .sheet(isPresented: $exportingBackup) { ExportBackupView(onSaved: { (_: URL) in }) }
+            .sheet(isPresented: $restoringBackup) { RestoreBackupView() }
+    }
+
+    private var acceptsDroppedFiles: Bool {
+        !showingAdd && qrAccount == nil && editAccount == nil && prompt == nil
+            && linkPrefill == nil && folderRemoval == nil
+    }
+
+    private var promptPresented: Binding<Bool> {
+        Binding(get: { prompt != nil }, set: { if !$0 { dismissPrompt() } })
+    }
+
+    private var folderRemovalPresented: Binding<Bool> {
+        Binding(get: { folderRemoval != nil }, set: { if !$0 { folderRemoval = nil } })
+    }
+
+    @ViewBuilder private func promptActions(_ p: TextPrompt) -> some View {
+        TextField(p.field, text: $promptText)
+        Button(p.confirm) { submit(p) }
+        Button("Cancel", role: .cancel) { dismissPrompt() }
+    }
+
+    @ViewBuilder private func folderRemovalActions(_ removal: FolderRemoval) -> some View {
+        Button(FolderRemoval.action, role: .destructive) { model.removeFolder(removal.folder) }
+        Button("Cancel", role: .cancel) {}
+    }
+
+    private func folderRemovalMessage(_ removal: FolderRemoval) -> Text {
+        Text(removal.message)
+    }
+
+    private func dismissPrompt() {
+        prompt = nil
+        promptText = ""
+    }
+
+    private func updateColumns(compact isCompact: Bool) {
+        hidesSidebarToggle = isCompact
+        if isCompact {
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) { columnVisibility = .detailOnly }
+        } else {
+            // The toggle has to be back before the sidebar opens, or a sidebar opened soon after launch covers the detail.
+            DispatchQueue.main.async {
+                guard !hidesSidebarToggle else { return }
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) { columnVisibility = .all }
             }
         }
-        // A list vanishes when its last account leaves it — don't strand the user
-        // on a dead selection.
-        .onChange(of: folders) { _, f in
-            if case .folder(let name) = currentScope, !f.contains(name) { scope = .all }
+    }
+
+    private func leaveScopeIfGone(folders f: [String]) {
+        if case .folder(let name) = currentScope, !f.contains(name) { scope = .all }
+    }
+
+    private func leaveScopeIfGone(tags t: [String]) {
+        if case .tag(let name) = currentScope, !t.contains(name) { scope = .all }
+    }
+
+    private func selectFirstMatch(for q: String) {
+        guard !q.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        if let first = visibleIDs.first { selection.select(first) } else { selection.clear() }
+    }
+
+    private func handleKeyPress(_ press: KeyPress) -> KeyPress.Result {
+        guard !isPresenting,
+              let route = VaultKeyRoute.route(key: press.key, characters: press.characters,
+                                              modifiers: press.modifiers, searchFocused: searchFocused)
+        else { return .ignored }
+        switch route {
+        case .move(let delta, let extending):
+            moveSelection(delta, extending: extending)
+        case .type(let text):
+            query.append(text)
+            searchFocused = true
         }
-        .onChange(of: model.allTags) { _, t in
-            if case .tag(let name) = currentScope, !t.contains(name) { scope = .all }
-        }
-        .onChange(of: model.pendingLink, initial: true) { _, _ in presentPendingLink() }
-        .onChange(of: isPresenting) { _, _ in presentPendingLink() }
-        .onChange(of: visibleIDs) { _, ids in selection.prune(to: ids) }
-        .onChange(of: query) { _, q in
-            guard !q.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-            if let first = visibleIDs.first { selection.select(first) } else { selection.clear() }
-        }
-        // Arrows are routed here: a key handler inside the split view's detail column never receives them.
-        .onKeyPress(phases: .down) { press in
-            guard !isPresenting,
-                  let route = VaultKeyRoute.route(key: press.key, characters: press.characters,
-                                                  modifiers: press.modifiers, searchFocused: searchFocused)
-            else { return .ignored }
-            switch route {
-            case .move(let delta, let extending):
-                moveSelection(delta, extending: extending)
-            case .type(let text):
-                query.append(text)
-                searchFocused = true
-            }
-            return .handled
-        }
-        .sheet(isPresented: $showingAdd) { AddAccountView() }
-        .sheet(item: $qrAccount) { QRExportView(account: $0) }
-        .sheet(item: $editAccount) { EditAccountView(account: $0) }
-        .sheet(item: $linkPrefill) { AddAccountView(prefill: $0.text) }
-        .fileDropImport(isEnabled: !showingAdd && qrAccount == nil && editAccount == nil && prompt == nil
-                            && linkPrefill == nil,
-                        picked: $pickedImport)
-        .alert(prompt?.title ?? "", isPresented: Binding(
-            get: { prompt != nil },
-            set: { if !$0 { prompt = nil; promptText = "" } }
-        ), presenting: prompt) { p in
-            TextField(p.field, text: $promptText)
-            Button(p.confirm) { submit(p) }
-            Button("Cancel", role: .cancel) { prompt = nil; promptText = "" }
-        }
-        .sheet(isPresented: $exportingBackup) { ExportBackupView() }
-        .sheet(isPresented: $restoringBackup) { RestoreBackupView() }
-        .overlay(alignment: .bottom) {
-            if let n = model.notice, !showingAdd { noticeCapsule(n) }
-        }
-        .animation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.8), value: model.notice)
-        .focusedSceneValue(\.vaultMenu, isPresenting ? nil : menuContext)
+        return .handled
     }
 
     private var sidebar: some View {
@@ -232,7 +309,9 @@ struct VaultView: View {
                             .tag(VaultScope.folder(f))
                             .contextMenu {
                                 Button("Rename Folder…") { promptText = f; prompt = .renameFolder(f) }
-                                Button("Remove Folder") { model.removeFolder(f) }
+                                Button("Remove Folder…") {
+                                    folderRemoval = FolderRemoval(folder: f, accounts: model.accounts)
+                                }
                             }
                             .dropDestination(for: String.self) { items, _ in
                                 let ids = VaultList.droppedIDs(items, known: Set(model.accounts.map(\.id)))
@@ -254,6 +333,8 @@ struct VaultView: View {
             }
         }
         .listItemTint(.fixed(Palette.accentInk))
+        // Stays inside the column width: outside it, the removal drops the width preference.
+        .toolbar(removing: hidesSidebarToggle ? .sidebarToggle : nil)
         .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 280)
         .safeAreaInset(edge: .bottom) {
             HStack {
@@ -263,19 +344,34 @@ struct VaultView: View {
         }
     }
 
+    private var densityToggleTitle: String { compact ? "Expand to full window" : "Shrink to compact window" }
+
+    private var densityToggleSymbol: String {
+        compact ? "arrow.up.left.and.arrow.down.right" : "arrow.down.right.and.arrow.up.left"
+    }
+
+    private var noticeInset: CGFloat {
+        NoticeLayout.bottomInset(noticeHeight: model.notice == nil || showingAdd ? 0 : noticeHeight,
+                                 bulkBarVisible: selection.isMultiple)
+    }
+
     private func noticeCapsule(_ n: AppModel.Notice) -> some View {
         let isFailure = if case .failure = n { true } else { false }
+        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
         return NoticeLine(n)
+            .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 14).padding(.vertical, 9)
-            .background(Palette.surfaceHi, in: Capsule())
-            .overlay(Capsule().stroke(Palette.border, lineWidth: 1))
-            .contentShape(Capsule())
+            .background(Palette.surfaceHi, in: shape)
+            .overlay(shape.stroke(Palette.border, lineWidth: 1))
+            .contentShape(shape)
             .onTapGesture { if isFailure { dismissNotice(n) } }
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(isFailure ? .isButton : [])
             .accessibilityHint(isFailure ? "Dismisses this message" : "")
             .accessibilityAction(named: "Dismiss") { dismissNotice(n) }
-            .padding(.bottom, selection.isMultiple ? 68 : 16)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { noticeHeight = $0 }
+            .padding(.horizontal, compact ? 10 : 14)
+            .padding(.bottom, NoticeLayout.bottomPadding(bulkBarVisible: selection.isMultiple))
             .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
             // Keyed on the token, not the text: repeating an identical notice
             // restarts the countdown instead of inheriting the previous one's.
@@ -297,6 +393,13 @@ struct VaultView: View {
             if !model.accounts.isEmpty { searchHeader }
             if showsFilterBar && !model.accounts.isEmpty { compactFilterBar }
             detailContent
+                .overlay(alignment: .bottom) {
+                    if let n = model.notice, !showingAdd { noticeCapsule(n) }
+                }
+                .safeAreaInset(edge: .bottom) {
+                    if selection.isMultiple { bulkBar }
+                }
+                .animation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.8), value: model.notice)
         }
         // One centered content column so the search field, filter row, and list
         // rows share the same left/right edges (was: full-width search over a
@@ -309,6 +412,8 @@ struct VaultView: View {
             // must not steal focus back from wherever the user put it.
             guard !didFocusSearch else { return }
             didFocusSearch = true
+            searchFocused = true
+            // Repeated next turn: the field can refuse focus while it is still being created.
             DispatchQueue.main.async { searchFocused = true }
         }
     }
@@ -318,7 +423,7 @@ struct VaultView: View {
     private var searchHeader: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 13)).foregroundStyle(Palette.textFaint)
+                .font(Typo.label(13)).foregroundStyle(Palette.textFaint)
                 .accessibilityHidden(true)
             TextField("Search", text: $query)
                 .textFieldStyle(.plain).font(Typo.label(13))
@@ -328,11 +433,14 @@ struct VaultView: View {
                 .onExitCommand { escape() }
             if !query.isEmpty {
                 Button { query = ""; searchFocused = true } label: {
-                    Image(systemName: "xmark.circle.fill").font(.system(size: 13))
+                    Image(systemName: "xmark.circle.fill").font(Typo.label(13))
                         .foregroundStyle(Palette.textFaint)
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear search")
+                .padding(.vertical, -4)
             }
         }
         .padding(.horizontal, 11).padding(.vertical, 7)
@@ -347,7 +455,7 @@ struct VaultView: View {
         let searching = !query.isEmpty
         VStack(spacing: 8) {
             Image(systemName: searching ? "magnifyingglass" : "tray")
-                .font(.system(size: 24)).foregroundStyle(Palette.textFaint)
+                .font(.system(size: emptyIconSize)).foregroundStyle(Palette.textFaint)
             Text(searching ? "No matches" : emptyListText)
                 .font(Typo.label(13)).foregroundStyle(Palette.textSecondary)
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -371,14 +479,15 @@ struct VaultView: View {
         } else if visible.isEmpty {
             emptyResults
         } else {
+            let template = RowLayout.nextTemplate(for: model.accounts)
             ScrollViewReader { proxy in
                 List {
                     ForEach(sections) { section in
                         if section.kind == .single {
-                            sectionRows(section)
+                            sectionRows(section, template: template)
                         } else {
                             Section {
-                                sectionRows(section)
+                                sectionRows(section, template: template)
                             } header: {
                                 SectionLabel(section.kind == .pinned ? "Pinned" : "Accounts")
                                     .padding(.horizontal, compact ? 6 : 8)
@@ -389,22 +498,20 @@ struct VaultView: View {
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
                 .environment(\.defaultMinListRowHeight, 1)
+                .safeAreaPadding(.bottom, noticeInset)
                 .frame(maxWidth: .infinity)   // fills the centered column from detailScaffold
                 .onChange(of: selection.cursor) { _, cursor in
                     guard let cursor else { return }
                     withAnimation(reduceMotion ? nil : .easeOut(duration: 0.15)) { proxy.scrollTo(cursor) }
                 }
-                .safeAreaInset(edge: .bottom) {
-                    if selection.isMultiple { bulkBar }
-                }
             }
         }
     }
 
-    private func sectionRows(_ section: VaultSection) -> some View {
+    private func sectionRows(_ section: VaultSection, template: String) -> some View {
         let ids = section.accounts.map(\.id)
         return ForEach(section.accounts, id: \.id) { account in
-            row(account)
+            row(account, template: template)
                 .listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets(top: 3, leading: compact ? 6 : 8, bottom: 3, trailing: compact ? 6 : 8))
                 .listRowBackground(Color.clear)
@@ -434,7 +541,7 @@ struct VaultView: View {
                 } label: {
                     HStack(spacing: 6) {
                         Text(folderLabel(sel)).font(Typo.label(12.5, .medium))
-                        Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
+                        Image(systemName: "chevron.down").font(Typo.label(9, .semibold))
                     }
                     .foregroundStyle(isFolder(sel) ? Palette.accentInk : Palette.textSecondary)
                     .padding(.horizontal, 11).padding(.vertical, 6)
@@ -451,7 +558,7 @@ struct VaultView: View {
                 } label: {
                     HStack(spacing: 6) {
                         Text(tagLabel(sel)).font(Typo.label(12.5, .medium))
-                        Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
+                        Image(systemName: "chevron.down").font(Typo.label(9, .semibold))
                     }
                     .foregroundStyle(tagLabel(sel) != "Tags" ? Palette.accentInk : Palette.textSecondary)
                     .padding(.horizontal, 11).padding(.vertical, 6)
@@ -493,9 +600,11 @@ struct VaultView: View {
                 .fixedSize()
             Spacer(minLength: 4)
             Button { perform(.togglePin, targets: targets) } label: {
-                Label(state.pins ? "Pin" : "Unpin", systemImage: state.pins ? "pin" : "pin.slash")
+                Label(state.pinTitle, systemImage: state.pinSymbol)
             }
             .buttonStyle(.plain)
+            .help(state.pinTitle)
+            .accessibilityLabel(state.pinTitle)
             Menu {
                 ForEach(folders, id: \.self) { f in
                     Button { perform(.moveToFolder(f), targets: targets) } label: {
@@ -512,6 +621,8 @@ struct VaultView: View {
                 Label("Move to Folder", systemImage: "folder")
             }
             .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .help("Move to Folder")
+            .accessibilityLabel("Move to Folder")
             Menu {
                 ForEach(tags, id: \.self) { t in
                     Button { perform(.addTag(t), targets: targets) } label: {
@@ -532,10 +643,15 @@ struct VaultView: View {
                 Label("Tags", systemImage: "tag")
             }
             .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .help("Tags")
+            .accessibilityLabel("Tags")
             Button { selection.clear() } label: {
-                Image(systemName: "xmark").font(.system(size: 11, weight: .semibold))
+                Image(systemName: "xmark").font(Typo.label(11, .semibold))
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .padding(.vertical, -4)
             .foregroundStyle(Palette.textSecondary)
             .help("Clear selection")
             .accessibilityLabel("Clear selection")
@@ -550,7 +666,7 @@ struct VaultView: View {
         .background(Palette.background)
     }
 
-    @ViewBuilder private func row(_ account: Account) -> some View {
+    @ViewBuilder private func row(_ account: Account, template: String) -> some View {
         let menuTargets = targets(for: account)
         LiveAccountRow(ticker: model.ticker,
                        account: account,
@@ -561,6 +677,7 @@ struct VaultView: View {
                        compact: compact,
                        reduceMotion: reduceMotion,
                        hovering: previewHoverID == account.id,
+                       nextTemplate: template,
                        onClick: { click(account, $0) })
             .contextMenu {
                 AccountActionsMenu(state: AccountMenuState(targets: menuTargets),
@@ -572,7 +689,8 @@ struct VaultView: View {
             }
             .swipeActions(edge: .leading, allowsFullSwipe: true) {
                 Button { model.togglePin(account) } label: {
-                    Label(account.pinned ? "Unpin" : "Pin", systemImage: account.pinned ? "pin.slash" : "pin")
+                    let state = AccountMenuState(targets: [account])
+                    Label(state.pinTitle, systemImage: state.pinSymbol)
                 }.tint(Palette.accentFill)
             }
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {

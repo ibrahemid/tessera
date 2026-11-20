@@ -41,12 +41,12 @@ enum Palette {
     static let border     = Color.themed(light: 0xECECEF, dark: 0x2A2D38, lightHC: 0x8E929C, darkHC: 0x6A6E7A)
 
     static let textPrimary   = Color.themed(light: 0x1A1C22, dark: 0xF2F2F5)
-    static let textSecondary = Color.themed(light: 0x6B6F7B, dark: 0x9DA1AD, lightHC: 0x4E525C, darkHC: 0x9DA1AD)
+    static let textSecondary = Color.themed(light: 0x636671, dark: 0x9DA1AD, lightHC: 0x4E525C, darkHC: 0x9DA1AD)
     static let textFaint     = Color.themed(light: 0x858994, dark: 0x737785, lightHC: 0x4E525C, darkHC: 0x9DA1AD)
 
     // Antique gold accent — the tessera.
     static let accent     = Color.themed(light: 0xA9791F, dark: 0xE3B23C)
-    static let accentInk  = Color.themed(light: 0x86601A, dark: 0xE3B23C)
+    static let accentInk  = Color.themed(light: 0x7B5818, dark: 0xE3B23C)
     static let accentFill = Color.themed(light: 0x8E6516, dark: 0xE3B23C)
     static let accentSoft = Color.themed(light: 0xEBD9AE, dark: 0x4A3C1C)
     // Tinted accent surface for selected nav / toggle states.
@@ -54,7 +54,7 @@ enum Palette {
     // Readable label on top of `accentFill` (dark ink on bright gold, white on deep gold).
     static let onAccent   = Color.themed(light: 0xFFFFFF, dark: 0x1C1505)
     static let ringTrack  = Color.themed(light: 0xE8E8EC, dark: 0x2E313C)
-    static let warning    = Color.themed(light: 0xC2410C, dark: 0xF97316)
+    static let warning    = Color.themed(light: 0xB63D0B, dark: 0xF97316)
 
     // Curated, non-rainbow hues for per-issuer tesserae (deterministic by issuer).
     static let tileHues: [UInt32] = [
@@ -91,10 +91,10 @@ enum Typo {
 
     static func textStyle(for size: CGFloat) -> Font.TextStyle? {
         switch size {
-        case 13: .body
-        case 12: .callout
-        case 11: .subheadline
-        case 10: .footnote
+        case 13..<15: .body
+        case 12..<13: .callout
+        case 11..<12: .subheadline
+        case 8..<11: .footnote
         default: nil
         }
     }

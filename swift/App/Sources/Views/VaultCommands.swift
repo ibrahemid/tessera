@@ -33,6 +33,8 @@ struct AccountMenuState: Equatable {
     var single: Account? { targets.count == 1 ? targets.first : nil }
     var isEmpty: Bool { targets.isEmpty }
     var pins: Bool { targets.isEmpty || targets.contains { !$0.pinned } }
+    var pinTitle: String { pins ? "Pin" : "Unpin" }
+    var pinSymbol: String { pins ? "star" : "star.slash" }
     var canAdvance: Bool { single?.type == .hotp }
     var ids: Set<String> { Set(targets.map(\.id)) }
 
@@ -73,7 +75,7 @@ struct AccountActionsMenu: View {
         Button("Edit…", systemImage: "pencil") { perform(.edit) }
             .keyboardShortcut(inMenuBar ? KeyboardShortcut("e") : nil)
             .disabled(state.single == nil)
-        Button(state.pins ? "Pin" : "Unpin", systemImage: state.pins ? "pin" : "pin.slash") { perform(.togglePin) }
+        Button(state.pinTitle, systemImage: state.pinSymbol) { perform(.togglePin) }
             .keyboardShortcut(inMenuBar ? KeyboardShortcut("p", modifiers: [.command, .shift]) : nil)
             .disabled(state.isEmpty)
         Menu {
@@ -158,7 +160,7 @@ struct VaultCommands: Commands {
                 .disabled(model.isLocked || !model.vaultExists)
         }
         CommandGroup(after: .textEditing) {
-            Button("Find") { menu?.perform(.find) }
+            Button("Find…") { menu?.perform(.find) }
                 .keyboardShortcut("f")
                 .disabled(menu == nil)
         }

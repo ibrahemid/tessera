@@ -94,9 +94,9 @@ struct ActionButton: View {
 }
 
 struct PrimaryButton: View {
-    let title: String; var enabled: Bool; var action: () -> Void
-    init(_ title: String, enabled: Bool = true, action: @escaping () -> Void) {
-        self.title = title; self.enabled = enabled; self.action = action
+    let title: String; var enabled: Bool; var isDefault: Bool; var action: () -> Void
+    init(_ title: String, enabled: Bool = true, isDefault: Bool = true, action: @escaping () -> Void) {
+        self.title = title; self.enabled = enabled; self.isDefault = isDefault; self.action = action
     }
     var body: some View {
         Button(action: action) {
@@ -107,6 +107,7 @@ struct PrimaryButton: View {
                 .overlay(RoundedRectangle(cornerRadius: 9).stroke(enabled ? Color.clear : Palette.border, lineWidth: 1))
         }
         .buttonStyle(.plain)
+        .keyboardShortcut(isDefault ? .defaultAction : nil)
         .disabled(!enabled)
     }
 }

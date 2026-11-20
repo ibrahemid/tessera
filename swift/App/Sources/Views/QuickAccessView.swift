@@ -10,6 +10,7 @@ struct QuickAccessView: View {
     @AppStorage(AppModel.hideCodesPrefKey) private var hideCodes = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var searchFocused: Bool
+    @ScaledMetric(relativeTo: .body) private var emptyIconSize: CGFloat = 22
     private let hideCodesOverride: Bool?
 
     static let width: CGFloat = 400
@@ -85,7 +86,7 @@ struct QuickAccessView: View {
     private func searchHeader(order: [String], accounts: [Account]) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 13)).foregroundStyle(Palette.textFaint)
+                .font(Typo.label(13)).foregroundStyle(Palette.textFaint)
                 .accessibilityHidden(true)
             TextField("Search", text: $list.query)
                 .textFieldStyle(.plain).font(Typo.label(13))
@@ -95,10 +96,13 @@ struct QuickAccessView: View {
                 .onSubmit { copy(list.target(in: order), from: accounts) }
             if !list.query.isEmpty {
                 Button { list.query = "" } label: {
-                    Image(systemName: "xmark.circle.fill").font(.system(size: 12)).foregroundStyle(Palette.textFaint)
+                    Image(systemName: "xmark.circle.fill").font(Typo.label(12)).foregroundStyle(Palette.textFaint)
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear search")
+                .padding(.vertical, -4)
             }
         }
         .padding(.horizontal, 11).padding(.vertical, 7)
@@ -108,6 +112,7 @@ struct QuickAccessView: View {
 
     private func rows(_ accounts: [Account], order: [String]) -> some View {
         let now = clock.now
+        let template = RowLayout.nextTemplate(for: model.accounts)
         return ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 4) {
@@ -122,7 +127,8 @@ struct QuickAccessView: View {
                                        selected: highlighted,
                                        hideCodes: hidesCodes,
                                        compact: true,
-                                       reduceMotion: reduceMotion) { _ in
+                                       reduceMotion: reduceMotion,
+                                       nextTemplate: template) { _ in
                             copy(account.id, from: accounts)
                         }
                         .id(account.id)
@@ -141,7 +147,7 @@ struct QuickAccessView: View {
         let searching = !list.query.isEmpty
         return VStack(spacing: 8) {
             Image(systemName: searching ? "magnifyingglass" : "tray")
-                .font(.system(size: 22)).foregroundStyle(Palette.textFaint)
+                .font(.system(size: emptyIconSize)).foregroundStyle(Palette.textFaint)
                 .accessibilityHidden(true)
             Text(searching ? "No matches" : "No accounts")
                 .font(Typo.label(13)).foregroundStyle(Palette.textSecondary)

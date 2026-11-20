@@ -16,7 +16,7 @@ final class VaultKeyboardUITests: XCTestCase {
             .appendingPathComponent("tessera-uitest-\(UUID().uuidString)/vault.json")
         app.launch()
 
-        let empty = app.buttons["Add account"]
+        let empty = app.buttons["Add account"].firstMatch
         XCTAssertTrue(empty.waitForExistence(timeout: 15), "vault empty state did not appear")
         for (index, (name, uri)) in Self.accounts.enumerated() {
             if index == 0 { empty.click() } else { app.typeKey("n", modifierFlags: .command) }
@@ -126,7 +126,7 @@ final class VaultKeyboardUITests: XCTestCase {
         }
         let expected = [
             "File": ["Add Account…", "Scan Screen for QR Code", "Import from Files…", "Export Encrypted Backup…", "Lock Vault"],
-            "Edit": ["Find"],
+            "Edit": ["Find…"],
             "View": ["Hide Codes", "Window Layout", "Compact Layout"],
             "Account": ["Copy Code", "Edit…", "Pin", "Move to Folder", "Add Tag", "Delete"],
             "Help": ["Tessera Help"],

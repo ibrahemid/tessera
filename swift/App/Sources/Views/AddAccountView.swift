@@ -53,11 +53,15 @@ struct AddAccountView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack { Text("Add accounts").font(Typo.display(18)).foregroundStyle(Palette.textPrimary); Spacer() }
+            HStack {
+                Text(showManual ? "Add account" : "Add accounts").font(Typo.display(18))
+                    .foregroundStyle(Palette.textPrimary)
+                Spacer()
+            }
             if showManual {
-                ManualEntryForm(prefillSecret: manualSecret, onAdded: { dismiss() }, onCancel: { dismiss() })
                 Button("Back to paste") { showManual = false; model.errorMessage = nil }
                     .buttonStyle(.plain).font(Typo.label(12)).foregroundStyle(Palette.textSecondary)
+                ManualEntryForm(prefillSecret: manualSecret, onAdded: { dismiss() }, onCancel: { dismiss() })
             } else {
                 primaryField
                 secondaryActions
@@ -274,12 +278,9 @@ struct ManualEntryForm: View {
                 Text("Time-based (TOTP)").tag(OTPType.totp)
                 Text("Counter (HOTP)").tag(OTPType.hotp)
             }
-            FieldBox { TextField("Issuer (e.g. GitHub)", text: $issuer).focused($issuerFocused) }
-            FieldBox {
-                TextField(text: $account, prompt: Text(verbatim: "Account (e.g. you@example.com)")) { Text("Account") }
-                    .autocorrectionDisabled()
-            }
-            FieldBox { TextField("Setup key (base32 secret)", text: $secret).autocorrectionDisabled() }
+            FieldBox { TextField("Issuer", text: $issuer).focused($issuerFocused) }
+            FieldBox { TextField("Account", text: $account).autocorrectionDisabled() }
+            FieldBox { TextField("Setup key", text: $secret).font(Typo.code(13)).autocorrectionDisabled() }
             HStack(spacing: 10) {
                 Picker("Algorithm", selection: $algorithm) {
                     ForEach(["SHA1", "SHA256", "SHA512"], id: \.self) { Text($0).tag($0) }

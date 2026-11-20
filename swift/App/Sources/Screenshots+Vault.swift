@@ -1,10 +1,15 @@
+import AppKit
 import SwiftUI
+import TesseraCore
 
 #if DEBUG
 extension Screenshots {
     static var vaultShots: [Shot] {
         let narrowSize = CGSize(width: 380, height: 620)
+        let tightSize = CGSize(width: 720, height: 620)
         let lastSeconds = Date(timeIntervalSince1970: 1_800_000_027)
+        let longFailure = UserMessage.text(for: CocoaError(.fileWriteOutOfSpace), context: .export,
+                                           url: URL(fileURLWithPath: "/Users/demo/Documents/shared-work-accounts-backup.json"))
         return [
             Shot(screen: "vault", variant: "selected", size: mainSize, chrome: .window,
                  view: vault(VaultPreset(selected: ["3"]))),
@@ -39,6 +44,37 @@ extension Screenshots {
                  view: vault(VaultPreset(selected: ["3", "5"]))),
             Shot(screen: "vault", variant: "contrasthidden", size: mainSize, chrome: .window, highContrast: true,
                  view: vault(VaultPreset(selected: ["3"], hideCodes: true))),
+            Shot(screen: "vault", variant: "selectedtight", size: tightSize, chrome: .window,
+                 setUp: addTags, view: vault(VaultPreset(selected: ["3"]))),
+            Shot(screen: "vault", variant: "selectedcompact", size: compactSize, chrome: .window, compact: true,
+                 setUp: addTags, view: vault(VaultPreset(selected: ["3"]))),
+            Shot(screen: "vault", variant: "lastsecondsselected", size: mainSize, chrome: .window,
+                 setUp: { $0.ticker.freeze(at: lastSeconds) },
+                 view: vault(VaultPreset(selected: ["3"]))),
+            Shot(screen: "vault", variant: "lastsecondsnarrow", size: narrowSize, chrome: .window, compact: true,
+                 setUp: { $0.ticker.freeze(at: lastSeconds) },
+                 view: vault(VaultPreset(selected: ["3"]))),
+            Shot(screen: "notice", variant: "longscrolled", size: mainSize, chrome: .window,
+                 setUp: { m in
+                     addAccounts(m)
+                     m.notice = .failure(longFailure)
+                 },
+                 afterAppear: scrollListsToEnd,
+                 view: vault(VaultPreset())),
+            Shot(screen: "notice", variant: "longnarrow", size: narrowSize, chrome: .window, compact: true,
+                 setUp: { m in
+                     addAccounts(m)
+                     m.notice = .failure(longFailure)
+                 },
+                 afterAppear: scrollListsToEnd,
+                 view: vault(VaultPreset())),
+            Shot(screen: "notice", variant: "longbulk", size: compactSize, chrome: .window, compact: true,
+                 setUp: { m in
+                     addAccounts(m)
+                     m.notice = .failure(longFailure)
+                 },
+                 afterAppear: scrollListsToEnd,
+                 view: vault(VaultPreset(selected: ["11", "12"]))),
         ]
     }
 
@@ -60,6 +96,38 @@ extension Screenshots {
         for i in model.accounts.indices {
             if let t = tags[model.accounts[i].id] { model.accounts[i].tags = t }
         }
+    }
+
+    private static func addAccounts(_ model: AppModel) {
+        let extra = [("Dropbox", "you@example.com"), ("Fastmail", "you@example.com"), ("Linear", "demo"),
+                     ("Notion", "you@example.com"), ("Slack", "demo-team"), ("Stripe", "billing@example.com")]
+        var accounts = model.accounts
+        for (index, entry) in extra.enumerated() {
+            accounts.append(Account(id: "\(index + 7)", type: .totp, issuer: entry.0, account: entry.1,
+                                    secret: Data("demosecret\(index)0000000000".utf8)))
+        }
+        _ = Handles.assign(&accounts)
+        model.accounts = accounts
+    }
+
+    // The shared scroll-to-bottom step stops short of a list's bottom content inset.
+    private static func scrollListsToEnd(_: AppModel) {
+        for window in NSApp.windows where window.isVisible {
+            guard let root = window.contentView else { continue }
+            for scroll in scrollViews(in: root) where scroll.contentInsets.bottom > 0 {
+                guard let doc = scroll.documentView, doc.isFlipped else { continue }
+                let clip = scroll.contentView
+                let end = clip.constrainBoundsRect(NSRect(origin: NSPoint(x: 0, y: doc.frame.height),
+                                                          size: clip.bounds.size))
+                clip.scroll(to: end.origin)
+                scroll.reflectScrolledClipView(clip)
+            }
+        }
+    }
+
+    private static func scrollViews(in view: NSView) -> [NSScrollView] {
+        let own = (view as? NSScrollView).map { [$0] } ?? []
+        return own + view.subviews.flatMap { scrollViews(in: $0) }
     }
 
     private static func addFolders(_ model: AppModel) {

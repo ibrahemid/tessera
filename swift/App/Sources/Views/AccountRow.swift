@@ -19,6 +19,7 @@ struct LiveAccountRow: View {
     var compact: Bool
     var reduceMotion: Bool
     var hovering = false
+    var nextTemplate = RowLayout.nextTemplate(for: [])
     var onClick: (RowClick) -> Void
 
     var body: some View {
@@ -35,6 +36,7 @@ struct LiveAccountRow: View {
                        compact: compact,
                        reduceMotion: reduceMotion,
                        hovering: hovering,
+                       nextTemplate: nextTemplate,
                        onClick: onClick)
     }
 }
@@ -50,8 +52,10 @@ struct AccountRowView: View {
     var hideCodes = false
     var compact: Bool = false
     var reduceMotion: Bool
+    var nextTemplate: String
     var onClick: (RowClick) -> Void
     @State private var hovering: Bool
+    @State private var showsNextColumn = true
     @Environment(\.colorSchemeContrast) private var contrast
     @ScaledMetric(relativeTo: .title) private var glyphBase: CGFloat = 40
     @ScaledMetric(relativeTo: .title) private var ringBase: CGFloat = 30
@@ -60,6 +64,7 @@ struct AccountRowView: View {
     init(account: Account, remaining: Int, code: String, nextCode: String? = nil,
          copied: Bool, copiedNext: Bool = false, selected: Bool = false, hideCodes: Bool = false,
          compact: Bool = false, reduceMotion: Bool, hovering: Bool = false,
+         nextTemplate: String = RowLayout.nextTemplate(for: []),
          onClick: @escaping (RowClick) -> Void) {
         self.account = account
         self.remaining = remaining
@@ -71,6 +76,7 @@ struct AccountRowView: View {
         self.hideCodes = hideCodes
         self.compact = compact
         self.reduceMotion = reduceMotion
+        self.nextTemplate = nextTemplate
         self.onClick = onClick
         _hovering = State(initialValue: hovering)
     }
@@ -83,13 +89,13 @@ struct AccountRowView: View {
     }
     private var low: Bool { !isHOTP && remaining <= CodeTiming.showNextWithin }
     private var masked: Bool { hideCodes && !hovering && !selected }
-    private var glyphSize: CGFloat { glyphBase * (compact ? 36 : 40) / 40 }
-    private var ringSize: CGFloat { ringBase * (compact ? 26 : 30) / 30 }
-    private var codeSize: CGFloat { codeBase * (compact ? 20 : 24) / 24 }
+    private var metrics: RowLayout.Metrics { RowLayout.metrics(compact: compact) }
+    private var glyphSize: CGFloat { glyphBase * metrics.glyph / 40 }
+    private var ringSize: CGFloat { ringBase * metrics.ring / 30 }
+    private var codeSize: CGFloat { codeBase * metrics.codeSize / 24 }
     private var primaryName: String { account.displayName }
     private var shownNext: String? { masked ? nil : nextCode.flatMap { $0.isEmpty ? nil : $0 } }
     private var tagLine: String { account.tags.map { "#\($0)" }.joined(separator: " ") }
-
     private var rowFill: Color {
         if selected { return Palette.accentWash }
         return hovering ? Palette.surfaceHi : .clear
@@ -98,73 +104,32 @@ struct AccountRowView: View {
     // Whole row is one button: click copies (or advances HOTP); Command-click and
     // Shift-click change the selection. Everything else lives in the menus.
     var body: some View {
+        let isCompact = compact
+        let template = nextTemplate
+        let textScale = codeBase / 24
         Button(action: { onClick(RowClick(modifiers: NSApp?.currentEvent?.modifierFlags ?? [])) }) {
-            HStack(spacing: compact ? 12 : 16) {
-                GlyphSquare(account: account, size: glyphSize)
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 5) {
-                        Text(primaryName)
-                            .font(Typo.label(compact ? 13.5 : 14.5, .semibold))
-                            .foregroundStyle(Palette.textPrimary).lineLimit(1)
-                        if !account.handle.isEmpty {
-                            Text(account.handle)
-                                .font(Typo.code(compact ? 10.5 : 11.5))
-                                .foregroundStyle(Palette.accentInk)
-                                .padding(.horizontal, 5).padding(.vertical, 1)
-                                .background(RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                    .fill(selected ? Palette.accentSoft : Palette.accentWash))
-                                .fixedSize()
-                        }
-                        if account.pinned {
-                            Image(systemName: "star.fill")
-                                .font(.system(size: compact ? 8 : 9))
-                                .foregroundStyle(Palette.accent)
+            ZStack(alignment: .leading) {
+                // Measures the offered width; the content itself overflows it while the Next column is too wide.
+                Color.clear
+                    .frame(height: 0)
+                    .onGeometryChange(for: Bool.self) { proxy in
+                        RowLayout.showsNext(width: proxy.size.width, compact: isCompact, template: template, scale: textScale)
+                    } action: { fits in
+                        if showsNextColumn != fits { showsNextColumn = fits }
+                    }
+                rowContent
+                    .contentShape(Rectangle())
+                    .background(
+                        RoundedRectangle(cornerRadius: 13, style: .continuous)
+                            .fill(rowFill)
+                    )
+                    .overlay {
+                        if selected {
+                            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                .stroke(contrast == .increased ? Palette.accentInk : Palette.accentSoft,
+                                        lineWidth: contrast == .increased ? 1.5 : 1)
                         }
                     }
-                    if !account.issuer.isEmpty || !account.tags.isEmpty {
-                        HStack(spacing: 6) {
-                            if !account.issuer.isEmpty {
-                                Text(account.account).lineLimit(1)
-                            }
-                            if !account.tags.isEmpty {
-                                Text(tagLine).lineLimit(1)
-                            }
-                        }
-                        .font(Typo.label(compact ? 11 : 12))
-                        .foregroundStyle(Palette.textSecondary)
-                    }
-                }
-                .frame(minWidth: compact ? 96 : 120, alignment: .leading)
-                Spacer(minLength: 8)
-                Group {
-                    if let next = shownNext {
-                        ViewThatFits(in: .horizontal) {
-                            HStack(spacing: compact ? 12 : 16) {
-                                codeText
-                                nextBlock(next)
-                            }
-                            codeText
-                        }
-                    } else {
-                        codeText
-                    }
-                }
-                .layoutPriority(1)
-                trailing
-            }
-            .padding(.horizontal, compact ? 12 : 16)
-            .padding(.vertical, compact ? 11 : 13)
-            .contentShape(Rectangle())
-            .background(
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .fill(rowFill)
-            )
-            .overlay {
-                if selected {
-                    RoundedRectangle(cornerRadius: 13, style: .continuous)
-                        .stroke(contrast == .increased ? Palette.accentInk : Palette.accentSoft,
-                                lineWidth: contrast == .increased ? 1.5 : 1)
-                }
             }
         }
         .buttonStyle(.plain)
@@ -176,6 +141,58 @@ struct AccountRowView: View {
         .accessibilityAddTraits(selected ? [.updatesFrequently, .isSelected] : .updatesFrequently)
     }
 
+    private var rowContent: some View {
+        HStack(spacing: metrics.spacing) {
+            GlyphSquare(account: account, size: glyphSize)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 5) {
+                    Text(primaryName)
+                        .font(Typo.label(compact ? 13.5 : 14.5, .semibold))
+                        .foregroundStyle(Palette.textPrimary).lineLimit(1)
+                    if !account.handle.isEmpty {
+                        Text(account.handle)
+                            .font(Typo.code(compact ? 10.5 : 11.5))
+                            .foregroundStyle(Palette.accentInk)
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .background(RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                .fill(selected ? Palette.accentSoft : Palette.accentWash))
+                            .fixedSize()
+                            .layoutPriority(1)
+                    }
+                    if account.pinned {
+                        Image(systemName: "star.fill")
+                            .font(Typo.label(compact ? 8 : 9))
+                            .foregroundStyle(Palette.accent)
+                            .fixedSize()
+                            .layoutPriority(1)
+                    }
+                }
+                if !account.issuer.isEmpty || !account.tags.isEmpty {
+                    HStack(spacing: 6) {
+                        if !account.issuer.isEmpty {
+                            Text(account.account).lineLimit(1)
+                        }
+                        if !account.tags.isEmpty {
+                            Text(tagLine).lineLimit(1)
+                        }
+                    }
+                    .font(Typo.label(compact ? 11 : 12))
+                    .foregroundStyle(Palette.textSecondary)
+                }
+            }
+            .frame(minWidth: metrics.nameMinimum, alignment: .leading)
+            Spacer(minLength: RowLayout.spacerMinimum)
+            HStack(spacing: metrics.spacing) {
+                codeText
+                if showsNextColumn { nextColumn }
+            }
+            .layoutPriority(1)
+            trailing
+        }
+        .padding(.horizontal, metrics.padding)
+        .padding(.vertical, compact ? 11 : 13)
+    }
+
     private var codeText: some View {
         Text(groupCode(masked ? String(repeating: "•", count: code.count) : code))
             .font(Typo.code(codeSize)).monospacedDigit()
@@ -185,13 +202,20 @@ struct AccountRowView: View {
             .fixedSize()
     }
 
-    private func nextBlock(_ next: String) -> some View {
+    private var nextColumn: some View {
+        ZStack(alignment: .leading) {
+            nextBlock(nextTemplate).hidden()
+            if let next = shownNext { nextBlock(groupCode(next)) }
+        }
+    }
+
+    private func nextBlock(_ grouped: String) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Next")
                 .font(Typo.label(10, .medium))
                 .foregroundStyle(Palette.textSecondary)
-            Text(groupCode(next))
-                .font(Typo.code(compact ? 11.5 : 12.5)).monospacedDigit()
+            Text(grouped)
+                .font(Typo.code(metrics.nextSize)).monospacedDigit()
                 .foregroundStyle(copied && copiedNext ? Palette.accentInk : Palette.textSecondary)
                 .lineLimit(1)
         }
@@ -201,7 +225,8 @@ struct AccountRowView: View {
     private var accessibilityName: String {
         let base = account.issuer.isEmpty || account.account.isEmpty
             ? primaryName : "\(account.issuer), \(account.account)"
-        return account.tags.isEmpty ? base : "\(base), tags \(account.tags.joined(separator: ", "))"
+        let pinned = account.pinned ? "\(base), pinned" : base
+        return account.tags.isEmpty ? pinned : "\(pinned), tags \(account.tags.joined(separator: ", "))"
     }
 
     private var accessibilityCode: String {
@@ -209,14 +234,14 @@ struct AccountRowView: View {
         let spelled = code.map(String.init).joined(separator: " ")
         if isHOTP { return "\(spelled), counter \(account.counter)" }
         let base = "\(spelled), \(remaining) seconds left"
-        guard let next = shownNext else { return base }
+        guard showsNextColumn, let next = shownNext else { return base }
         return "\(base), next code \(next.map(String.init).joined(separator: " "))"
     }
 
     @ViewBuilder private var trailing: some View {
         if isHOTP {
             Image(systemName: "arrow.clockwise")
-                .font(.system(size: compact ? 13 : 14, weight: .medium))
+                .font(Typo.label(compact ? 13 : 14, .medium))
                 .foregroundStyle(Palette.textSecondary)
                 .frame(width: ringSize, height: ringSize)
                 .accessibilityHidden(true)
