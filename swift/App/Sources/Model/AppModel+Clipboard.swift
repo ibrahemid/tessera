@@ -3,19 +3,27 @@ import AppKit
 import TesseraCore
 
 extension AppModel {
-    func copyToPasteboard(_ value: String, kind: SecretClipboard.Kind, to pasteboard: NSPasteboard = .general) {
+    @discardableResult
+    func copyToPasteboard(_ value: String, kind: SecretClipboard.Kind,
+                          to pasteboard: any SecretPasteboard = NSPasteboard.general) -> Bool {
         clipboard.copy(value, kind: kind, to: pasteboard)
     }
 
     /// Copy an account's otpauth setup link (cleartext secret) to the clipboard.
-    func copySetupLink(_ account: Account) {
-        copyToPasteboard(otpauthURI(for: account), kind: .secret)
+    func copySetupLink(_ account: Account, to pasteboard: any SecretPasteboard = NSPasteboard.general) {
+        guard copyToPasteboard(otpauthURI(for: account), kind: .secret, to: pasteboard) else {
+            notice = .failure(UserMessage.copyFailed)
+            return
+        }
         notice = .info("Copied setup link for \(account.displayName)")
     }
 
     /// Copy an account's base32 setup key (cleartext secret) to the clipboard.
-    func copySecretKey(_ account: Account) {
-        copyToPasteboard(secretBase32(for: account), kind: .secret)
+    func copySecretKey(_ account: Account, to pasteboard: any SecretPasteboard = NSPasteboard.general) {
+        guard copyToPasteboard(secretBase32(for: account), kind: .secret, to: pasteboard) else {
+            notice = .failure(UserMessage.copyFailed)
+            return
+        }
         notice = .info("Copied setup key for \(account.displayName)")
     }
 }

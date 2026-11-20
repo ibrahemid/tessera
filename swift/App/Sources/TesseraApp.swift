@@ -14,6 +14,7 @@ enum AppLaunch {
 
     @MainActor fileprivate(set) static var current: Mode?
 
+    #if DEBUG
     private static let testHostKeys = ["XCTestConfigurationFilePath", "XCTestBundlePath", "XCTestSessionIdentifier"]
 
     static func isUnitTestHost(environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -26,6 +27,9 @@ enum AppLaunch {
                      arguments: [String] = CommandLine.arguments) -> Mode {
         isUnitTestHost(environment: environment, arguments: arguments) ? .inertTestHost : .app
     }
+    #else
+    static func mode() -> Mode { .app }
+    #endif
 }
 
 @main
@@ -51,11 +55,25 @@ struct TesseraApp: App {
     @StateObject private var model: AppModel
     @AppStorage("tessera.theme") private var theme: AppTheme = .system
     @AppStorage("tessera.compact") private var compact = false
+    private let lockPolicy: LockPolicy?
 
     init() {
         let model = AppModel.makeForLaunch()
         _model = StateObject(wrappedValue: model)
-        if AppSession.isEnabled { AppSession.start(model: model) }
+        guard AppSession.isEnabled else {
+            lockPolicy = nil
+            return
+        }
+        lockPolicy = LockPolicy(
+            defaults: .standard,
+            idle: SystemIdleTimeSource(),
+            workspace: NSWorkspace.shared.notificationCenter,
+            distributed: DistributedNotificationCenter.default(),
+            appCenter: .default,
+            isVaultUnlocked: { [weak model] in model?.isLocked == false },
+            onLock: { [weak model] reason in model?.lock(reason: reason) }
+        )
+        AppSession.start(model: model)
     }
 
     var body: some Scene {

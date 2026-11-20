@@ -153,7 +153,7 @@ struct VaultCommands: Commands {
             Button("Restore from Backup…") { menu?.perform(.restoreBackup) }
                 .disabled(menu == nil)
             Divider()
-            Button("Lock Vault") { model.lock() }
+            Button("Lock Vault") { model.lock(reason: .manual) }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
                 .disabled(model.isLocked || !model.vaultExists)
         }

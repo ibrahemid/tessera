@@ -53,12 +53,29 @@ derived_data() {
   printf '%s' "$dd"
 }
 
+AD_HOC_ENTITLEMENTS=App/Resources/Tessera-AdHoc.entitlements
+KEYCHAIN_GROUPS="[\"\$(AppIdentifierPrefix)\$(PRODUCT_BUNDLE_IDENTIFIER)\"]"
+
+check_entitlements() {
+  dir="$LOG_DIR/entitlements"
+  main="$ROOT/swift/App/Resources/Tessera.entitlements"
+  mkdir -p "$dir" || return 1
+  groups="$(plutil -extract keychain-access-groups json -o - "$main")" || return 1
+  [ "$groups" = "$KEYCHAIN_GROUPS" ] || { printf 'keychain-access-groups: %s\n' "$groups"; return 1; }
+  cp "$main" "$dir/main-without-groups.plist" &&
+    plutil -remove keychain-access-groups "$dir/main-without-groups.plist" &&
+    plutil -convert json -r -o "$dir/main.json" "$dir/main-without-groups.plist" &&
+    plutil -convert json -r -o "$dir/adhoc.json" "$ROOT/swift/$AD_HOC_ENTITLEMENTS" || return 1
+  diff "$dir/main.json" "$dir/adhoc.json"
+}
+
 check_app_build() {
   build_log="$LOG_DIR/xcodebuild.log"
   dd="$(derived_data)" || return 1
   cd "$ROOT/swift" && xcodegen generate || return 1
   xcodebuild -project Tessera.xcodeproj -scheme Tessera -configuration Debug \
     -derivedDataPath "$dd" CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="-" \
+    CODE_SIGN_ENTITLEMENTS="$AD_HOC_ENTITLEMENTS" \
     DEVELOPMENT_TEAM= SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
     build-for-testing >"$build_log" 2>&1 || {
     grep -E "\.swift:[0-9]+:[0-9]+: (error|warning)" "$build_log" | sort -u | head -n 40
@@ -107,6 +124,7 @@ check_app_unit() {
   cd "$ROOT/swift" || return 1
   xcodebuild -project Tessera.xcodeproj -scheme Tessera -configuration Debug \
     -derivedDataPath "$dd" CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="-" \
+    CODE_SIGN_ENTITLEMENTS="$AD_HOC_ENTITLEMENTS" \
     DEVELOPMENT_TEAM= SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
     -test-timeouts-enabled YES -default-test-execution-time-allowance 60 \
     -maximum-test-execution-time-allowance 120 \
@@ -119,6 +137,7 @@ check_app_unit() {
 }
 
 gate_app() {
+  run_check app-entitlements check_entitlements
   run_check app-build check_app_build
   run_check app-unit check_app_unit
 }

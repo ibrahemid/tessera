@@ -2,18 +2,17 @@ import AppKit
 import Foundation
 import SwiftUI
 
-/// Holds notification observer tokens and unregisters them when its owner is
-/// released. Kept as a separate object so the owner needs no `deinit` (which
-/// cannot touch main-actor state under Swift 6 isolation).
-final class NotificationObservers: @unchecked Sendable {
-    private var entries: [(NotificationCenter, NSObjectProtocol)] = []
+@MainActor
+final class NotificationObservers {
+    private var entries: [(center: NotificationCenter, token: any NSObjectProtocol)] = []
 
-    func add(_ center: NotificationCenter, _ token: NSObjectProtocol) {
+    func add(_ center: NotificationCenter, _ token: any NSObjectProtocol) {
         entries.append((center, token))
     }
 
-    deinit {
-        for (center, token) in entries { center.removeObserver(token) }
+    func stop() {
+        for entry in entries { entry.center.removeObserver(entry.token) }
+        entries.removeAll()
     }
 }
 
