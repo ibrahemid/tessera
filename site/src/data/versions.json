@@ -1,16 +1,27 @@
 {
   "cli": {
-    "version": "1.1.0",
-    "date": "2026-09-05",
-    "platforms": ["macOS", "Linux"],
+    "version": "1.2.0",
+    "date": "2026-11-20",
+    "platforms": ["macOS", "Linux", "Windows"],
     "files": [
-      { "label": "macOS, Apple silicon", "file": "tess_1.1.0_darwin_arm64.tar.gz", "sha256": "75df08b715dc31a326d25061a64171423bce245cf6f5943753577470a0275568" },
-      { "label": "macOS, Intel", "file": "tess_1.1.0_darwin_amd64.tar.gz", "sha256": "84cd31b461cc868cdb219b3da47c7885fff70f9a6b501a69258d1b5aea5399f7" },
-      { "label": "Linux, arm64", "file": "tess_1.1.0_linux_arm64.tar.gz", "sha256": "baf83665ca822a8f75882cc9e08178593d8ca65bbf8c6deb3d4158fbb4264346" },
-      { "label": "Linux, x86_64", "file": "tess_1.1.0_linux_amd64.tar.gz", "sha256": "94144967eddcc5635ce2f1087ea51644fc7195b8482a7c28c12622804b933387" }
+      { "label": "macOS, Apple silicon", "file": "tess_1.2.0_darwin_arm64.tar.gz", "sha256": "57ad3cca7992123773016c68ff5c67d4051806d25a7d97de7c862b5886aa40da" },
+      { "label": "macOS, Intel", "file": "tess_1.2.0_darwin_amd64.tar.gz", "sha256": "acac14a2fdb850b85adab8b2d929cbfc90f30cde45b94f269de848e7c4174e5a" },
+      { "label": "Linux, arm64", "file": "tess_1.2.0_linux_arm64.tar.gz", "sha256": "d2c349327fb8c81acf328cb21a82ba06ee4678d6f5c9f1b8a60e4454e1808f77" },
+      { "label": "Linux, x86_64", "file": "tess_1.2.0_linux_amd64.tar.gz", "sha256": "63d41ede3ebc3e9f73699e32f5f3eb7994819b26f3781b7503741a9fa9ade740" },
+      { "label": "Windows, arm64", "file": "tess_1.2.0_windows_arm64.zip", "sha256": "80e7e6ef566404c153cdd2a7c2265c7dc1fa213a48de09015e3756d85290365c" },
+      { "label": "Windows, x86_64", "file": "tess_1.2.0_windows_amd64.zip", "sha256": "595b8eda537bfa7e7417dced7b0c55927295185285341fcfbf0497909498873f" }
     ],
-    "packages": [],
-    "signature": null
+    "packages": [
+      "tessera_1.2.0_linux_amd64.deb",
+      "tessera_1.2.0_linux_arm64.deb",
+      "tessera_1.2.0_linux_amd64.rpm",
+      "tessera_1.2.0_linux_arm64.rpm",
+      "tessera_1.2.0_linux_amd64.apk",
+      "tessera_1.2.0_linux_arm64.apk",
+      "tessera_1.2.0_linux_amd64.pkg.tar.zst",
+      "tessera_1.2.0_linux_arm64.pkg.tar.zst"
+    ],
+    "signature": "checksums.txt.sigstore.json"
   },
   "app": {
     "version": "1.1.0",

@@ -104,18 +104,29 @@ final class HandleTests: XCTestCase {
         XCTAssertEqual(accts[0].handle, "x")
     }
 
-    func testTwentyThousandSameNameAccountsAssignInUnderASecond() {
-        var accts = (0..<20_000).map { i in
-            Account(id: String(format: "id-%05d", i), type: .totp, issuer: "GitHub", account: "",
-                    secret: Data("x".utf8), createdAt: Int64(i))
+    func testSameNameAssignmentTimeGrowsSubquadratically() {
+        func sameName(_ count: Int) -> [Account] {
+            (0..<count).map { i in
+                Account(id: String(format: "id-%05d", i), type: .totp, issuer: "GitHub", account: "",
+                        secret: Data("x".utf8), createdAt: Int64(i))
+            }
         }
-        let start = Date()
+        let smallCount = 500, largeCount = 8 * smallCount
+        var fastestSmall = Duration.seconds(Int64.max), fastestLarge = Duration.seconds(Int64.max)
+        let clock = ContinuousClock()
+        for _ in 0..<7 {
+            var small = sameName(smallCount), large = sameName(largeCount)
+            fastestSmall = min(fastestSmall, clock.measure { Handles.assign(&small) })
+            fastestLarge = min(fastestLarge, clock.measure { Handles.assign(&large) })
+        }
+        let ratio = fastestLarge / fastestSmall, bound = 24.0
+        XCTAssertLessThan(ratio, bound, "\(largeCount) accounts took \(fastestLarge), \(smallCount) took \(fastestSmall): "
+                          + "ratio \(ratio), bound \(bound); n log n gives about 10, n squared 64")
+        var accts = sameName(largeCount)
         Handles.assign(&accts)
-        let elapsed = Date().timeIntervalSince(start)
-        XCTAssertLessThan(elapsed, 1.0)
         XCTAssertEqual(accts[0].handle, "gi")
-        XCTAssertEqual(accts[19_999].handle, "gi20000")
-        XCTAssertEqual(Set(accts.map(\.handle)).count, 20_000)
+        XCTAssertEqual(accts[largeCount - 1].handle, "gi\(largeCount)")
+        XCTAssertEqual(Set(accts.map(\.handle)).count, largeCount)
     }
 
     func testUniquenessRejectsDuplicate() {

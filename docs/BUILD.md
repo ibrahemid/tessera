@@ -160,6 +160,12 @@ changelog. The `go/vX.Y.Z` module tag and the Homebrew formula
 (`ibrahemid/homebrew-tap`, `Formula/tess.rb`: version and the SHA-256 of both
 darwin and both linux archives from `checksums.txt`) are updated by hand.
 
+Once the release is published, `site/src/data/versions.json` takes its version,
+date, platforms, archive names with their SHA-256 from `checksums.txt`, package
+names and signature file; the site build fails when those disagree. The
+changelog entry in `site/src/pages/changelog.astro` and the version in the
+`install.sh` hint for an unresolved latest release change in the same commit.
+
 `install.sh` and the release download URL are covered in the
 [README](../README.md#install-the-cli).
 

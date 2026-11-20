@@ -280,14 +280,28 @@ final class AccountFormatTests: XCTestCase {
         XCTAssertEqual(viaInit.extensions, a.extensions)
     }
 
-    func testFortyThousandExtensionKeysNormalizeInUnderASecond() throws {
+    func testExtensionKeyNormalizationTimeGrowsSubquadratically() throws {
         let one = try value("1")
-        let fields = try (0..<40_000).map { try ExtensionField(key: "x_\($0)", value: one) }
-        let start = Date()
-        let a = Account(id: "1", type: .totp, issuer: "", account: "", secret: Data("x".utf8),
-                        extensions: fields + fields.prefix(1000))
-        XCTAssertLessThan(Date().timeIntervalSince(start), 1.0)
-        XCTAssertEqual(a.extensions.count, 40_000)
+        func fields(_ count: Int) throws -> [ExtensionField] {
+            let unique = try (0..<count).map { try ExtensionField(key: "x_\($0)", value: one) }
+            return unique + unique.prefix(count / 40)
+        }
+        func normalize(_ fields: [ExtensionField]) -> Account {
+            Account(id: "1", type: .totp, issuer: "", account: "", secret: Data("x".utf8), extensions: fields)
+        }
+        let smallCount = 1_000, largeCount = 8 * smallCount
+        let small = try fields(smallCount), large = try fields(largeCount)
+        var fastestSmall = Duration.seconds(Int64.max), fastestLarge = Duration.seconds(Int64.max)
+        let clock = ContinuousClock()
+        for _ in 0..<7 {
+            fastestSmall = min(fastestSmall, clock.measure { _ = normalize(small) })
+            fastestLarge = min(fastestLarge, clock.measure { _ = normalize(large) })
+        }
+        let ratio = fastestLarge / fastestSmall, bound = 24.0
+        XCTAssertLessThan(ratio, bound, "\(largeCount) keys took \(fastestLarge), \(smallCount) took \(fastestSmall): "
+                          + "ratio \(ratio), bound \(bound); n log n gives about 10, n squared 64")
+        let a = normalize(large)
+        XCTAssertEqual(a.extensions.count, largeCount)
         XCTAssertEqual(a.extensions.first?.key, "x_0")
     }
 
