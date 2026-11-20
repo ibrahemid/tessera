@@ -132,7 +132,7 @@ final class FeaturesQuickAccessModelTests: XCTestCase {
 
     func testCopyPutsTheShownCodeOnThePasteboard() throws {
         let model = AppModel(demo: .populated)
-        defer { model.pasteboardClear?.cancel() }
+        defer { model.clipboard.pendingClear?.cancel() }
         let board = pasteboard()
         let account = try totp(model)
         XCTAssertTrue(model.copyFromQuickAccess(account, at: time, to: board))
@@ -141,7 +141,7 @@ final class FeaturesQuickAccessModelTests: XCTestCase {
 
     func testCopyNearExpiryUsesTheNextCode() throws {
         let model = AppModel(demo: .populated)
-        defer { model.pasteboardClear?.cancel() }
+        defer { model.clipboard.pendingClear?.cancel() }
         let board = pasteboard()
         let account = try totp(model)
         let late = CodeTiming.windowEnd(account, at: time).addingTimeInterval(-1)

@@ -20,6 +20,8 @@ enum UserMessage {
         if isScreenRecordingDenied(error) { return screenRecordingDenied }
         if let e = error as? AccountEntryError { return text(for: e) }
         if let e = error as? VaultError { return text(for: e, context: context) }
+        if let e = error as? VaultWriteError { return text(for: e) }
+        if let e = error as? VaultLockError { return text(for: e) }
         if let e = error as? AccountError { return text(for: e) }
         if let e = error as? Importers.ImporterError { return sentence(e.description) }
         if error is XChaCha.CryptoError || error is DecodingError { return damagedFile(context) }

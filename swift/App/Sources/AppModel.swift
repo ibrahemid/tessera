@@ -46,6 +46,7 @@ final class AppModel: ObservableObject {
     /// Whether the vault carries an argon2id passphrase wrap: the recovery path
     /// when Touch ID can't open it, and what lets the tess CLI open it too.
     @Published private(set) var hasRecoveryPassphrase = false
+    @Published var damagedVault: DamagedVaultInfo?
 
     static let biometricsPrefKey = "tessera.requireTouchID"
     static let compactPrefKey = "tessera.compact"
@@ -58,6 +59,8 @@ final class AppModel: ObservableObject {
 
     let store = VaultStore()
     let argon2 = Argon2Reference()
+    let dependencies: AppDependencies
+    let clipboard = SecretClipboard()
     let isDemo: Bool
     var envelope: Envelope? {
         didSet { hasRecoveryPassphrase = envelope?.hasPassphraseWrap ?? false }
@@ -66,13 +69,15 @@ final class AppModel: ObservableObject {
     var appKey: Data?         // held after unlock; needed to retoggle Touch ID
     var lastVaultModified: Date?   // for detecting an external CLI rewrite
     var pendingSwitchMessage: String?   // "Now using X", shown once the switched vault unlocks
+    var lockGeneration: UInt64 = 0
+    var persistence = PersistenceState()
     private let observers = NotificationObservers()
-    var pasteboardClear: Task<Void, Never>?
     /// Codes memoized per account until its period slot (or the account itself)
     /// changes, so a tick re-renders rows without recomputing every HMAC.
     var codeCache: [String: (slot: Int64, updatedAt: Int64, code: String)] = [:]
 
-    init() {
+    init(dependencies: AppDependencies = .live()) {
+        self.dependencies = dependencies
         isDemo = false
         vaultExists = store.exists
         let pref = UserDefaults.standard.bool(forKey: AppModel.biometricsPrefKey)
@@ -86,7 +91,7 @@ final class AppModel: ObservableObject {
         let workspace = NSWorkspace.shared.notificationCenter
         observers.add(workspace, workspace.addObserver(
             forName: NSWorkspace.willSleepNotification, object: nil, queue: .main
-        ) { [weak self] _ in Task { @MainActor in if self?.requireBiometrics == true { self?.lock() } } })
+        ) { [weak self] _ in Task { @MainActor in if self?.requireBiometrics == true { self?.lock(reason: .sleep) } } })
         // Pick up edits the tess CLI made to a shared external vault when the app
         // returns to the foreground.
         let center = NotificationCenter.default
@@ -101,6 +106,7 @@ final class AppModel: ObservableObject {
     /// reach a fake vault.
     enum DemoState { case populated, empty, locked, fresh }
     init(demo: DemoState) {
+        dependencies = .live()
         isDemo = true
         isOpening = false
         requireBiometrics = true
@@ -133,49 +139,4 @@ final class AppModel: ObservableObject {
         ]
     }
     #endif
-
-    // MARK: Helpers
-
-    @discardableResult
-    func mutate(_ change: (inout [Account]) -> Void) -> Bool {
-        run {
-            var next = accounts
-            change(&next)
-            try persist(next)
-        }
-    }
-
-    func persist(_ next: [Account]) throws {
-        guard let env = envelope, let dek = dek else { throw VaultError.wrongPassphrase }
-        // Any account added this write (import, manual entry) gets a handle here,
-        // matching the CLI's save path so both cores stay in step.
-        var next = next
-        Handles.assign(&next)
-        try Handles.checkUniqueness(next)
-        let updated = try env.reseal(accounts: next, dek: dek)
-        try store.save(updated)
-        self.envelope = updated
-        self.accounts = next
-        self.lastVaultModified = store.modifiedAt   // our own write; don't reload it back
-    }
-
-    func stamped(_ a: Account) -> Account {
-        var x = a
-        if x.id.isEmpty { x.id = UUID().uuidString }
-        let ts = Int64(Date().timeIntervalSince1970)
-        if x.createdAt == 0 { x.createdAt = ts }
-        x.updatedAt = ts
-        return x
-    }
-
-    @discardableResult
-    func run(_ body: () throws -> Void) -> Bool {
-        do {
-            try body()
-            return true
-        } catch {
-            if let text = UserMessage.textUnlessCancelled(for: error, context: .save) { notice = .failure(text) }
-            return false
-        }
-    }
 }

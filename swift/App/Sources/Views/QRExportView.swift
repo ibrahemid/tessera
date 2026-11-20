@@ -90,7 +90,7 @@ struct QRExportView: View {
     }
 
     private func copy(_ value: String, _ field: Field) {
-        model.copyToPasteboard(value)
+        model.copyToPasteboard(value, kind: .secret)
         withAnimation(reduceMotion ? nil : .default) { copied = field; hasCopied = true }
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(1.3))

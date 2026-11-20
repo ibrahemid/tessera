@@ -77,6 +77,14 @@ final class VaultStore {
         return containerVaultURL
     }
 
+    var location: VaultLocation {
+        if let url = externalURL { return VaultLocation(fileURL: url, access: .fileOnly) }
+        if let env = ProcessInfo.processInfo.environment["TESSERA_VAULT"], !env.isEmpty {
+            return VaultLocation(fileURL: vaultURL, access: .folder)
+        }
+        return VaultLocation(fileURL: containerVaultURL, access: .container)
+    }
+
     /// The app's own vault under the sandbox container, regardless of any external
     /// bookmark. Used to name the built-in path when offering to switch back to it.
     var containerVaultURL: URL {

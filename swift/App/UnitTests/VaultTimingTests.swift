@@ -70,7 +70,7 @@ final class VaultCodeTests: XCTestCase {
     }
 
     private func release(_ model: AppModel, _ pasteboard: NSPasteboard) {
-        model.pasteboardClear?.cancel()
+        model.clipboard.pendingClear?.cancel()
         pasteboard.releaseGlobally()
     }
 

@@ -75,19 +75,4 @@ extension AppModel {
             return UserMessage.textUnlessCancelled(for: error, context: .settings)
         }
     }
-
-    var vaultPathDisplay: String { homeRelative(store.vaultURL) }
-
-    /// The built-in vault path, home-relative, for the "use built-in vault" copy.
-    var builtInVaultPathDisplay: String { homeRelative(store.containerVaultURL) }
-
-    /// One-line description of which vault is active.
-    var vaultStateLine: String {
-        isExternalVault
-            ? "Shared vault file. The tess CLI reads and writes this same file."
-            : "Built-in vault."
-    }
-
-    /// Running against a user-selected external vault (shared with the tess CLI).
-    var isExternalVault: Bool { store.isExternal }
 }

@@ -204,7 +204,7 @@ extension AppModel {
         // Copy the freshly advanced code, with the same feedback as a TOTP copy.
         if let updated = accounts.first(where: { $0.id == account.id }),
            let code = try? OTP.code(for: updated, at: Date()) {
-            copyToPasteboard(code, transient: true)
+            copyToPasteboard(code, kind: .code)
             announce("Copied \(account.displayName)")
         }
     }
@@ -219,7 +219,7 @@ extension AppModel {
             notice = .failure(UserMessage.text(for: error, context: .save))
             return nil
         }
-        copyToPasteboard(value, transient: true, to: pasteboard)
+        copyToPasteboard(value, kind: .code, to: pasteboard)
         announce(next ? "Copied the next code for \(account.displayName)" : "Copied \(account.displayName)")
         return value
     }

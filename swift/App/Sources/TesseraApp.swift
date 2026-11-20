@@ -53,7 +53,7 @@ struct TesseraApp: App {
     @AppStorage("tessera.compact") private var compact = false
 
     init() {
-        let model = TesseraApp.makeModel()
+        let model = AppModel.makeForLaunch()
         _model = StateObject(wrappedValue: model)
         if AppSession.isEnabled { AppSession.start(model: model) }
     }
@@ -78,15 +78,5 @@ struct TesseraApp: App {
                 .environmentObject(model)
                 .preferredColorScheme(theme.colorScheme)
         }
-    }
-
-    /// Render modes get an inert model: no vault file and no Keychain access.
-    private static func makeModel() -> AppModel {
-        #if DEBUG
-        if Screenshots.isRequested || CommandLine.arguments.contains("--marketing") {
-            return AppModel(demo: .locked)
-        }
-        #endif
-        return AppModel()
     }
 }
