@@ -89,8 +89,10 @@ struct VaultWriter: VaultTransaction {
                 guard try Self.holds(committed, at: target) else { return .changedSince }
                 do throws(VaultWriteError) {
                     try DurableFile.remove(target)
-                } catch .io(operation: "flush directory", url: _, errno: let code) where code == EPERM || code == EACCES {
+                } catch {
                     // Without folder access the directory cannot be synced; `create` skips that sync the same way.
+                    guard case .io(operation: "flush directory", url: _, errno: let code) = error else { throw error }
+                    if code != EPERM, code != EACCES { throw error }
                 }
                 return .restored
             }

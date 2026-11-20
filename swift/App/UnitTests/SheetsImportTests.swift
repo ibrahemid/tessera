@@ -142,6 +142,7 @@ final class SheetsImportSummaryTests: XCTestCase {
 }
 
 final class SheetsImportProgressTests: XCTestCase {
+    @MainActor
     func testProgressText() {
         XCTAssertEqual(ImportProgressView.text(for: ImportProgress(done: 0, total: 1)), "Reading 1 file…")
         XCTAssertEqual(ImportProgressView.text(for: ImportProgress(done: 0, total: 3)), "Reading 1 of 3 files…")

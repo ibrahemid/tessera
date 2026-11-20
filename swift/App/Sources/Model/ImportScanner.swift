@@ -78,7 +78,7 @@ enum ImportScanner {
             return
         }
         let (accounts, errors) = InputDetect.parseText(text)
-        if accounts.isEmpty && errors.isEmpty {
+        if accounts.isEmpty && errors.allSatisfy({ $0.kind == .noInput }) {
             result.failures.append(ImportItemFailure(source: name, display: "", reason: "Nothing to import in this file."))
             return
         }
