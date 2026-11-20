@@ -212,7 +212,7 @@ do {
 
     // reseal must preserve a non-passphrase wrap.
     env.wraps.append(VaultWrap(type: "secure-enclave", kdf: nil, params: nil, salt: nil,
-                               se_key: "AA==", nonce: "AA==", ct: "AA=="))
+                               se_key: "AA==", nonce: Data(repeating: 7, count: 24).base64EncodedString(), ct: "AA=="))
     let a2 = Account(id: "b", type: .totp, issuer: "Z", account: "w",
                      secret: Data("abcdefghij".utf8), algorithm: "SHA1", digits: 6, period: 30)
     let resealed = try env.reseal(accounts: [a1, a2], passphrase: "pw", argon2: stub)
@@ -246,6 +246,256 @@ do {
                     createdAt: 1700000000, updatedAt: 1700000000)
     let got = String(decoding: CanonicalJSON.encode([a]), as: UTF8.self)
     check(got == canon, "handle canonical serialization is byte-identical to Go")
+}
+
+// 12. Version 2 vectors, read through the strict parser so strings and
+// numbers keep the exact bytes Go decodes.
+struct VectorMismatch: Error, CustomStringConvertible {
+    let description: String
+}
+let vectorBytes = [UInt8](raw)
+let vectorRoot = try StrictJSON.parse(vectorBytes, rule: .finiteDouble)
+func vnode(_ n: JSONNode, _ k: String) -> JSONNode { n.member(k)! }
+func vtext(_ n: JSONNode) -> String { String(decoding: n.string, as: UTF8.self) }
+func vtext(_ n: JSONNode, _ k: String) -> String { vtext(vnode(n, k)) }
+func vbytes(_ n: JSONNode, _ k: String) -> Data { Data(vnode(n, k).string) }
+func vint(_ n: JSONNode) -> Int64 { Int64(String(decoding: vectorBytes[n.range], as: UTF8.self))! }
+func vint(_ n: JSONNode, _ k: String) -> Int64 { vint(vnode(n, k)) }
+func vraw(_ n: JSONNode) -> [UInt8] { Array(vectorBytes[n.range]) }
+func vtexts(_ n: JSONNode, _ k: String) -> [String] { vnode(n, k).items.map { vtext($0) } }
+
+func payloadErrorClass(_ error: Error) -> String {
+    switch error {
+    case PayloadError.malformed: return "malformed_payload"
+    case PayloadError.duplicateKey: return "duplicate_key"
+    case PayloadError.nonCanonicalNumber: return "non_canonical_number"
+    case PayloadError.fieldType: return "field_type"
+    case PayloadError.nonCanonicalBase64: return "non_canonical_base64"
+    case PayloadError.counterRange: return "counter_range"
+    default: return "other (\(error))"
+    }
+}
+
+func envelopeErrorClass(_ error: Error) -> String {
+    switch error {
+    case VaultError.corrupt: return "corrupt"
+    case VaultError.wrongPassphrase: return "auth_failed"
+    case VaultError.unsupportedVersion: return "unsupported_version"
+    case VaultError.unsupportedAEAD: return "unsupported_aead"
+    case VaultError.noPassphraseWrap: return "no_passphrase_wrap"
+    case EnvelopeError.noWraps: return "no_wraps"
+    case EnvelopeError.tooManyWraps: return "too_many_wraps"
+    case EnvelopeError.appOnlyVault: return "app_only"
+    default: return "other (\(error))"
+    }
+}
+
+// 12a. Strict payload reader.
+do {
+    let p = vnode(vectorRoot, "payload_strict")
+    var allOK = true
+    let valid = vnode(p, "valid").items
+    for c in valid {
+        let payload = vbytes(c, "payload")
+        do {
+            if CanonicalJSON.encode(try CanonicalJSON.decode(payload)) != payload {
+                allOK = false
+                print("     \(vtext(c, "name")): round trip changed the payload")
+            }
+        } catch {
+            allOK = false
+            print("     \(vtext(c, "name")): \(error)")
+        }
+    }
+    let invalid = vnode(p, "invalid").items
+    for c in invalid {
+        var got = "accepted"
+        do { _ = try CanonicalJSON.decode(vbytes(c, "payload")) } catch { got = payloadErrorClass(error) }
+        if got != vtext(c, "error") {
+            allOK = false
+            print("     \(vtext(c, "name")): \(got), want \(vtext(c, "error"))")
+        }
+    }
+    check(allOK, "payload_strict (\(valid.count) valid, \(invalid.count) invalid)")
+}
+
+// 12b. Version 2 canonical keys and format version.
+do {
+    let cases = vnode(vnode(vectorRoot, "vault_v2"), "canonical").items
+    var allOK = true
+    for c in cases {
+        let name = vtext(c, "name")
+        do {
+            var accts = try CanonicalJSON.decode(vbytes(c, "input"))
+            let clear = c.member("clear").map { $0.items.map { vtext($0) } } ?? []
+            for i in accts.indices {
+                for key in clear {
+                    switch key {
+                    case "deleted_at": accts[i].deletedAt = 0
+                    case "note": accts[i].note = ""
+                    case "order": accts[i].order = 0
+                    default:
+                        guard accts[i].extensions.contains(where: { $0.key == key }) else {
+                            throw VectorMismatch(description: "clear \(key): key not present")
+                        }
+                        accts[i].extensions.removeAll { $0.key == key }
+                    }
+                }
+            }
+            if CanonicalJSON.encode(accts) != vbytes(c, "expected_canonical_json") {
+                throw VectorMismatch(description: "canonical mismatch")
+            }
+            if Account.formatVersion(accts) != Int(vint(c, "expected_version")) {
+                throw VectorMismatch(description: "format version \(Account.formatVersion(accts))")
+            }
+        } catch {
+            allOK = false
+            print("     \(name): \(error)")
+        }
+    }
+    check(allOK, "vault_v2 canonical (\(cases.count) cases)")
+
+    let v2 = vnode(vectorRoot, "vault_v2")
+    let env = try Envelope.decode(Data(vraw(vnode(v2, "envelope"))))
+    check(env.version == Int(vint(v2, "expected_version")) && env.wrapTypes == ["passphrase"] && !env.needsPersist,
+          "vault_v2 envelope decodes as version 2 (argon2id open in XCTest)")
+}
+
+// 12c. canonical_edge_v2.json round-trip.
+do {
+    let edge = try Data(contentsOf: URL(fileURLWithPath: specDir).appendingPathComponent("canonical_edge_v2.json"))
+    let accts = try CanonicalJSON.decode(edge)
+    check(CanonicalJSON.encode(accts) == edge && Account.formatVersion(accts) == 2,
+          "canonical_edge_v2 re-encode is byte-identical to Go")
+}
+
+// 12d. Strict envelope reader. The stub argon2 cannot open these wraps, so
+// valid cases are checked at decode and auth_failed cases fail as auth_failed
+// either way; XCTest reruns every case with argon2id.
+do {
+    let es = vnode(vectorRoot, "envelope_strict")
+    let valid = vnode(es, "valid").items
+    var validOK = true
+    for c in valid {
+        do { _ = try Envelope.decode(vbytes(c, "envelope_json")) } catch {
+            validOK = false
+            print("     \(vtext(c, "name")): \(error)")
+        }
+    }
+    check(validOK, "envelope_strict valid cases decode (\(valid.count))")
+
+    let invalid = vnode(es, "invalid").items
+    var invalidOK = true
+    for c in invalid {
+        let pass = c.member("passphrase").map { vtext($0) } ?? vtext(es, "passphrase")
+        var got = "opened"
+        do {
+            let env = try Envelope.decode(vbytes(c, "envelope_json"))
+            _ = try env.open(passphrase: pass, argon2: StubArgon2())
+        } catch {
+            got = envelopeErrorClass(error)
+        }
+        if got != vtext(c, "error") {
+            invalidOK = false
+            print("     \(vtext(c, "name")): \(got), want \(vtext(c, "error"))")
+        }
+    }
+    check(invalidOK, "envelope_strict invalid cases fail with their error class (\(invalid.count))")
+
+    let preserve = vnode(es, "preserve")
+    let original = vbytes(preserve, "envelope_json")
+    let env = try Envelope.decode(original)
+    let before = try JSONSerialization.jsonObject(with: original) as! NSDictionary
+    let after = try JSONSerialization.jsonObject(with: env.encoded()) as! NSDictionary
+    check(before.isEqual(after), "envelope_strict preserve: re-marshal keeps unknown keys and wraps")
+}
+
+// 12e. Rotation from the vector's old DEK, with stub-derived passphrase wraps.
+do {
+    let r = vnode(vectorRoot, "rotation")
+    let oldDEK = Data(base64Encoded: vtext(r, "old_dek_b64"))!
+    let original = vraw(vnode(r, "envelope"))
+    let expected = vbytes(r, "expected_canonical_json")
+    var env = try Envelope.decode(Data(original))
+    let accts = try env.open(dek: oldDEK)
+    check(CanonicalJSON.encode(accts) == expected, "rotation vector opens with its old DEK")
+
+    let newPass = vtext(r, "new_passphrase")
+    let opened = Set(env.wraps.indices.filter { env.wraps[$0].type == "passphrase" }.prefix(1))
+    let result = try env.rotate(accounts: accts, passphrases: [newPass], recreating: opened, argon2: StubArgon2())
+    check(result.removed == vtexts(r, "expected_removed"), "rotation removed list matches Go")
+    check(env.wrapTypes == vtexts(r, "expected_wrap_types"), "rotation wrap types match Go")
+
+    let out = [UInt8](try env.encoded())
+    let outTop = try StrictJSON.parse(out, rule: .finiteDouble)
+    let origTop = try StrictJSON.parse(original, rule: .finiteDouble)
+    let kept = vtexts(r, "kept_top_level").allSatisfy { k in
+        guard let a = origTop.member(k), let b = outTop.member(k) else { return false }
+        return StrictJSON.compact(original[a.range]) == StrictJSON.compact(out[b.range])
+    }
+    check(kept, "rotation keeps unknown top-level keys")
+
+    let reopened = try Envelope.decode(Data(out))
+    let reopenedAccts = try reopened.open(passphrase: newPass, argon2: StubArgon2())
+    check(CanonicalJSON.encode(reopenedAccts) == expected && reopened.version == Int(vint(r, "expected_version")),
+          "rotated envelope reopens with the new passphrase")
+    var oldDEKRefused = false
+    do { _ = try reopened.open(dek: oldDEK) } catch VaultError.wrongPassphrase { oldDEKRefused = true }
+    check(oldDEKRefused, "rotated envelope refuses the old DEK")
+}
+
+// 12f. HOTP counter range.
+do {
+    let h = vnode(vectorRoot, "hotp_counter_range")
+    check(vint(h, "max_counter") == Account.maxCounter, "max HOTP counter matches Go")
+    var allOK = true
+    for c in vnode(h, "payload_accept").items {
+        let payload = vbytes(c, "payload")
+        let accts = try? CanonicalJSON.decode(payload)
+        if accts?.count != 1 || accts?.first?.counter != vint(c, "counter")
+            || accts.map(CanonicalJSON.encode) != payload { allOK = false }
+    }
+    for c in vnode(h, "payload_reject").items {
+        var got = "accepted"
+        do { _ = try CanonicalJSON.decode(vbytes(c, "payload")) } catch { got = payloadErrorClass(error) }
+        if got != vtext(c, "error") { allOK = false }
+    }
+    for c in vnode(h, "advance").items where (try? Account.nextCounter(after: vint(c, "from"))) != vint(c, "to") {
+        allOK = false
+    }
+    for c in vnode(h, "advance_refused").items {
+        do {
+            _ = try Account.nextCounter(after: vint(c))
+            allOK = false
+        } catch is CounterRangeError {}
+    }
+    check(allOK, "hotp_counter_range accept, reject, advance, advance refused")
+
+    let m = vnode(h, "code_at_max")
+    let acct = Account(id: "max", type: .hotp, issuer: "", account: "x",
+                       secret: Data(base64Encoded: vtext(m, "secret_b64"))!, algorithm: vtext(m, "algorithm"),
+                       digits: Int(vint(m, "digits")), counter: vint(m, "counter"))
+    check((try? OTP.code(for: acct, at: Date())) == vtext(m, "code"), "HOTP code at the maximum counter")
+}
+
+// 12g. Display order.
+do {
+    let cases = vnode(vnode(vectorRoot, "display_order"), "cases").items
+    var allOK = true
+    for c in cases {
+        let accts = vnode(c, "accounts").items.map { a in
+            Account(id: vtext(a, "id"), type: .totp, issuer: a.member("issuer").map { vtext($0) } ?? "",
+                    account: a.member("account").map { vtext($0) } ?? "", secret: Data("x".utf8),
+                    deletedAt: a.member("deleted_at").map { vint($0) } ?? 0,
+                    order: a.member("order").map { Int(vint($0)) } ?? 0)
+        }
+        let ids = Account.sortedForDisplay(Account.live(accts)).map(\.id)
+        if ids != vtexts(c, "expected_ids") {
+            allOK = false
+            print("     \(vtext(c, "name")): \(ids)")
+        }
+    }
+    check(allOK, "display_order (\(cases.count) cases)")
 }
 
 // 11. Shared importer fixture table (go/internal/importers/testdata/expected.json).

@@ -65,7 +65,8 @@ final class AuthFlowTests: XCTestCase {
 
         // Simulate SecureEnclaveWrap.enable (hardware-free): any second wrap type.
         env.wraps.append(VaultWrap(type: "secure-enclave", kdf: nil, params: nil, salt: nil,
-                                   se_key: "c3R1Yg==", nonce: "c3R1Yg==", ct: "c3R1Yg=="))
+                                   se_key: "c3R1Yg==", nonce: Data(repeating: 7, count: 24).base64EncodedString(),
+                                   ct: "c3R1Yg=="))
         let decoded = try Envelope.decode(env.encoded())
 
         XCTAssertEqual(decoded.wraps.map(\.type).sorted(), ["passphrase", "secure-enclave"])

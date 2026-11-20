@@ -90,10 +90,11 @@ public enum Handles {
         for a in accounts {
             if a.handle.isEmpty { continue }
             if !isValid(a.handle) {
-                throw AccountError.invalid("account \(a.id): invalid handle \(a.handle)")
+                throw AccountError.invalid("account \(GoQuote.quote(a.id)): invalid handle \(GoQuote.quote(a.handle))")
             }
             if let other = seen[a.handle] {
-                throw AccountError.invalid("duplicate handle \(a.handle) on accounts \(other) and \(a.id)")
+                throw AccountError.invalid(
+                    "duplicate handle \(GoQuote.quote(a.handle)) on accounts \(GoQuote.quote(other)) and \(GoQuote.quote(a.id))")
             }
             seen[a.handle] = a.id
         }
