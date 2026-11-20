@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
+	"github.com/ibrahemid/tessera/go/internal/store/storetest"
 	"github.com/ibrahemid/tessera/go/internal/vault"
 )
 
@@ -69,8 +70,8 @@ func TestSaveKeepsThePreviousGenerationAsBackup(t *testing.T) {
 	if !bytes.Equal(readBytes(t, BackupPath(path)), second) {
 		t.Fatal("backup after the third save is not the second generation")
 	}
-	assertOwnerOnly(t, BackupPath(path))
-	assertOwnerOnly(t, path)
+	storetest.AssertOwnerOnly(t, BackupPath(path))
+	storetest.AssertOwnerOnly(t, path)
 	assertNoTempFiles(t, filepath.Dir(path))
 }
 
@@ -175,7 +176,7 @@ func TestWriteSecretFileCreatesAnOwnerOnlyFile(t *testing.T) {
 	if got := readBytes(t, path); string(got) != "secret" {
 		t.Errorf("content = %q", got)
 	}
-	assertOwnerOnly(t, path)
+	storetest.AssertOwnerOnly(t, path)
 	assertNoTempFiles(t, dir)
 }
 
@@ -211,7 +212,7 @@ func TestWriteSecretFileReplacesWhenAsked(t *testing.T) {
 	if got := readBytes(t, path); string(got) != "new" {
 		t.Errorf("content = %q", got)
 	}
-	assertOwnerOnly(t, path)
+	storetest.AssertOwnerOnly(t, path)
 	assertNoTempFiles(t, dir)
 }
 
@@ -248,7 +249,7 @@ func TestWriteSecretFileNeverWritesThroughASymlink(t *testing.T) {
 	if got := readBytes(t, link); string(got) != "secret" {
 		t.Errorf("content = %q", got)
 	}
-	assertOwnerOnly(t, link)
+	storetest.AssertOwnerOnly(t, link)
 	assertNoTempFiles(t, dir)
 }
 

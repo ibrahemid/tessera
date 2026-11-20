@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/ibrahemid/tessera/go/internal/store/storetest"
 )
 
 func TestLockIsExclusive(t *testing.T) {
@@ -122,5 +124,5 @@ func TestLockCreatesSidecarWithOwnerOnlyPerms(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer l.Release()
-	assertOwnerOnly(t, LockPath(path))
+	storetest.AssertOwnerOnly(t, LockPath(path))
 }

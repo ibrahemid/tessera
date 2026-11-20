@@ -1,4 +1,4 @@
-package store
+package storetest
 
 import (
 	"os"
@@ -10,7 +10,9 @@ import (
 
 const fileAllAccess = 0x1f01ff
 
-func assertOwnerOnly(t *testing.T, path string) {
+// AssertOwnerOnly fails t unless path is a regular file whose protected DACL
+// grants full control to the current user and SYSTEM and to no one else.
+func AssertOwnerOnly(t testing.TB, path string) {
 	t.Helper()
 	info, err := os.Lstat(path)
 	if err != nil {
@@ -22,14 +24,24 @@ func assertOwnerOnly(t *testing.T, path string) {
 	assertPrivateDACL(t, path, 0)
 }
 
-func assertOwnerOnlyDir(t *testing.T, path string) {
+// AssertOwnerOnlyDir fails t unless path is a directory whose protected DACL
+// grants full control, inherited by everything created inside it, to the
+// current user and SYSTEM and to no one else.
+func AssertOwnerOnlyDir(t testing.TB, path string) {
 	t.Helper()
+	info, err := os.Lstat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.IsDir() {
+		t.Errorf("%s mode = %v, want a directory", path, info.Mode())
+	}
 	assertPrivateDACL(t, path, windows.OBJECT_INHERIT_ACE|windows.CONTAINER_INHERIT_ACE)
 }
 
 // assertPrivateDACL checks for a protected DACL with exactly two explicit
 // full-control ACEs: the current user and SYSTEM.
-func assertPrivateDACL(t *testing.T, path string, inherit uint8) {
+func assertPrivateDACL(t testing.TB, path string, inherit uint8) {
 	t.Helper()
 	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
 	if err != nil {

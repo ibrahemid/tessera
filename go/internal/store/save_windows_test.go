@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ibrahemid/tessera/go/internal/store/storetest"
 	"golang.org/x/sys/windows"
 )
 
@@ -32,9 +33,9 @@ func TestSaveSetsAProtectedPrivateDACL(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	assertOwnerOnly(t, path)
-	assertOwnerOnly(t, BackupPath(path))
-	assertOwnerOnlyDir(t, filepath.Dir(path))
+	storetest.AssertOwnerOnly(t, path)
+	storetest.AssertOwnerOnly(t, BackupPath(path))
+	storetest.AssertOwnerOnlyDir(t, filepath.Dir(path))
 }
 
 func TestCreateTempSetsTheDACLBeforeAnyWrite(t *testing.T) {
@@ -49,7 +50,7 @@ func TestCreateTempSetsTheDACLBeforeAnyWrite(t *testing.T) {
 	if info, err := os.Stat(name); err != nil || info.Size() != 0 {
 		t.Fatalf("temp file: %v %v", info, err)
 	}
-	assertOwnerOnly(t, name)
+	storetest.AssertOwnerOnly(t, name)
 }
 
 func TestMkdirPrivateSetsAnInheritableDACLOnEachNewLevel(t *testing.T) {
@@ -58,8 +59,8 @@ func TestMkdirPrivateSetsAnInheritableDACLOnEachNewLevel(t *testing.T) {
 	if err := mkdirPrivate(leaf); err != nil {
 		t.Fatal(err)
 	}
-	assertOwnerOnlyDir(t, top)
-	assertOwnerOnlyDir(t, leaf)
+	storetest.AssertOwnerOnlyDir(t, top)
+	storetest.AssertOwnerOnlyDir(t, leaf)
 	if err := mkdirPrivate(leaf); err != nil {
 		t.Fatalf("mkdirPrivate on an existing directory: %v", err)
 	}

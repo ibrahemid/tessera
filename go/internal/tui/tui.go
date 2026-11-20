@@ -86,6 +86,9 @@ type Result struct {
 	Skipped int
 	// Problems describe accounts ChangeAdd could not add.
 	Problems []string
+	// Notice is a message about the vault file after the change, shown on its
+	// own line until the next key press; empty when there is none.
+	Notice string
 }
 
 // Options connects the view to the vault.
@@ -254,6 +257,9 @@ type Model struct {
 	status      string
 	statusKind  statusKind
 	statusUntil time.Time
+	// notice is the last write's Result.Notice, kept until the next key press
+	// or paste.
+	notice string
 }
 
 // New builds the watch model.
@@ -366,6 +372,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.lock(lockIdle)
 		} else {
 			m.lastInput = at
+			m.notice = ""
 			m.pasted(msg.Content)
 		}
 	case tea.KeyPressMsg:
@@ -465,6 +472,7 @@ func (m *Model) lock(reason lockReason) {
 	m.confirm = nil
 	m.lastTrashed = ""
 	m.reloadErr = ""
+	m.notice = ""
 	m.clearStatus()
 }
 
@@ -548,6 +556,9 @@ func (m Model) mutated(msg mutateDoneMsg) (tea.Model, tea.Cmd) {
 	}
 	m.gen++
 	m.setAccounts(msg.result.Accounts)
+	if msg.result.Notice != "" {
+		m.notice = ui.Sanitize(msg.result.Notice)
+	}
 	c := msg.change
 	switch c.Kind {
 	case ChangeAdd:

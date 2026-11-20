@@ -240,7 +240,7 @@ func TestUnlockFailureNamesTheBak(t *testing.T) {
 		"the passphrase in $TESSERA_PASSPHRASE doesn't open " + path,
 		"If the passphrase is right, the vault file is damaged",
 		store.BackupPath(path),
-		"restore it with `tess vault restore --bak --vault " + path + "`",
+		"restore it with `tess vault restore --bak --vault " + quoteArg(path) + "`",
 	} {
 		if !strings.Contains(stderr, want) {
 			t.Errorf("stderr lacks %q:\n%s", want, stderr)
@@ -260,7 +260,7 @@ func TestUnreadableVaultNamesTheRestoreCommand(t *testing.T) {
 	if err == nil {
 		t.Fatal("list must fail on an unreadable vault")
 	}
-	if !strings.Contains(stderr, "cannot read the vault at "+path) || !strings.Contains(stderr, "`tess vault restore --bak --vault "+path+"`") {
+	if !strings.Contains(stderr, "cannot read the vault at "+path) || !strings.Contains(stderr, "`tess vault restore --bak --vault "+quoteArg(path)+"`") {
 		t.Errorf("stderr = %q", stderr)
 	}
 }
@@ -278,6 +278,60 @@ func TestRestoreCommandQuotesThePath(t *testing.T) {
 	}
 	if got := restoreCommand(spaced); got != want {
 		t.Errorf("restoreCommand(%q) = %q, want %q", spaced, got, want)
+	}
+}
+
+func TestQuotePOSIX(t *testing.T) {
+	for in, want := range map[string]string{
+		"/tmp/vault.json":               "/tmp/vault.json",
+		"/tmp/a@b%c,d+e=f~g:h-i_j.json": "/tmp/a@b%c,d+e=f~g:h-i_j.json",
+		"/home/me/my vault.json":        "'/home/me/my vault.json'",
+		"/tmp/it's.json":                `'/tmp/it'\''s.json'`,
+		"/tmp/$HOME/`id`.json":          "'/tmp/$HOME/`id`.json'",
+		`C:\Users\me\vault.json`:        `'C:\Users\me\vault.json'`,
+		"":                              "''",
+	} {
+		if got := quotePOSIX(in); got != want {
+			t.Errorf("quotePOSIX(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestQuotePowerShell(t *testing.T) {
+	for in, want := range map[string]string{
+		`C:\Users\RUNNER~1\AppData\Local\Temp\vault.json`: `C:\Users\RUNNER~1\AppData\Local\Temp\vault.json`,
+		`\\server\share\vault.json`:                       `\\server\share\vault.json`,
+		`C:/Users/me/vault+1=a-b_c.json`:                  `C:/Users/me/vault+1=a-b_c.json`,
+		`C:\My Files\vault.json`:                          `"C:\My Files\vault.json"`,
+		`C:\Users\o'brien\vault.json`:                     `"C:\Users\o'brien\vault.json"`,
+		`C:\a&b (1)\[x]{y};#!^\vault.json`:                `"C:\a&b (1)\[x]{y};#!^\vault.json"`,
+		`C:\100%\vault.json`:                              `"C:\100%\vault.json"`,
+		`C:\a,b\vault.json`:                               `"C:\a,b\vault.json"`,
+		`C:\@home\vault.json`:                             `"C:\@home\vault.json"`,
+		"C:\\Users\\J\u00f6rg\\vault.json":                "\"C:\\Users\\J\u00f6rg\\vault.json\"",
+		`C:\$env\vault.json`:                              `'C:\$env\vault.json'`,
+		"C:\\a`b\\vault.json":                             "'C:\\a`b\\vault.json'",
+		`C:\it's $x\vault.json`:                           `'C:\it''s $x\vault.json'`,
+		"C:\\it\u2019s $x\\vault.json":                    "'C:\\it\u2019\u2019s $x\\vault.json'",
+		"C:\\\u201cq\u201d\\vault.json":                   "'C:\\\u201cq\u201d\\vault.json'",
+		"C:\\\u201eq\u2018\\vault.json":                   "'C:\\\u201eq\u2018\u2018\\vault.json'",
+		`C:\say "hi"\vault.json`:                          `'C:\say "hi"\vault.json'`,
+		"":                                                `""`,
+	} {
+		if got := quotePowerShell(in); got != want {
+			t.Errorf("quotePowerShell(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestQuoteArgFollowsThePlatform(t *testing.T) {
+	in := "dir/my vault.json"
+	want := quotePOSIX(in)
+	if runtime.GOOS == "windows" {
+		want = quotePowerShell(in)
+	}
+	if got := quoteArg(in); got != want {
+		t.Errorf("quoteArg(%q) = %q, want %q", in, got, want)
 	}
 }
 

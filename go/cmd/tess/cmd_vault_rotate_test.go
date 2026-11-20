@@ -285,7 +285,7 @@ func TestVaultPasswdNamesTheBakOnAWrongPassphrase(t *testing.T) {
 	if !errors.Is(err, vault.ErrWrongPassphrase) {
 		t.Fatalf("err = %v", err)
 	}
-	if !strings.Contains(stderr, store.BackupPath(path)) || !strings.Contains(stderr, "tess vault restore --bak --vault "+path) {
+	if !strings.Contains(stderr, store.BackupPath(path)) || !strings.Contains(stderr, "tess vault restore --bak --vault "+quoteArg(path)) {
 		t.Errorf("stderr must name the .bak and the restore command:\n%s", stderr)
 	}
 	if !store.HasBackup(path) {

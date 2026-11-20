@@ -133,7 +133,7 @@ func rotateLocked(cmd *cobra.Command, path string, dek []byte, old, newPass stri
 	if err != nil {
 		return nil, nil, unlockFailure(path, old, err)
 	}
-	res, err := saveVault(cmd.ErrOrStderr(), path, fresh, true)
+	res, err := saveVault(cmd.ErrOrStderr(), printNote(cmd.ErrOrStderr()), path, fresh, true)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -56,7 +56,7 @@ func newVaultInitCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, err := saveVault(cmd.ErrOrStderr(), path, env, false); err != nil {
+			if _, err := saveVault(cmd.ErrOrStderr(), printNote(cmd.ErrOrStderr()), path, env, false); err != nil {
 				return err
 			}
 			out(cmd, "Created vault at %s", path)

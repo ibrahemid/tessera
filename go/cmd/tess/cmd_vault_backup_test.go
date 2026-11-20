@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/ibrahemid/tessera/go/internal/account"
 	"github.com/ibrahemid/tessera/go/internal/store"
+	"github.com/ibrahemid/tessera/go/internal/store/storetest"
 	"github.com/ibrahemid/tessera/go/internal/vault"
 )
 
@@ -65,13 +65,7 @@ func TestSessionSaveWritesTheDayBackup(t *testing.T) {
 	if got := accountIDs(openVaultFile(t, day, "testpass123")); got != "a,b" {
 		t.Errorf("a same-day write must replace the day file, it holds %q", got)
 	}
-	info, err := os.Stat(day)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
-		t.Errorf("day file mode = %v, want 0600", info.Mode().Perm())
-	}
+	storetest.AssertOwnerOnly(t, day)
 	if got := accountIDs(openVaultFile(t, path, "testpass123")); got != "a,b" {
 		t.Errorf("vault holds %q", got)
 	}

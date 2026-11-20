@@ -154,7 +154,7 @@ func replaceVault(cmd *cobra.Command, path string, env *vault.Envelope) (bool, e
 		}
 	}()
 	_, lerr := store.Load(path)
-	if _, err := saveVault(cmd.ErrOrStderr(), path, env, false); err != nil {
+	if _, err := saveVault(cmd.ErrOrStderr(), printNote(cmd.ErrOrStderr()), path, env, false); err != nil {
 		return false, err
 	}
 	return lerr == nil, nil

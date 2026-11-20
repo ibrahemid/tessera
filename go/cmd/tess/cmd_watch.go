@@ -248,6 +248,8 @@ func (w *watchVault) mutate(c tui.Change) (tui.Result, error) {
 		return tui.Result{}, tui.ErrKeyReplaced
 	}
 	var res tui.Result
+	w.s.notify = func(msg string) { res.Notice = msg }
+	defer func() { w.s.notify = nil }()
 	var adding []account.Account
 	if c.Kind == tui.ChangeAdd {
 		var err error

@@ -1567,3 +1567,74 @@ func TestInitAsksForTheBackgroundAndStartsTheClock(t *testing.T) {
 		t.Fatal("the view does not use the alternate screen")
 	}
 }
+
+const writeNotice = "The vault file is now format version 2\x1b]52;c;AA\x07, which older versions cannot open. " +
+	"It returns to version 1 once the Trash is empty and no account has a note or a manual position."
+
+// statusBlock returns the lines between the last blank line and the hint
+// line, trimmed.
+func statusBlock(h *harness) []string {
+	lines := h.lines()
+	end := len(lines) - 1
+	start := end
+	for start > 0 && strings.TrimSpace(lines[start-1]) != "" {
+		start--
+	}
+	block := lines[start:end]
+	for i, l := range block {
+		block[i] = strings.TrimSpace(l)
+	}
+	return block
+}
+
+func TestWriteNoticeShowsOnItsOwnLineUntilTheNextKey(t *testing.T) {
+	h := newHarness(t, fixture())
+	h.notice = writeNotice
+	h.selectID("e")
+	h.press("d")
+	want := strings.Fields(ui.Sanitize(writeNotice))
+	block := statusBlock(h)
+	if len(block) < 2 || block[0] != "✓ Moved Cloud to the Trash. Press u to undo." {
+		t.Fatalf("want the write status on a line of its own, got %q", block)
+	}
+	if got := strings.Fields(strings.Join(block[1:], " ")); !slices.Equal(got, want) {
+		t.Fatalf("lines under the write status read %q, want the notice %q", got, want)
+	}
+	if strings.Contains(h.m.View().Content, "\x1b]52") {
+		t.Fatal("the notice reached the frame unescaped")
+	}
+	checkFrame(t, h, 80, 24, "with a notice")
+
+	h.at(30)
+	if got := strings.Fields(strings.Join(statusBlock(h), " ")); !slices.Equal(got, want) {
+		t.Fatalf("after the write status expired the status lines read %q, want the notice %q", got, want)
+	}
+
+	h.notice = ""
+	h.press("j")
+	h.mustNotContain("format version 2")
+}
+
+func TestWriteNoticeKeepsTheFrameInASmallTerminal(t *testing.T) {
+	h := newSizedHarness(t, fixture(), 40, 10)
+	h.notice = writeNotice
+	h.selectID("e")
+	h.press("d")
+	checkFrame(t, h, 40, 10, "small terminal with a notice")
+	h.mustContain("✓ Moved Cloud to the Trash.")
+}
+
+func TestWriteNoticeClearsOnPasteAndLock(t *testing.T) {
+	h := newHarness(t, fixture())
+	h.notice = writeNotice
+	h.selectID("e")
+	h.press("d")
+	h.mustContain("format version 2")
+	h.paste("x")
+	h.mustNotContain("format version 2")
+
+	h.press("u")
+	h.mustContain("format version 2")
+	h.m.lock(lockIdle)
+	h.mustNotContain("format version 2")
+}

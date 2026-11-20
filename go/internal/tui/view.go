@@ -54,7 +54,8 @@ func (m Model) layout() layout {
 		return lines[:n]
 	}
 	var l layout
-	l.status = fit(m.statusLines(), 2)
+	notice := m.noticeLines()
+	l.status = fit(append(m.statusLines(), notice...), 2+len(notice))
 	l.header = fit(m.headerLines(), 1)
 	l.context = fit(m.contextLines(), 1)
 	l.body = max(spare+1, 1)
@@ -193,6 +194,19 @@ func (m Model) contextLines() []string {
 }
 
 var cursorStyle = lipgloss.NewStyle().Reverse(true)
+
+// noticeLines is the notice, wrapped to the width; nil while a question is
+// open.
+func (m Model) noticeLines() []string {
+	if m.notice == "" || m.confirm != nil {
+		return nil
+	}
+	lines := wrap(m.notice, m.width)
+	for i, l := range lines {
+		lines[i] = m.theme.Subtle.Render(l)
+	}
+	return lines
+}
 
 // statusLines is the status or question, wrapped to the width.
 func (m Model) statusLines() []string {

@@ -26,6 +26,7 @@ UTF-8 JSON, no BOM. Top-level object:
 - An implementation of this spec MUST read both versions.
 - The writer derives the version from the payload it is about to seal: `2` when any account carries a key outside the v1 key set, otherwise `1`. The v1 key set is `account, algorithm, counter, created_at, digits, folder, handle, id, issuer, period, pinned, secret, tags, type, updated_at`. A vault that uses no v2 field therefore stays readable by 1.1.0 tools, and the version returns to 1 when the last v2 field is cleared.
 - 1.1.0 tools reject version 2. That is intended: they drop keys they do not know when they write, so opening a version 2 vault with one would lose data.
+- When a write takes a stored vault from version 1 to 2, the writer SHOULD tell the person once the write succeeds, naming the file and what returns it to version 1. A vault the write creates, or a write that leaves the version unchanged, needs no notice.
 
 ### Envelope strictness
 

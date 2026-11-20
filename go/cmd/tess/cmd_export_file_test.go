@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
+	"github.com/ibrahemid/tessera/go/internal/store/storetest"
 )
 
 func TestExportFileRefusesAnExistingFileWithoutForce(t *testing.T) {
@@ -59,13 +60,7 @@ func TestExportFileForceReplacesTheDestination(t *testing.T) {
 	if !bytes.Equal(got, vaultBytes) {
 		t.Fatal("the copy differs from the vault")
 	}
-	info, err := os.Stat(dst)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Errorf("mode = %o, want 600", perm)
-	}
+	storetest.AssertOwnerOnly(t, dst)
 	if names := dirEntries(t, dir); !slices.Equal(names, []string{"copy.json"}) {
 		t.Fatalf("export --file left %v", names)
 	}

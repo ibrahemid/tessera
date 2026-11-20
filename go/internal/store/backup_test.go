@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ibrahemid/tessera/go/internal/store/storetest"
 	"github.com/ibrahemid/tessera/go/internal/vault"
 )
 
@@ -155,7 +156,7 @@ func TestWriteBackupReplacesTheSameDayFile(t *testing.T) {
 	if got := openIssuer(t, res.Path); got != "second" {
 		t.Errorf("the day file holds %s, want the later write", got)
 	}
-	assertOwnerOnly(t, res.Path)
+	storetest.AssertOwnerOnly(t, res.Path)
 	assertNoTempFiles(t, dir)
 }
 

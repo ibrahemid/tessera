@@ -22,6 +22,7 @@ func (m Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.lastInput = at
+	m.notice = ""
 	if m.confirm != nil {
 		return m.answer(key)
 	}

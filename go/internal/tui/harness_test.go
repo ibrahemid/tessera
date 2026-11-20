@@ -72,9 +72,11 @@ type harness struct {
 
 	copyErr   error
 	mutateErr error
-	reloadFn  func() ([]account.Account, bool, error)
-	unlockFn  func(string) ([]account.Account, error)
-	storedFn  func() ([]account.Account, error)
+	// notice is the Result.Notice every successful mutate returns.
+	notice   string
+	reloadFn func() ([]account.Account, bool, error)
+	unlockFn func(string) ([]account.Account, error)
+	storedFn func() ([]account.Account, error)
 }
 
 func newHarness(t *testing.T, accts []account.Account) *harness {
@@ -173,6 +175,7 @@ func (h *harness) mutate(c Change) (Result, error) {
 		h.vault[i].Counter = c.Counter
 	}
 	res.Accounts = slices.Clone(h.vault)
+	res.Notice = h.notice
 	return res, nil
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -183,16 +184,30 @@ func TestErrorsEscapeUntrustedText(t *testing.T) {
 }
 
 func TestImportProblemsEscapeTheSourceName(t *testing.T) {
-	sealHostileVault(t)
-	src := filepath.Join(t.TempDir(), "list\x1b]52;c;AA\x07\u202e.txt")
-	if err := os.WriteFile(src, []byte("not an account\n"), 0o600); err != nil {
-		t.Fatal(err)
+	cases := []struct {
+		name, file, escaped string
+		c0                  bool
+	}{
+		{"C0 escape and bell", "list\x1b]52;c;AA\x07\u202e.txt", `list\x1b]52;c;AA\x07\u202e.txt`, true},
+		{"C1 control and bidi override", "list\u009b31m\u202e.txt", `list\x9b31m\u202e.txt`, false},
 	}
-	stdout, stderr, _ := runRootStreams(t, "import", src)
-	assertNoRawControl(t, "stdout", stdout)
-	assertNoRawControl(t, "stderr", stderr)
-	if !strings.Contains(stderr, "Could not import 1 item:") || !strings.Contains(stderr, escapedOSC) {
-		t.Errorf("want the escaped source in the problem list, got %q", stderr)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if c.c0 && runtime.GOOS == "windows" {
+				t.Skip("Windows file names cannot contain characters below U+0020")
+			}
+			sealHostileVault(t)
+			src := filepath.Join(t.TempDir(), c.file)
+			if err := os.WriteFile(src, []byte("not an account\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			stdout, stderr, _ := runRootStreams(t, "import", src)
+			assertNoRawControl(t, "stdout", stdout)
+			assertNoRawControl(t, "stderr", stderr)
+			if !strings.Contains(stderr, "Could not import 1 item:") || !strings.Contains(stderr, c.escaped) {
+				t.Errorf("want %s in the problem list, got %q", c.escaped, stderr)
+			}
+		})
 	}
 }
 

@@ -19,8 +19,41 @@ func warn(w io.Writer, msg string) {
 	fmt.Fprintln(w, "warning:", ui.Sanitize(msg))
 }
 
-func saveVault(w io.Writer, path string, env *vault.Envelope, rotated bool) (*store.BackupResult, error) {
+// printNote returns a notify function that prints each notice to w.
+func printNote(w io.Writer) func(string) {
+	return func(msg string) { fmt.Fprintln(w, "note:", ui.Sanitize(msg)) }
+}
+
+// versionNotice is the notice for a write that took the stored vault at path
+// from format version 1 to 2.
+func versionNotice(path string) string {
+	return path + " is now format version 2, which Tessera 1.1.0 and earlier (the Mac app and tess) cannot open. " +
+		"It returns to version 1 once the Trash is empty (`tess trash empty`) and no account has a note " +
+		"(`tess note --clear <account>`) or a manual position (`tess order --clear <account>`)."
+}
+
+// writeVault saves env to path. When the stored vault was format version 1 and
+// env is version 2, it passes versionNotice to notify once the save succeeds. A
+// vault this write creates, or a file that does not parse, has no version to
+// rise from.
+func writeVault(notify func(string), path string, env *vault.Envelope) error {
+	before := 0
+	if stored, err := store.Load(path); err == nil {
+		before = stored.Version
+	}
 	if err := store.Save(path, env); err != nil {
+		return err
+	}
+	if before == 1 && env.Version == 2 {
+		notify(versionNotice(path))
+	}
+	return nil
+}
+
+// saveVault writes the vault through writeVault, then the automatic backup.
+// Warnings go to w; the version notice goes to notify.
+func saveVault(w io.Writer, notify func(string), path string, env *vault.Envelope, rotated bool) (*store.BackupResult, error) {
+	if err := writeVault(notify, path, env); err != nil {
 		return nil, err
 	}
 	if rotated {

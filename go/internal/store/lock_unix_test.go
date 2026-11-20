@@ -10,6 +10,8 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+
+	"github.com/ibrahemid/tessera/go/internal/store/storetest"
 )
 
 func assertLockFileError(t *testing.T, err error, lockPath string) {
@@ -81,7 +83,7 @@ func TestLockCreatesTheSidecarAs0600UnderARestrictiveUmask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertOwnerOnly(t, LockPath(path))
+	storetest.AssertOwnerOnly(t, LockPath(path))
 	if err := l.Release(); err != nil {
 		t.Fatal(err)
 	}

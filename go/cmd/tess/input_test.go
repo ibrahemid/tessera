@@ -99,9 +99,15 @@ func TestImportNamesTheOperatingSystemReason(t *testing.T) {
 	if len(b.problems) != 1 || b.problems[0].reason != "no such file or directory" {
 		t.Fatalf("want the OS reason, got %+v", b.problems)
 	}
-	b = collectImport([]string{filepath.Join(t.TempDir(), "missing.png")}, nil, nil, nil, nil)
-	if len(b.problems) != 1 || b.problems[0].reason != "no such file or directory" {
-		t.Fatalf("want the OS reason for an image, got %+v", b.problems)
+	image := filepath.Join(t.TempDir(), "missing.png")
+	_, openErr := os.Open(image)
+	var pathErr *os.PathError
+	if !errors.As(openErr, &pathErr) || !errors.Is(openErr, fs.ErrNotExist) {
+		t.Fatalf("opening a missing file: %v", openErr)
+	}
+	b = collectImport([]string{image}, nil, nil, nil, nil)
+	if len(b.problems) != 1 || b.problems[0].reason != pathErr.Err.Error() {
+		t.Fatalf("want the OS reason %q for an image, got %+v", pathErr.Err.Error(), b.problems)
 	}
 }
 

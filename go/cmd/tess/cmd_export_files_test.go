@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
+	"github.com/ibrahemid/tessera/go/internal/store/storetest"
 )
 
 func sealTwoAccounts(t *testing.T) []account.Account {
@@ -18,20 +19,6 @@ func sealTwoAccounts(t *testing.T) []account.Account {
 	accts := []account.Account{totp("a", "ACME", "x", 1), totp("b", "Beta", "y", 2)}
 	sealVault(t, path, accts)
 	return accts
-}
-
-func assertOwnerOnlyFile(t *testing.T, path string) {
-	t.Helper()
-	info, err := os.Lstat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !info.Mode().IsRegular() {
-		t.Fatalf("%s is not a regular file: %v", path, info.Mode())
-	}
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("%s mode = %v, want 0600", path, info.Mode().Perm())
-	}
 }
 
 func assertExists(t *testing.T, err error, path string) {
@@ -82,7 +69,7 @@ func TestExportOutReplacesAFileOnlyWithForce(t *testing.T) {
 	if stdout != "Wrote "+dst+"\n" {
 		t.Fatalf("stdout = %q", stdout)
 	}
-	assertOwnerOnlyFile(t, dst)
+	storetest.AssertOwnerOnly(t, dst)
 	data, err := os.ReadFile(dst)
 	if err != nil {
 		t.Fatal(err)
@@ -98,15 +85,9 @@ func TestExportQRWritesOwnerOnlyFiles(t *testing.T) {
 	if _, _, err := runExport(t, "--qr", dir); err != nil {
 		t.Fatal(err)
 	}
-	info, err := os.Stat(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Mode().Perm() != 0o700 {
-		t.Fatalf("directory mode = %v, want 0700", info.Mode().Perm())
-	}
+	storetest.AssertOwnerOnlyDir(t, dir)
 	for i, a := range accts {
-		assertOwnerOnlyFile(t, filepath.Join(dir, qrFileName(a, i)))
+		storetest.AssertOwnerOnly(t, filepath.Join(dir, qrFileName(a, i)))
 	}
 }
 
@@ -126,8 +107,8 @@ func TestExportQRRefusedRunWritesNothing(t *testing.T) {
 	if _, _, err := runExport(t, "--qr", dir, "--force"); err != nil {
 		t.Fatal(err)
 	}
-	assertOwnerOnlyFile(t, first)
-	assertOwnerOnlyFile(t, second)
+	storetest.AssertOwnerOnly(t, first)
+	storetest.AssertOwnerOnly(t, second)
 }
 
 func TestExportNeverWritesThroughASymlink(t *testing.T) {
@@ -150,7 +131,7 @@ func TestExportNeverWritesThroughASymlink(t *testing.T) {
 	if _, _, err := runExport(t, "--format", "aegis", "--out", link, "--force"); err != nil {
 		t.Fatal(err)
 	}
-	assertOwnerOnlyFile(t, link)
+	storetest.AssertOwnerOnly(t, link)
 	assertContent(t, target, "old")
 }
 

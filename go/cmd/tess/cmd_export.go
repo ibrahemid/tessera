@@ -223,7 +223,7 @@ func writeExportFiles(cmd *cobra.Command, files []exporters.File, outPath string
 		return writeSecretFiles(cmd, []exportFile{{path: outPath, data: files[0].Data}}, force)
 	}
 	dir := strings.TrimSuffix(outPath, string(os.PathSeparator))
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := store.MkdirPrivate(dir); err != nil {
 		return fmt.Errorf("create %q: %w", dir, err)
 	}
 	dst := make([]exportFile, len(files))
@@ -254,7 +254,7 @@ func exportQR(cmd *cobra.Command, accts []account.Account, dir string, force boo
 		}
 		files[i] = exportFile{path: filepath.Join(dir, qrFileName(a, i)), data: png}
 	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := store.MkdirPrivate(dir); err != nil {
 		return fmt.Errorf("create %q: %w", dir, err)
 	}
 	return writeSecretFiles(cmd, files, force)

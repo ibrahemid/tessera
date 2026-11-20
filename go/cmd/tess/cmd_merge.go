@@ -158,7 +158,7 @@ func mergeTwoWay(s *session, srcPath, shownPath string, srcAccts []account.Accou
 		}
 	}
 	if there.Changed() {
-		if err := saveMergeSource(srcPath, env, dek, srcMerged); err != nil {
+		if err := saveMergeSource(s.notifier(), srcPath, env, dek, srcMerged); err != nil {
 			return "", err
 		}
 	}
@@ -200,7 +200,7 @@ func countsPhrase(c merge.Counts) string {
 
 // saveMergeSource re-seals the source vault with the merged accounts, using the
 // DEK that opened it so argon2id is not derived a second time.
-func saveMergeSource(path string, env *vault.Envelope, dek []byte, accts []account.Account) error {
+func saveMergeSource(notify func(string), path string, env *vault.Envelope, dek []byte, accts []account.Account) error {
 	// The source is its own handle namespace: a handle carried over from the
 	// local vault may collide there, so collisions are cleared and reassigned
 	// against this list before the uniqueness check.
@@ -212,7 +212,7 @@ func saveMergeSource(path string, env *vault.Envelope, dek []byte, accts []accou
 	if err := env.UpdateAccountsWithDEK(dek, accts); err != nil {
 		return err
 	}
-	return store.Save(path, env)
+	return writeVault(notify, path, env)
 }
 
 // withVaultPair runs fn holding the locks of the vaults at a and b. The locks

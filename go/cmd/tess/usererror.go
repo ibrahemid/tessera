@@ -67,16 +67,47 @@ func restoreCommand(path string) string {
 	return cmd + " --vault " + quoteArg(path)
 }
 
-var shellSafe = regexp.MustCompile(`^[A-Za-z0-9_./:@%+=,~-]+$`)
+var (
+	posixSafe   = regexp.MustCompile(`^[A-Za-z0-9_./:@%+=,~-]+$`)
+	windowsSafe = regexp.MustCompile(`^[A-Za-z0-9_.:\\/~+=-]+$`)
+)
 
+// quoteArg quotes s for the shell people use on this platform.
 func quoteArg(s string) string {
-	switch {
-	case shellSafe.MatchString(s):
+	if runtime.GOOS == "windows" {
+		return quotePowerShell(s)
+	}
+	return quotePOSIX(s)
+}
+
+// quotePOSIX quotes s for sh, bash and zsh.
+func quotePOSIX(s string) string {
+	if posixSafe.MatchString(s) {
 		return s
-	case runtime.GOOS == "windows":
-		return `"` + s + `"`
 	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// quotePowerShell quotes s for PowerShell. Unless s holds a character that
+// expands or ends a PowerShell double-quoted string, the result is a
+// double-quoted string that cmd.exe reads the same way.
+func quotePowerShell(s string) string {
+	switch {
+	case windowsSafe.MatchString(s):
+		return s
+	case !strings.ContainsAny(s, "\"$`“”„"):
+		return `"` + s + `"`
+	}
+	var b strings.Builder
+	b.WriteByte('\'')
+	for _, r := range s {
+		if strings.ContainsRune("'‘’‚‛", r) {
+			b.WriteRune(r)
+		}
+		b.WriteRune(r)
+	}
+	b.WriteByte('\'')
+	return b.String()
 }
 
 var (

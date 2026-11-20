@@ -283,6 +283,14 @@ func RemoveBackup(path string) error {
 	return nil
 }
 
+// MkdirPrivate creates dir and any missing parents owner-only, the way Save
+// creates the vault directory: mode 0700 on Unix, a protected DACL inherited by
+// everything inside it on Windows. Directories that already exist are left as
+// they are.
+func MkdirPrivate(dir string) error {
+	return mkdirPrivate(dir)
+}
+
 // WriteSecretFile writes data to path as a regular owner-only file through an
 // exclusive temporary file in the same directory, flushed and renamed into
 // place. When something already exists at path it returns an *ExistsError

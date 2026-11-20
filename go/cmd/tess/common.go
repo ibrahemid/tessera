@@ -36,6 +36,15 @@ type session struct {
 	dek        []byte
 	accounts   []account.Account
 	lock       *store.Lock
+	// notify receives the notices a write prints; nil prints them to warnOut.
+	notify func(string)
+}
+
+func (s *session) notifier() func(string) {
+	if s.notify != nil {
+		return s.notify
+	}
+	return printNote(warnOut)
 }
 
 // readPassphrase returns $TESSERA_PASSPHRASE if set, else prompts without echo.
@@ -380,7 +389,7 @@ func (s *session) reload(seen []byte) error {
 func (s *session) migrate() {
 	if account.AssignHandles(s.accounts) || s.env.NeedsPersist() {
 		if err := s.env.UpdateAccountsWithDEK(s.dek, s.accounts); err == nil {
-			_, _ = saveVault(warnOut, s.path, s.env, false)
+			_, _ = saveVault(warnOut, s.notifier(), s.path, s.env, false)
 		}
 	}
 }
@@ -441,7 +450,7 @@ func (s *session) mutateHeld(fn func(*session) error) error {
 		}
 	}
 	account.AssignHandles(accts)
-	fresh := &session{path: s.path, env: env, passphrase: s.passphrase, dek: dek, accounts: accts}
+	fresh := &session{path: s.path, env: env, passphrase: s.passphrase, dek: dek, accounts: accts, notify: s.notify}
 	err = fn(fresh)
 	if err == nil {
 		err = fresh.save()
@@ -469,7 +478,7 @@ func (s *session) save() error {
 	if err := s.env.UpdateAccountsWithDEK(s.dek, s.accounts); err != nil {
 		return err
 	}
-	_, err := saveVault(warnOut, s.path, s.env, false)
+	_, err := saveVault(warnOut, s.notifier(), s.path, s.env, false)
 	return err
 }
 
