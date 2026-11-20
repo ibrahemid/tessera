@@ -13,6 +13,7 @@ import (
 
 	"github.com/ibrahemid/tessera/go/internal/account"
 	"github.com/ibrahemid/tessera/go/internal/base32x"
+	"github.com/ibrahemid/tessera/go/internal/merge"
 	"github.com/makiuchi-d/gozxing"
 	"github.com/makiuchi-d/gozxing/qrcode"
 )
@@ -92,11 +93,11 @@ func TestCollectImportBatchImageResilient(t *testing.T) {
 func TestDedupeKeyStableAndDistinct(t *testing.T) {
 	a := account.Account{Type: account.TOTP, Issuer: "GitHub", Account: "me", Secret: []byte("12345678901234567890")}
 	b := a
-	if dedupeKey(a) != dedupeKey(b) {
+	if merge.ContentKey(a) != merge.ContentKey(b) {
 		t.Error("identical accounts should share a dedupe key")
 	}
 	b.Account = "other"
-	if dedupeKey(a) == dedupeKey(b) {
+	if merge.ContentKey(a) == merge.ContentKey(b) {
 		t.Error("different account labels should differ")
 	}
 }

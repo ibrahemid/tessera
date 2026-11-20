@@ -1,6 +1,9 @@
 package exporters
 
 import (
+	"bytes"
+	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -214,5 +217,138 @@ func TestExportIDIsStableForAnyID(t *testing.T) {
 	}
 	if len(exportID("a")) != 36 {
 		t.Fatalf("exportID should be uuid-shaped, got %q", exportID("a"))
+	}
+}
+
+// renderAndReimport renders accts in format name, decodes the file into v and
+// checks that the repo's importer still reads back every account the format
+// carried.
+func renderAndReimport(t *testing.T, name string, accts []account.Account, v any) []byte {
+	t.Helper()
+	e, ok := Lookup(name)
+	if !ok {
+		t.Fatalf("format %q is not registered", name)
+	}
+	files, skipped, err := e.Render(accts)
+	if err != nil || len(files) != 1 {
+		t.Fatalf("%s: render: %d files, %v", name, len(files), err)
+	}
+	if err := json.Unmarshal(files[0].Data, v); err != nil {
+		t.Fatalf("%s: decode: %v", name, err)
+	}
+	got, source, recognized, err := importers.Parse(files[0].Data)
+	if !recognized || err != nil {
+		t.Fatalf("%s: re-import (%s): recognized %v, %v", name, source, recognized, err)
+	}
+	if len(got) != len(accts)-len(skipped) {
+		t.Fatalf("%s: re-imported %d accounts, want %d", name, len(got), len(accts)-len(skipped))
+	}
+	return files[0].Data
+}
+
+func folderFixture(t *testing.T) []account.Account {
+	t.Helper()
+	accts := roundTripAccounts(t)
+	accts[0].Folder, accts[0].Tags = "Work", []string{"code", "oss"}
+	accts[1].Folder = "Personal"
+	accts[2].Folder, accts[2].UpdatedAt = "Work", 50
+	return accts
+}
+
+func TestAegisWritesFoldersAsGroups(t *testing.T) {
+	var got struct {
+		DB struct {
+			Entries []struct {
+				Groups []string `json:"groups"`
+			} `json:"entries"`
+			Groups []aegisGroup `json:"groups"`
+		} `json:"db"`
+	}
+	renderAndReimport(t, "aegis", folderFixture(t), &got)
+	work, personal := folderID("Work"), folderID("Personal")
+	if want := []aegisGroup{{work, "Work"}, {personal, "Personal"}}; !reflect.DeepEqual(got.DB.Groups, want) {
+		t.Errorf("groups = %+v, want %+v", got.DB.Groups, want)
+	}
+	want := [][]string{{work}, {personal}, {work}, {}, {}}
+	for i, e := range got.DB.Entries {
+		if !reflect.DeepEqual(e.Groups, want[i]) {
+			t.Errorf("entry %d groups = %v, want %v", i, e.Groups, want[i])
+		}
+	}
+}
+
+func Test2FASWritesFoldersAsGroups(t *testing.T) {
+	var got struct {
+		Services []struct {
+			GroupID *string `json:"groupId"`
+		} `json:"services"`
+		Groups []twofasGroup `json:"groups"`
+	}
+	renderAndReimport(t, "2fas", folderFixture(t), &got)
+	work, personal := folderID("Work"), folderID("Personal")
+	if want := []twofasGroup{{work, "Work", true, 50_000}, {personal, "Personal", true, 0}}; !reflect.DeepEqual(got.Groups, want) {
+		t.Errorf("groups = %+v, want %+v", got.Groups, want)
+	}
+	want := []*string{&work, &personal, &work, nil, nil}
+	for i, s := range got.Services {
+		if !reflect.DeepEqual(s.GroupID, want[i]) {
+			t.Errorf("service %d groupId = %v, want %v", i, s.GroupID, want[i])
+		}
+	}
+}
+
+func TestBitwardenWritesFolders(t *testing.T) {
+	var got struct {
+		Folders []bitwardenFolder `json:"folders"`
+		Items   []struct {
+			FolderID *string `json:"folderId"`
+		} `json:"items"`
+	}
+	renderAndReimport(t, "bitwarden", folderFixture(t), &got)
+	work, personal := folderID("Work"), folderID("Personal")
+	if want := []bitwardenFolder{{work, "Work"}, {personal, "Personal"}}; !reflect.DeepEqual(got.Folders, want) {
+		t.Errorf("folders = %+v, want %+v", got.Folders, want)
+	}
+	want := []*string{&work, &personal, &work, nil, nil}
+	for i, it := range got.Items {
+		if !reflect.DeepEqual(it.FolderID, want[i]) {
+			t.Errorf("item %d folderId = %v, want %v", i, it.FolderID, want[i])
+		}
+	}
+}
+
+func TestBitwardenOmitsFoldersWithNone(t *testing.T) {
+	var got map[string]json.RawMessage
+	data := renderAndReimport(t, "bitwarden", roundTripAccounts(t), &got)
+	if _, has := got["folders"]; has || bytes.Contains(data, []byte(`"folders"`)) {
+		t.Fatal("an export with no folders carries a folders key")
+	}
+}
+
+func TestAndOTPWritesTags(t *testing.T) {
+	var got []struct {
+		Tags []string `json:"tags"`
+	}
+	renderAndReimport(t, "andotp", folderFixture(t), &got)
+	want := [][]string{{"code", "oss"}, {}, {}, {}, {}}
+	for i, e := range got {
+		if !reflect.DeepEqual(e.Tags, want[i]) {
+			t.Errorf("entry %d tags = %v, want %v", i, e.Tags, want[i])
+		}
+	}
+}
+
+func TestFolderIDIsDerivedFromTheName(t *testing.T) {
+	if got, want := folderID("Work"), "d1cfa62f-e404-0831-4c85-4f64b43c1f3b"; got != want {
+		t.Fatalf("folderID(Work) = %q, want %q", got, want)
+	}
+	if folderID("Work") == folderID("work") {
+		t.Fatal("folder ids that differ only in case are the same id")
+	}
+	if folderID("a") == exportID("a") {
+		t.Fatal("a folder name and an account id gave the same id")
+	}
+	if len(folderID("Work")) != 36 {
+		t.Fatalf("folderID should be uuid-shaped, got %q", folderID("Work"))
 	}
 }

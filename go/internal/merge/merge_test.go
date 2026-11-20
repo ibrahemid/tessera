@@ -1,6 +1,7 @@
 package merge
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
@@ -19,8 +20,8 @@ func TestIntoNewerWinsAndCarriesDeletedAt(t *testing.T) {
 	newer := acct("a", "Mail", "me", "other", 20)
 	newer.DeletedAt = 20
 	got, c := Into([]account.Account{acct("a", "Mail", "me", "mail", 10)}, []account.Account{newer})
-	if c != (Counts{Updated: 1}) || len(got) != 1 {
-		t.Fatalf("counts %+v len %d, want one update", c, len(got))
+	if c != (Counts{Trashed: 1}) || len(got) != 1 {
+		t.Fatalf("counts %+v len %d, want one move to the Trash", c, len(got))
 	}
 	if got[0].DeletedAt != 20 || got[0].UpdatedAt != 20 || got[0].Handle != "mail" {
 		t.Fatalf("got %+v, want the newer copy with the local handle", got[0])
@@ -39,8 +40,8 @@ func TestIntoEqualOrOlderChangesNothing(t *testing.T) {
 	for _, updated := range []int64{10, 5} {
 		incoming := acct("a", "Renamed", "me", "mail", updated)
 		got, c := Into([]account.Account{local}, []account.Account{incoming})
-		if c != (Counts{Skipped: 1}) || c.Changed() || got[0].Issuer != "Mail" {
-			t.Fatalf("updated_at %d: counts %+v issuer %q, want one skip and no change", updated, c, got[0].Issuer)
+		if c != (Counts{Unchanged: 1}) || c.Changed() || got[0].Issuer != "Mail" {
+			t.Fatalf("updated_at %d: counts %+v issuer %q, want one unchanged and no write", updated, c, got[0].Issuer)
 		}
 	}
 }
@@ -52,7 +53,7 @@ func TestIntoSkipsALiveContentDuplicate(t *testing.T) {
 	trashedDup := local
 	trashedDup.ID, trashedDup.DeletedAt = "c", 30
 	got, c := Into([]account.Account{local}, []account.Account{dup, trashedDup})
-	if c != (Counts{Added: 1, Skipped: 1}) || len(got) != 2 || got[1].ID != "c" {
+	if c != (Counts{Added: 1, Duplicate: 1}) || len(got) != 2 || got[1].ID != "c" {
 		t.Fatalf("counts %+v got %v, want the trashed copy added and the live duplicate skipped", c, ids(got))
 	}
 }
@@ -72,9 +73,122 @@ func TestIntoSkipsAnInvalidNewAccount(t *testing.T) {
 	bad := acct("b", "Broken", "x", "", 10)
 	bad.Digits = 9
 	got, c := Into(nil, []account.Account{bad})
-	if c != (Counts{Skipped: 1}) || len(got) != 0 {
-		t.Fatalf("counts %+v len %d, want the invalid account skipped", c, len(got))
+	if c != (Counts{Invalid: 1}) || len(got) != 0 {
+		t.Fatalf("counts %+v len %d, want the invalid account left out", c, len(got))
 	}
+}
+
+func TestIntoCountsWhereTheNewerCopyEndsUp(t *testing.T) {
+	live := acct("a", "Mail", "me", "mail", 10)
+	trashed := live
+	trashed.DeletedAt = 10
+	newerLive := acct("a", "Mail", "me", "mail", 20)
+	newerTrashed := newerLive
+	newerTrashed.DeletedAt = 20
+	cases := []struct {
+		name          string
+		local, source account.Account
+		want          Counts
+	}{
+		{"live to the Trash", live, newerTrashed, Counts{Trashed: 1}},
+		{"restored from the Trash", trashed, newerLive, Counts{Updated: 1}},
+		{"edited in the Trash", trashed, newerTrashed, Counts{Updated: 1}},
+		{"edited while live", live, newerLive, Counts{Updated: 1}},
+	}
+	for _, tc := range cases {
+		got, c := Into([]account.Account{tc.local}, []account.Account{tc.source})
+		if c != tc.want || !c.Changed() {
+			t.Errorf("%s: counts %+v, want %+v", tc.name, c, tc.want)
+		}
+		if got[0].DeletedAt != tc.source.DeletedAt {
+			t.Errorf("%s: deleted_at %d, want %d", tc.name, got[0].DeletedAt, tc.source.DeletedAt)
+		}
+	}
+}
+
+func TestIntoLeavesOutAnInvalidReplacement(t *testing.T) {
+	local := acct("a", "Mail", "me", "mail", 10)
+	bad := acct("a", "Renamed", "me", "mail", 20)
+	bad.Digits = 9
+	got, c := Into([]account.Account{local}, []account.Account{bad})
+	if c != (Counts{Invalid: 1}) || c.Changed() {
+		t.Fatalf("counts %+v, want one invalid and no write", c)
+	}
+	if got[0].Issuer != "Mail" || got[0].Digits != 6 || got[0].UpdatedAt != 10 {
+		t.Fatalf("got %+v, want the local account kept", got[0])
+	}
+}
+
+func TestIntoValidatesTheReplacementWithTheLocalHandle(t *testing.T) {
+	incoming := acct("a", "Mail", "me", "Not A Handle", 20)
+	got, c := Into([]account.Account{acct("a", "Mail", "me", "mail", 10)}, []account.Account{incoming})
+	if c != (Counts{Updated: 1}) || got[0].Handle != "mail" {
+		t.Fatalf("counts %+v handle %q, want the copy applied under the local handle", c, got[0].Handle)
+	}
+}
+
+func TestIntoNeverAliasesItsInputs(t *testing.T) {
+	shared := acct("a", "Mail", "me", "mail", 10)
+	shared.Tags = []string{"work"}
+	shared.Extra = map[string]json.RawMessage{"x_note": json.RawMessage(`"v"`)}
+	dst := make([]account.Account, 1, 8)
+	dst[0] = shared
+	newer := acct("a", "Mail", "me", "", 20)
+	newer.Tags = []string{"home"}
+	added := acct("b", "Bank", "me", "mail", 10)
+	added.Tags = []string{"money"}
+	added.Extra = map[string]json.RawMessage{"x_note": json.RawMessage(`"w"`)}
+	src := []account.Account{newer, added}
+	dstBefore := snapshot(t, dst[:cap(dst)])
+	srcBefore := snapshot(t, src)
+
+	got, c := Into(dst, src)
+	if c != (Counts{Added: 1, Updated: 1}) || len(got) != 2 {
+		t.Fatalf("counts %+v len %d", c, len(got))
+	}
+	for i := range got {
+		got[i].Secret[0] ^= 0xff
+		got[i].Tags[0] = "changed"
+		got[i].Handle = "changed"
+		for k := range got[i].Extra {
+			got[i].Extra[k][0] = 'X'
+		}
+	}
+	if after := snapshot(t, dst[:cap(dst)]); after != dstBefore {
+		t.Fatalf("dst changed:\n%s\nwant\n%s", after, dstBefore)
+	}
+	if after := snapshot(t, src); after != srcBefore {
+		t.Fatalf("src changed:\n%s\nwant\n%s", after, srcBefore)
+	}
+}
+
+func TestTwoWayLeavesBothInputsUntouched(t *testing.T) {
+	local := make([]account.Account, 2, 8)
+	local[0] = acct("a", "Mail", "me", "mail", 10)
+	local[1] = acct("c", "Chat", "me", "bank", 10)
+	source := make([]account.Account, 2, 8)
+	source[0] = acct("a", "Mail Renamed", "me", "other", 20)
+	source[1] = acct("b", "Bank", "me", "bank", 10)
+	localBefore, sourceBefore := snapshot(t, local[:cap(local)]), snapshot(t, source[:cap(source)])
+
+	localOut, sourceOut, _, _ := TwoWay(local, source)
+	if snapshot(t, local[:cap(local)]) != localBefore || snapshot(t, source[:cap(source)]) != sourceBefore {
+		t.Fatal("TwoWay modified an input")
+	}
+	if len(localOut) != 3 || len(sourceOut) != 3 || sourceOut[0].Issuer != "Mail Renamed" || localOut[0].Issuer != "Mail Renamed" {
+		t.Fatalf("local %v source %v", ids(localOut), ids(sourceOut))
+	}
+}
+
+// snapshot renders every field of accts, so any write through shared memory
+// shows up as a difference.
+func snapshot(t *testing.T, accts []account.Account) string {
+	t.Helper()
+	out, err := json.Marshal(accts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
 }
 
 func TestIntoClearsACollidingIncomingHandle(t *testing.T) {
@@ -150,9 +264,12 @@ type mergeVectors struct {
 }
 
 type counts struct {
-	Added   int `json:"added"`
-	Updated int `json:"updated"`
-	Skipped int `json:"skipped"`
+	Added     int `json:"added"`
+	Updated   int `json:"updated"`
+	Trashed   int `json:"trashed"`
+	Unchanged int `json:"unchanged"`
+	Duplicate int `json:"duplicate"`
+	Invalid   int `json:"invalid"`
 }
 
 func TestMergeVectors(t *testing.T) {

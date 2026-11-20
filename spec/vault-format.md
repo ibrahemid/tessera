@@ -227,21 +227,21 @@ Every writer, on every write:
 
 ## Merging vaults
 
-A merge folds the accounts of a source vault into a destination list. Account identity is the `id`. Each source account, in source order:
+A merge folds the accounts of a source vault into a destination list. Account identity is the `id`. Each source account, in source order, lands in exactly one count:
 
-1. **Same `id`, strictly newer `updated_at`:** the source copy replaces the destination copy, `deleted_at` included, so a trash or a restore carries over. The destination handle is kept; the incoming handle is used only when the destination copy has none. Counted as updated.
-2. **Same `id`, equal or older `updated_at`:** nothing changes. Counted as skipped.
-3. **New `id`, live, and a live destination account has the same content** (type, issuer and account name compared case-insensitively, and the secret bytes): skipped. A trashed account is never a duplicate and never makes one. Accounts added or replaced earlier in the same merge count as destination accounts.
-4. **New `id` that fails account validation:** skipped.
+1. **Same `id`, equal or older `updated_at`:** nothing changes. Counted as unchanged.
+2. **Same `id`, strictly newer `updated_at`:** the source copy is to replace the destination copy, `deleted_at` included, so a trash or a restore carries over. The destination handle is kept; the incoming handle is used only when the destination copy has none. The copy is validated with that handle first; one that fails validation is not applied and is counted as invalid. Otherwise it replaces the destination copy and is counted as trashed when the destination copy was live and the new copy is in the Trash, and as updated in every other case (a restore, or a newer copy on the same side of the Trash).
+3. **New `id`, live, and a live destination account has the same content** (type, issuer and account name compared case-insensitively, and the secret bytes): not added. Counted as duplicate. A trashed account is never a duplicate and never makes one. Accounts added or replaced earlier in the same merge count as destination accounts.
+4. **New `id` that fails account validation:** not added. Counted as invalid.
 5. **Otherwise:** appended. Counted as added.
 
 An account purged on one side is a new `id` to that side, so it returns from the other.
 
-After the pass, handles are deduplicated (the first account in list order keeps a shared handle and later ones lose it), missing handles are assigned as in *Handle assignment*, and uniqueness is checked before the write. A side is written only when something on it was added or updated.
+After the pass, handles are deduplicated (the first account in list order keeps a shared handle and later ones lose it), missing handles are assigned as in *Handle assignment*, and uniqueness is checked before the write. A side is written only when its added, updated or trashed count is above zero.
 
-**One-way** (`tess merge <source>`) writes the local vault only. **Two-way** (`--two-way`) merges the source into the local list, and merges the local list as it was before the run into the source list. It holds both vault locks, writes the local vault first and then the source, so a failed local write leaves the source untouched. A symlinked source resolves like the vault path. A two-way merge refuses a source that is the same file as the vault.
+**One-way** (`tess merge <source>`) writes the local vault only. **Two-way** (`--two-way`) merges the source into the local list, and merges the local list as it was before the run into the source list. Neither direction changes the lists it is given. It holds both vault locks, writes the local vault first and then the source, so a failed local write leaves the source untouched. A symlinked source resolves like the vault path. A two-way merge refuses a source that is the same file as the vault.
 
-The `merge` set in `testvectors.json` pins these rules: per case, both input lists, each side's canonical JSON after the run, whether each side is written, and each side's added, updated and skipped counts.
+The `merge` set in `testvectors.json` pins these rules: per case, both input lists, each side's canonical JSON after the run, whether each side is written, and each side's `added`, `updated`, `trashed`, `unchanged`, `duplicate` and `invalid` counts.
 
 ## DEK rotation
 
@@ -304,3 +304,6 @@ A backup folder is optional and configured per surface: `$TESSERA_BACKUP_DIR` (a
 - An envelope as Foundation's `JSONEncoder` writes it (indented, ` : ` after keys, `/` escaped as `\/`): every Tessera app release writes this form, and both cores MUST open it.
 - `\b` and `\f` in a string value, written as two-character escapes.
 - Nesting at level 64 accepted and level 65 rejected, in an unknown envelope key and in an extension value.
+- `rotation_extra_passphrase`: a rotation of an envelope holding a second passphrase wrap, a Secure Enclave wrap and a wrap of unknown type. The result keeps one passphrase wrap under the new passphrase, reports the three removed wraps, keeps the unknown top-level key and opens to the expected canonical JSON.
+- `exports`: the vault in each format under *Export formats* in `otpauth.md`, byte for byte, with the accounts each format skips. The accounts include folders, tags, notes and names with characters from the escaping rules.
+- `merge`: the cases under *Merging vaults*.

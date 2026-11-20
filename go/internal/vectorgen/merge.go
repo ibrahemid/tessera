@@ -61,6 +61,12 @@ func mergeCases() []mergeCase {
 	otherBank := bank
 	otherBank.Handle = "bk"
 
+	brokenEdit := touched(mail, 2000)
+	brokenEdit.Issuer, brokenEdit.Digits = "Mail Broken", 9
+
+	editedInTrash := trashed(mail, 2000)
+	editedInTrash.Note = "edited in the Trash"
+
 	return []mergeCase{
 		{
 			name:   "strictly-newer-wins-both-ways",
@@ -78,14 +84,24 @@ func mergeCases() []mergeCase {
 			source: []account.Account{sourceMail, unhandledBank},
 		},
 		{
-			name:   "content-duplicate-skipped",
+			name:   "content-duplicate-not-added",
 			local:  []account.Account{dupLocal},
 			source: []account.Account{dupLive, dupTrashed},
 		},
 		{
-			name:   "invalid-account-skipped",
+			name:   "invalid-account-not-added",
 			local:  []account.Account{mail},
 			source: []account.Account{mail, invalid},
+		},
+		{
+			name:   "invalid-replacement-not-applied",
+			local:  []account.Account{mail},
+			source: []account.Account{brokenEdit},
+		},
+		{
+			name:   "newer-copy-in-the-trash",
+			local:  []account.Account{trashed(mail, 1500)},
+			source: []account.Account{editedInTrash},
 		},
 		{
 			name:   "handle-collisions-reassigned",
@@ -164,5 +180,8 @@ func mergedSide(name string, accts []account.Account, written bool, input []byte
 }
 
 func countsObject(c merge.Counts) object {
-	return object{{"added", c.Added}, {"updated", c.Updated}, {"skipped", c.Skipped}}
+	return object{
+		{"added", c.Added}, {"updated", c.Updated}, {"trashed", c.Trashed},
+		{"unchanged", c.Unchanged}, {"duplicate", c.Duplicate}, {"invalid", c.Invalid},
+	}
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
 	"github.com/ibrahemid/tessera/go/internal/merge"
@@ -29,6 +30,7 @@ app) into the current vault. Accounts are unioned, never dropped:
 
   - an account present in both (same id) keeps whichever copy was edited last
   - an account already present by content (same type/issuer/account/secret) is skipped
+  - a copy that fails validation is left out
   - every other account is added
 
 By default the source file is opened read-only and only the current vault is
@@ -92,7 +94,7 @@ func mergeFromSource(cmd *cobra.Command, srcPath string, twoWay bool) error {
 			return errNothingToWrite
 		}
 		c := mergeVault(fresh, srcAccts)
-		report = fmt.Sprintf("Merged %s: %d added, %d updated, %d unchanged", ui.Sanitize(srcPath), c.Added, c.Updated, c.Skipped)
+		report = mergeReport(srcPath, countsPhrase(c))
 		if !c.Changed() {
 			return errNothingToWrite
 		}
@@ -160,8 +162,40 @@ func mergeTwoWay(s *session, srcPath, shownPath string, srcAccts []account.Accou
 			return "", err
 		}
 	}
-	return fmt.Sprintf("Merged %s: +%d ~%d here, +%d ~%d there, %d unchanged",
-		ui.Sanitize(shownPath), here.Added, here.Updated, there.Added, there.Updated, here.Skipped), nil
+	var sides []string
+	if p := countsPhrase(here); p != "" {
+		sides = append(sides, p+" here")
+	}
+	if p := countsPhrase(there); p != "" {
+		sides = append(sides, p+" in the source")
+	}
+	return mergeReport(shownPath, strings.Join(sides, "; ")), nil
+}
+
+// mergeReport is the line a merge prints. Every source account lands in one
+// count, so an empty summary means there was nothing to merge.
+func mergeReport(path, summary string) string {
+	if summary == "" {
+		summary = "no accounts"
+	}
+	return fmt.Sprintf("Merged %s: %s", ui.Sanitize(path), summary)
+}
+
+// countsPhrase names the non-zero counts of one side in plain words.
+func countsPhrase(c merge.Counts) string {
+	var parts []string
+	for _, p := range []struct {
+		n    int
+		word string
+	}{
+		{c.Added, "added"}, {c.Updated, "updated"}, {c.Trashed, "moved to the Trash"},
+		{c.Unchanged, "unchanged"}, {c.Duplicate, "already present"}, {c.Invalid, "invalid"},
+	} {
+		if p.n > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", p.n, p.word))
+		}
+	}
+	return strings.Join(parts, ", ")
 }
 
 // saveMergeSource re-seals the source vault with the merged accounts, using the

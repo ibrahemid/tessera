@@ -31,18 +31,21 @@ func exportAccounts() []account.Account {
 
 	cloud := exportAccount("02", "Cloud", "ops@example.com", pattern(32, 0x30), 60)
 	cloud.Algorithm, cloud.Digits, cloud.Period = "SHA256", 8, 60
+	cloud.Folder, cloud.Tags = "Personal", []string{"infra"}
 
 	vault := exportAccount("03", "Vault", "root", pattern(64, 0x50), 120)
 	vault.Algorithm, vault.Digits = "SHA512", 7
 
 	bank := exportAccount("04", "Bank", "customer-42", pattern(20, 0x70), 180)
 	bank.Type, bank.Counter = account.HOTP, 7
+	bank.Folder = "Work"
 
 	steam := exportAccount("05", "Steam", "gaben", pattern(20, 0x90), 240)
 	steam.Type, steam.Digits = account.Steam, 5
 
 	escapes := exportAccount("06", "Café \"Zürich\", <&> \\ 100%", "naïve user+tag@例え.jp", pattern(20, 0xa0), 300)
 	escapes.Note = "Line one, \"quoted\"\nline two and \U0001F510"
+	escapes.Folder, escapes.Tags = "Café \"Zürich\" <&>", []string{"naïve", "a,b"}
 
 	formulaName := exportAccount("07", "=1+1", "formula", pattern(20, 0xb4), 360)
 

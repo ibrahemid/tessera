@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
-	"github.com/ibrahemid/tessera/go/internal/base32x"
 	"github.com/ibrahemid/tessera/go/internal/detect"
+	"github.com/ibrahemid/tessera/go/internal/merge"
 	"github.com/ibrahemid/tessera/go/internal/qr"
 	"github.com/ibrahemid/tessera/go/internal/ui"
 	"github.com/spf13/cobra"
@@ -370,11 +370,11 @@ func mergeAccountsDetailed(s *session, imported []account.Account) mergeResult {
 	var r mergeResult
 	seen := map[string]bool{}
 	for _, a := range account.Live(s.accounts) {
-		seen[dedupeKey(a)] = true
+		seen[merge.ContentKey(a)] = true
 	}
 	ts := now().Unix()
 	for _, a := range imported {
-		key := dedupeKey(a)
+		key := merge.ContentKey(a)
 		o := mergeOutcome{label: importedLabel(a), issuer: a.Issuer, account: a.Account, typ: string(a.Type)}
 		if seen[key] {
 			r.skipped = append(r.skipped, o.label)
@@ -407,11 +407,4 @@ func importedLabel(a account.Account) string {
 		return l
 	}
 	return "unnamed account"
-}
-
-func dedupeKey(a account.Account) string {
-	return strings.Join([]string{
-		string(a.Type), strings.ToLower(a.Issuer), strings.ToLower(a.Account),
-		base32x.EncodeNoPad(a.Secret),
-	}, "|")
 }

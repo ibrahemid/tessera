@@ -18,9 +18,18 @@ func (bitwardenExporter) MultiFile() bool { return false }
 
 func (bitwardenExporter) Description() string { return "Bitwarden Authenticator JSON export" }
 
+// bitwardenExport carries "folders" only when an account has a folder: the
+// Authenticator's own export has no such key, and Bitwarden reads it when
+// present.
 type bitwardenExport struct {
-	Encrypted bool            `json:"encrypted"`
-	Items     []bitwardenItem `json:"items"`
+	Encrypted bool              `json:"encrypted"`
+	Folders   []bitwardenFolder `json:"folders,omitempty"`
+	Items     []bitwardenItem   `json:"items"`
+}
+
+type bitwardenFolder struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 type bitwardenItem struct {
@@ -41,10 +50,14 @@ type bitwardenLogin struct {
 
 func (bitwardenExporter) Render(accts []account.Account) ([]File, []Skipped, error) {
 	out := bitwardenExport{Items: make([]bitwardenItem, 0, len(accts))}
+	for _, f := range foldersOf(accts) {
+		out.Folders = append(out.Folders, bitwardenFolder{ID: f.id, Name: f.name})
+	}
 	for _, a := range accts {
 		out.Items = append(out.Items, bitwardenItem{
 			ID:       exportID(a.ID),
 			Name:     displayName(a),
+			FolderID: optionalFolderID(a),
 			Notes:    optionalStr(a.Note),
 			Type:     1, // Bitwarden cipher type 1 = login
 			Login:    bitwardenLogin{TOTP: otpauth.Format(a)},

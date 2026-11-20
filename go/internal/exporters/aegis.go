@@ -30,6 +30,12 @@ type aegisHeader struct {
 type aegisDB struct {
 	Version int          `json:"version"`
 	Entries []aegisEntry `json:"entries"`
+	Groups  []aegisGroup `json:"groups"`
+}
+
+type aegisGroup struct {
+	UUID string `json:"uuid"`
+	Name string `json:"name"`
 }
 
 type aegisEntry struct {
@@ -55,7 +61,10 @@ type aegisInfo struct {
 }
 
 func (aegisExporter) Render(accts []account.Account) ([]File, []Skipped, error) {
-	out := aegisExport{Version: 1, DB: aegisDB{Version: 3, Entries: make([]aegisEntry, 0, len(accts))}}
+	out := aegisExport{Version: 1, DB: aegisDB{Version: 3, Entries: make([]aegisEntry, 0, len(accts)), Groups: []aegisGroup{}}}
+	for _, f := range foldersOf(accts) {
+		out.DB.Groups = append(out.DB.Groups, aegisGroup{UUID: f.id, Name: f.name})
+	}
 	for _, a := range accts {
 		e := aegisEntry{
 			Type:     string(a.Type),
@@ -70,6 +79,9 @@ func (aegisExporter) Render(accts []account.Account) ([]File, []Skipped, error) 
 				Algo:   a.Algorithm,
 				Digits: a.Digits,
 			},
+		}
+		if a.Folder != "" {
+			e.Groups = []string{folderID(a.Folder)}
 		}
 		if a.Type == account.HOTP {
 			e.Info.Counter = int64Ptr(a.Counter)

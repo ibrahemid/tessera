@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
+	"github.com/ibrahemid/tessera/go/internal/merge"
 	"github.com/spf13/cobra"
 )
 
@@ -38,7 +39,7 @@ func findDuplicates(accts []account.Account) []duplicateGroup {
 	byKey := map[string][]account.Account{}
 	var keys []string
 	for _, a := range filterAccounts(accts, "", "") {
-		k := dedupeKey(a)
+		k := merge.ContentKey(a)
 		if _, ok := byKey[k]; !ok {
 			keys = append(keys, k)
 		}

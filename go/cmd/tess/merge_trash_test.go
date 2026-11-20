@@ -21,13 +21,13 @@ func TestMergeCarriesTheTrashWithTheNewerCopy(t *testing.T) {
 		wantReport  string
 	}{
 		{"trashed there later", stamped(totp("a", "Acme", "me", 1), 5), trashedAt(totp("a", "Acme", "me", 1), 10), 10,
-			"1 added, 1 updated, 0 unchanged"},
+			"1 added, 1 moved to the Trash"},
 		{"restored there later", trashedAt(totp("a", "Acme", "me", 1), 10), stamped(totp("a", "Acme", "me", 1), 20), 0,
-			"1 added, 1 updated, 0 unchanged"},
+			"1 added, 1 updated"},
 		{"trashed there earlier", stamped(totp("a", "Acme", "me", 1), 20), trashedAt(totp("a", "Acme", "me", 1), 10), 0,
-			"1 added, 0 updated, 1 unchanged"},
+			"1 added, 1 unchanged"},
 		{"trashed here later", trashedAt(totp("a", "Acme", "me", 1), 20), stamped(totp("a", "Acme", "me", 1), 10), 20,
-			"1 added, 0 updated, 1 unchanged"},
+			"1 added, 1 unchanged"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -50,7 +50,7 @@ func TestMergeBringsBackAPurgedAccountAsAdded(t *testing.T) {
 	sealVault(t, dst, []account.Account{totp("b", "Bravo", "me", 2)})
 	src := filepath.Join(t.TempDir(), "other.json")
 	sealAt(t, src, "testpass123", []account.Account{totp("a", "Acme", "me", 1), totp("b", "Bravo", "me", 2)})
-	if got := runMerge(t, src); got != "Merged "+src+": 1 added, 0 updated, 1 unchanged\n" {
+	if got := runMerge(t, src); got != "Merged "+src+": 1 added, 1 unchanged\n" {
 		t.Errorf("report = %q", got)
 	}
 	if a, ok := ids(openVaultFile(t, dst, "testpass123"))["a"]; !ok || a.Trashed() {
@@ -69,7 +69,7 @@ func TestMergeLeavesTheTrashOutOfDuplicateChecks(t *testing.T) {
 		totp("x2", "Acme", "me", 3),
 		trashedAt(totp("y2", "Bravo", "me", 3), 30),
 	})
-	if got := runMerge(t, src); got != "Merged "+src+": 2 added, 0 updated, 0 unchanged\n" {
+	if got := runMerge(t, src); got != "Merged "+src+": 2 added\n" {
 		t.Errorf("report = %q", got)
 	}
 	got := ids(openVaultFile(t, dst, "testpass123"))
