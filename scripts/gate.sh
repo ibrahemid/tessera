@@ -42,11 +42,23 @@ check_govuln() {
   done
 }
 
+# Derived data sits outside the repository: a failing hosted test opens its object files, which never returns under a privacy-protected folder.
+derived_data() {
+  dd="${GATE_DD_DIR:-$HOME/Library/Caches/tessera-gate/$(printf '%s' "$ROOT" | shasum | cut -c1-12)}"
+  mkdir -p "$dd" || return 1
+  if [ ! -L "$LOG_DIR/dd" ]; then
+    rm -rf "$LOG_DIR/dd"
+    ln -s "$dd" "$LOG_DIR/dd"
+  fi
+  printf '%s' "$dd"
+}
+
 check_app_build() {
   build_log="$LOG_DIR/xcodebuild.log"
+  dd="$(derived_data)" || return 1
   cd "$ROOT/swift" && xcodegen generate || return 1
   xcodebuild -project Tessera.xcodeproj -scheme Tessera -configuration Debug \
-    -derivedDataPath "$LOG_DIR/dd" CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="-" \
+    -derivedDataPath "$dd" CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="-" \
     DEVELOPMENT_TEAM= SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
     build-for-testing >"$build_log" 2>&1 || {
     grep -E "\.swift:[0-9]+:[0-9]+: (error|warning)" "$build_log" | sort -u | head -n 40
@@ -91,10 +103,13 @@ gate_swift() {
 
 check_app_unit() {
   unit_log="$LOG_DIR/xcodebuild-unit.log"
+  dd="$(derived_data)" || return 1
   cd "$ROOT/swift" || return 1
   xcodebuild -project Tessera.xcodeproj -scheme Tessera -configuration Debug \
-    -derivedDataPath "$LOG_DIR/dd" CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="-" \
+    -derivedDataPath "$dd" CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="-" \
     DEVELOPMENT_TEAM= SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
+    -test-timeouts-enabled YES -default-test-execution-time-allowance 60 \
+    -maximum-test-execution-time-allowance 120 \
     test -only-testing:TesseraAppTests >"$unit_log" 2>&1 || {
     grep -E "error:|failed|\.swift:[0-9]+: " "$unit_log" | sort -u | head -n 40
     tail -n 5 "$unit_log"
