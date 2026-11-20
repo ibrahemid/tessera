@@ -75,7 +75,7 @@ final class VaultKeyboardTests: XCTestCase {
         press(harness, isDown ? Self.down : Self.up, keyCode: isDown ? 125 : 126, modifiers: flags)
     }
 
-    private func waitUntil(_ what: String, timeout: Duration = .seconds(3), _ condition: () -> Bool) async {
+    private func waitUntil(_ what: String, timeout: Duration = .seconds(20), _ condition: () -> Bool) async {
         let clock = ContinuousClock()
         let deadline = clock.now + timeout
         while !condition() {

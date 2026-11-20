@@ -136,10 +136,25 @@ check_app_unit() {
   grep -E "Executed [0-9]+ tests" "$unit_log" | tail -n 1
 }
 
+# A hosted test that needs window focus skips when another app holds it. GATE_STRICT=1 turns a skip into a failure.
+report_app_skips() {
+  unit_log="$LOG_DIR/xcodebuild-unit.log"
+  [ -f "$unit_log" ] || return 0
+  skipped="$(sed -n 's/.*Executed [0-9]* tests*, with \([0-9]*\) tests* skipped.*/\1/p' "$unit_log" | tail -n 1)"
+  [ -n "$skipped" ] && [ "$skipped" != 0 ] || return 0
+  if [ "${GATE_STRICT:-0}" = 1 ]; then
+    FAILED=1
+    printf 'FAIL  app-unit skipped %s tests  (%s)\n' "$skipped" "$unit_log"
+  else
+    printf 'note  app-unit skipped %s tests  (%s)\n' "$skipped" "$unit_log"
+  fi
+}
+
 gate_app() {
   run_check app-entitlements check_entitlements
   run_check app-build check_app_build
   run_check app-unit check_app_unit
+  report_app_skips
 }
 
 gate_shell() {
