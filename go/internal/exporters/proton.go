@@ -41,10 +41,10 @@ func (protonExporter) Render(accts []account.Account) ([]File, []Skipped, error)
 	var skipped []Skipped
 	for _, a := range accts {
 		if a.Type == account.HOTP {
-			skipped = append(skipped, Skipped{label(a), "Proton Authenticator stores only TOTP and Steam entries"})
+			skipped = append(skipped, Skipped{Label: label(a), Reason: "Proton Authenticator stores only TOTP and Steam entries", Kind: SkipUnsupportedType})
 			continue
 		}
-		e := protonEntry{ID: exportID(a.ID)}
+		e := protonEntry{ID: exportID(a.ID), Note: optionalStr(a.Note)}
 		if a.Type == account.Steam {
 			// A Steam entry holds nothing but the shared secret and a display
 			// name; the issuer is implicit, so a Steam account whose issuer is

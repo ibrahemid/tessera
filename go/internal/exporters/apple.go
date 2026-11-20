@@ -29,15 +29,48 @@ func (appleCSVExporter) Render(accts []account.Account) ([]File, []Skipped, erro
 	if err := w.Write(appleCSVHeader); err != nil {
 		return nil, nil, fmt.Errorf("apple csv: %w", err)
 	}
+	var skipped []Skipped
+	written := 0
 	for _, a := range accts {
-		row := []string{a.Issuer, "", a.Account, "", "", otpauth.Format(a)}
+		if startsAsFormula(a.Issuer) || startsAsFormula(a.Account) {
+			skipped = append(skipped, Skipped{Label: label(a), Reason: appleFormulaReason, Kind: SkipFormulaName})
+			continue
+		}
+		note := a.Note
+		if startsAsFormula(note) {
+			skipped = append(skipped, Skipped{Label: "the note of " + label(a), Reason: appleNoteFormulaReason, Kind: SkipFormulaNote})
+			note = ""
+		}
+		row := []string{a.Issuer, "", a.Account, "", note, otpauth.Format(a)}
 		if err := w.Write(row); err != nil {
 			return nil, nil, fmt.Errorf("apple csv: %w", err)
 		}
+		written++
 	}
 	w.Flush()
 	if err := w.Error(); err != nil {
 		return nil, nil, fmt.Errorf("apple csv: %w", err)
 	}
-	return []File{{Name: "apple-passwords-export.csv", Data: buf.Bytes()}}, nil, nil
+	if written == 0 {
+		return nil, skipped, nil
+	}
+	return []File{{Name: "apple-passwords-export.csv", Data: buf.Bytes()}}, skipped, nil
+}
+
+const (
+	appleFormulaReason     = "title or username starts with =, +, - or @, which a spreadsheet runs as a formula"
+	appleNoteFormulaReason = "it starts with =, +, - or @, which a spreadsheet runs as a formula"
+)
+
+// startsAsFormula reports whether a CSV cell would be evaluated as a formula
+// when the file is opened in a spreadsheet.
+func startsAsFormula(s string) bool {
+	if s == "" {
+		return false
+	}
+	switch s[0] {
+	case '=', '+', '-', '@':
+		return true
+	}
+	return false
 }

@@ -1,0 +1,8 @@
+{
+  "id": "e79ef49cdf1b1bcd260e363fdaf921cd",
+  "handle": "ba",
+  "issuer": "Bank",
+  "account": "bob",
+  "type": "hotp",
+  "code": "969429"
+}

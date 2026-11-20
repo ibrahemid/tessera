@@ -1,12 +1,16 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
+	"github.com/ibrahemid/tessera/go/internal/merge"
 	"github.com/ibrahemid/tessera/go/internal/store"
+	"github.com/ibrahemid/tessera/go/internal/ui"
 	"github.com/ibrahemid/tessera/go/internal/vault"
 	"github.com/spf13/cobra"
 )
@@ -26,6 +30,7 @@ app) into the current vault. Accounts are unioned, never dropped:
 
   - an account present in both (same id) keeps whichever copy was edited last
   - an account already present by content (same type/issuer/account/secret) is skipped
+  - a copy that fails validation is left out
   - every other account is added
 
 By default the source file is opened read-only and only the current vault is
@@ -39,91 +44,167 @@ you are not prompted again; otherwise enter the source's passphrase (or set
 $TESSERA_MERGE_PASSPHRASE).`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openSession()
-			if err != nil {
-				return err
-			}
-			defer s.close()
-			srcPath := args[0]
-			if twoWay {
-				same, err := sameVaultFile(s.path, srcPath)
-				if err != nil {
-					return err
-				}
-				if same {
-					return fmt.Errorf("source and destination are the same vault")
-				}
-			}
-			srcAccts, env, dek, err := openMergeSource(srcPath, s.passphrase)
-			if err != nil {
-				return err
-			}
-			defer zeroBytes(dek)
-
-			if !twoWay {
-				added, updated, skipped := mergeVault(s, srcAccts)
-				if added > 0 || updated > 0 {
-					if err := s.save(); err != nil {
-						return err
-					}
-				}
-				out(cmd, "Merged %s: %d added, %d updated, %d unchanged", srcPath, added, updated, skipped)
-				return nil
-			}
-			return mergeTwoWay(cmd, s, srcPath, srcAccts, env, dek)
+			return mergeFromSource(cmd, args[0], twoWay)
 		},
 	}
 	cmd.Flags().BoolVar(&twoWay, "two-way", false, "also write the missing and newer accounts back into the source vault")
 	return cmd
 }
 
-// mergeTwoWay reconciles both vaults in one pass. The local vault is written
-// first: if that save fails the source is left untouched, so a run either
-// advances both files or neither.
-func mergeTwoWay(cmd *cobra.Command, s *session, srcPath string, srcAccts []account.Account, env *vault.Envelope, dek []byte) error {
-	// The source lock is taken AFTER the session's lock on the destination, and
-	// always in that order, so two runs pointed at each other cannot deadlock.
-	lock, err := store.Acquire(srcPath)
+// errNothingToWrite ends a merge that changed nothing in this vault, so the
+// session does not re-seal it.
+var errNothingToWrite = errors.New("nothing to write")
+
+// mergeFromSource unlocks the source with no lock held, since that may ask for its
+// passphrase, then merges under the destination lock and, with twoWay, the
+// source lock as well, both taken in the order withVaultPair sets.
+func mergeFromSource(cmd *cobra.Command, srcPath string, twoWay bool) error {
+	s, err := openSession()
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if rerr := lock.Release(); rerr != nil {
-			fmt.Fprintln(os.Stderr, "warning:", rerr)
+	defer s.close()
+	shownPath := srcPath
+	if twoWay {
+		if srcPath, err = resolveMergeSource(srcPath); err != nil {
+			return err
 		}
-	}()
-
-	local := make([]account.Account, len(s.accounts))
-	copy(local, s.accounts)
-
-	merged, hereAdded, hereUpdated, skipped := mergeInto(s.accounts, srcAccts)
-	s.accounts = merged
-	// The reverse direction folds the vault as it was before this run, so the
-	// two directions see the same starting point.
-	srcMerged, thereAdded, thereUpdated, _ := mergeInto(srcAccts, local)
-
-	if hereAdded > 0 || hereUpdated > 0 {
-		if err := s.save(); err != nil {
+		if err := checkTwoWaySource(s.path, srcPath); err != nil {
 			return err
 		}
 	}
-	if thereAdded > 0 || thereUpdated > 0 {
-		if err := saveMergeSource(srcPath, env, dek, srcMerged); err != nil {
+	s.releaseLock()
+	key, err := unlockMergeSource(srcPath, s.passphrase)
+	if err != nil {
+		return err
+	}
+	defer zeroBytes(key.dek)
+	var report string
+	apply := func(fresh *session) error {
+		srcAccts, env, dek, err := loadMergeSource(srcPath, key)
+		if err != nil {
 			return err
 		}
+		defer zeroBytes(dek)
+		if twoWay {
+			report, err = mergeTwoWay(fresh, srcPath, shownPath, srcAccts, env, dek)
+			if err != nil {
+				return err
+			}
+			return errNothingToWrite
+		}
+		c := mergeVault(fresh, srcAccts)
+		report = mergeReport(srcPath, countsPhrase(c))
+		if !c.Changed() {
+			return errNothingToWrite
+		}
+		return nil
 	}
-	out(cmd, "Merged %s: +%d ~%d here, +%d ~%d there, %d unchanged",
-		srcPath, hereAdded, hereUpdated, thereAdded, thereUpdated, skipped)
+	if twoWay {
+		err = withVaultPair(s.path, srcPath, func() error { return s.mutateHeld(apply) })
+	} else {
+		err = s.mutate(apply)
+	}
+	if err != nil && !errors.Is(err, errNothingToWrite) {
+		return err
+	}
+	out(cmd, "%s", report)
 	return nil
+}
+
+// resolveMergeSource resolves a two-way source the way the vault path is
+// resolved: a symbolic link names the file it points at, so the source's lock,
+// temporary file, backup and rename land next to the real file and the link
+// survives the write.
+func resolveMergeSource(path string) (string, error) {
+	if path == "" {
+		return "", fmt.Errorf("no vault at %s", path)
+	}
+	resolved, err := store.Resolve(path)
+	var ipe *store.InvalidPathError
+	if errors.As(err, &ipe) {
+		return "", &store.InvalidPathError{Path: ipe.Path, Source: "the merge source argument"}
+	}
+	return resolved, err
+}
+
+// checkTwoWaySource rejects a two-way source that is the destination itself or
+// does not exist.
+func checkTwoWaySource(dstPath, srcPath string) error {
+	same, err := sameVaultFile(dstPath, srcPath)
+	if err != nil {
+		return err
+	}
+	if same {
+		return fmt.Errorf("source and destination are the same vault")
+	}
+	if !store.Exists(srcPath) {
+		return fmt.Errorf("no vault at %s", srcPath)
+	}
+	return nil
+}
+
+// mergeTwoWay reconciles both vaults in one pass and writes both itself. The
+// caller holds both vault locks. The local vault is written first: if that
+// save fails the source is left untouched, so a run either advances both files
+// or neither.
+func mergeTwoWay(s *session, srcPath, shownPath string, srcAccts []account.Account, env *vault.Envelope, dek []byte) (string, error) {
+	merged, srcMerged, here, there := merge.TwoWay(s.accounts, srcAccts)
+	s.accounts = merged
+
+	if here.Changed() {
+		if err := s.save(); err != nil {
+			return "", err
+		}
+	}
+	if there.Changed() {
+		if err := saveMergeSource(s.notifier(), srcPath, env, dek, srcMerged); err != nil {
+			return "", err
+		}
+	}
+	var sides []string
+	if p := countsPhrase(here); p != "" {
+		sides = append(sides, p+" here")
+	}
+	if p := countsPhrase(there); p != "" {
+		sides = append(sides, p+" in the source")
+	}
+	return mergeReport(shownPath, strings.Join(sides, "; ")), nil
+}
+
+// mergeReport is the line a merge prints. Every source account lands in one
+// count, so an empty summary means there was nothing to merge.
+func mergeReport(path, summary string) string {
+	if summary == "" {
+		summary = "no accounts"
+	}
+	return fmt.Sprintf("Merged %s: %s", ui.Sanitize(path), summary)
+}
+
+// countsPhrase names the non-zero counts of one side in plain words.
+func countsPhrase(c merge.Counts) string {
+	var parts []string
+	for _, p := range []struct {
+		n    int
+		word string
+	}{
+		{c.Added, "added"}, {c.Updated, "updated"}, {c.Trashed, "moved to the Trash"},
+		{c.Unchanged, "unchanged"}, {c.Duplicate, "already present"}, {c.Invalid, "invalid"},
+	} {
+		if p.n > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", p.n, p.word))
+		}
+	}
+	return strings.Join(parts, ", ")
 }
 
 // saveMergeSource re-seals the source vault with the merged accounts, using the
 // DEK that opened it so argon2id is not derived a second time.
-func saveMergeSource(path string, env *vault.Envelope, dek []byte, accts []account.Account) error {
+func saveMergeSource(notify func(string), path string, env *vault.Envelope, dek []byte, accts []account.Account) error {
 	// The source is its own handle namespace: a handle carried over from the
 	// local vault may collide there, so collisions are cleared and reassigned
 	// against this list before the uniqueness check.
-	dedupeHandles(accts)
+	merge.DedupeHandles(accts)
 	account.AssignHandles(accts)
 	if err := account.CheckHandleUniqueness(accts); err != nil {
 		return err
@@ -131,7 +212,41 @@ func saveMergeSource(path string, env *vault.Envelope, dek []byte, accts []accou
 	if err := env.UpdateAccountsWithDEK(dek, accts); err != nil {
 		return err
 	}
-	return store.Save(path, env)
+	return writeVault(notify, path, env)
+}
+
+// withVaultPair runs fn holding the locks of the vaults at a and b. The locks
+// are taken in the order of the fully resolved paths, the same order for every
+// run, so two runs locking the same two vaults cannot wait on each other.
+func withVaultPair(a, b string, fn func() error) error {
+	ka, err := resolvePath(a)
+	if err != nil {
+		return err
+	}
+	kb, err := resolvePath(b)
+	if err != nil {
+		return err
+	}
+	if kb < ka {
+		a, b = b, a
+	}
+	first, err := store.Acquire(a)
+	if err != nil {
+		return err
+	}
+	defer releaseVaultLock(first)
+	second, err := store.Acquire(b)
+	if err != nil {
+		return err
+	}
+	defer releaseVaultLock(second)
+	return fn()
+}
+
+func releaseVaultLock(l *store.Lock) {
+	if err := l.Release(); err != nil {
+		fmt.Fprintln(os.Stderr, "warning:", err)
+	}
 }
 
 // sameVaultFile reports whether two paths name the same file. Symlinks are
@@ -167,115 +282,81 @@ func zeroBytes(b []byte) {
 	}
 }
 
-// openMergeSource loads and decrypts the source vault, keeping the envelope and
-// the unwrapped DEK so a two-way merge can write it back without deriving the
-// key again. It tries the current vault's passphrase first (the common case: a
-// backup of the same vault), then $TESSERA_MERGE_PASSPHRASE, then an
-// interactive prompt.
-func openMergeSource(path, currentPass string) ([]account.Account, *vault.Envelope, []byte, error) {
+// mergeSourceKey unlocks the source vault: the passphrase that opened it and
+// the DEK it unwrapped.
+type mergeSourceKey struct {
+	pass string
+	dek  []byte
+}
+
+// promptMergePassphrase asks for the source vault's passphrase, replaceable in
+// tests.
+var promptMergePassphrase = promptPassphrase
+
+// unlockMergeSource finds the passphrase that opens the source vault. It tries
+// the current vault's passphrase first (the common case: a backup of the same
+// vault), then $TESSERA_MERGE_PASSPHRASE, then an interactive prompt. The
+// caller must not hold a vault lock.
+func unlockMergeSource(path, currentPass string) (mergeSourceKey, error) {
 	env, err := store.Load(path)
+	if errors.Is(err, store.ErrNotFound) {
+		return mergeSourceKey{}, fmt.Errorf("no vault at %s", path)
+	}
 	if err != nil {
-		return nil, nil, nil, err
+		return mergeSourceKey{}, err
 	}
-	open := func(pass string) ([]account.Account, []byte, error) {
-		dek, derr := env.UnwrapDEK(pass)
-		if derr != nil {
-			return nil, nil, derr
-		}
-		accts, oerr := env.OpenWithDEK(dek)
-		if oerr != nil {
-			zeroBytes(dek)
-			return nil, nil, oerr
-		}
-		return accts, dek, nil
-	}
-	if accts, dek, oerr := open(currentPass); oerr == nil {
-		return accts, env, dek, nil
+	if dek, err := env.UnwrapDEK(currentPass); err == nil {
+		return mergeSourceKey{pass: currentPass, dek: dek}, nil
 	}
 	if p := os.Getenv("TESSERA_MERGE_PASSPHRASE"); p != "" {
-		accts, dek, oerr := open(p)
-		return accts, env, dek, oerr
+		dek, err := env.UnwrapDEK(p)
+		if errors.Is(err, vault.ErrWrongPassphrase) {
+			err = &passphraseSourceError{source: "TESSERA_MERGE_PASSPHRASE", path: path, err: err}
+		}
+		return mergeSourceKey{pass: p, dek: dek}, err
 	}
-	pass, err := promptPassphrase("Source vault passphrase: ")
+	pass, err := promptMergePassphrase("Source vault passphrase: ")
+	if err != nil {
+		return mergeSourceKey{}, err
+	}
+	dek, err := env.UnwrapDEK(pass)
+	return mergeSourceKey{pass: pass, dek: dek}, err
+}
+
+// loadMergeSource is openMergeSource, replaceable in tests.
+var loadMergeSource = openMergeSource
+
+// openMergeSource loads and decrypts the source vault with key, keeping the
+// envelope and a copy of the DEK so a two-way merge can write it back without
+// deriving the key again. A source re-keyed since it was unlocked is unwrapped
+// again with the passphrase.
+func openMergeSource(path string, key mergeSourceKey) ([]account.Account, *vault.Envelope, []byte, error) {
+	env, err := store.Load(path)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, nil, nil, fmt.Errorf("no vault at %s", path)
+	}
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	accts, dek, err := open(pass)
-	return accts, env, dek, err
+	dek := append([]byte(nil), key.dek...)
+	accts, err := env.OpenWithDEK(dek)
+	if err == nil {
+		return accts, env, dek, nil
+	}
+	zeroBytes(dek)
+	if dek, err = env.UnwrapDEK(key.pass); err != nil {
+		return nil, nil, nil, err
+	}
+	if accts, err = env.OpenWithDEK(dek); err != nil {
+		zeroBytes(dek)
+		return nil, nil, nil, err
+	}
+	return accts, env, dek, nil
 }
 
 // mergeVault unions src into the session's accounts under the merge rule.
-func mergeVault(s *session, src []account.Account) (added, updated, skipped int) {
-	merged, added, updated, skipped := mergeInto(s.accounts, src)
+func mergeVault(s *session, src []account.Account) merge.Counts {
+	merged, c := merge.Into(s.accounts, src)
 	s.accounts = merged
-	return added, updated, skipped
-}
-
-// mergeInto folds src into dst under the vault merge rule and returns the new
-// slice plus counts. Identity is the account id; a content match (dedupeKey)
-// under a different id counts as already present. On an id collision the copy
-// with the STRICTLY newer UpdatedAt wins, so an equal timestamp writes nothing
-// on either side and repeated merges cannot ping-pong. Handles that would
-// collide after the merge are cleared so save reassigns unique ones.
-//
-// It is pure: no session, no I/O, so one rule governs both directions of a
-// two-way merge.
-func mergeInto(dst, src []account.Account) (out []account.Account, added, updated, skipped int) {
-	out = dst
-	byID := map[string]int{}
-	content := map[string]bool{}
-	for i, a := range out {
-		byID[a.ID] = i
-		content[dedupeKey(a)] = true
-	}
-	for _, a := range src {
-		if idx, ok := byID[a.ID]; ok {
-			if a.UpdatedAt > out[idx].UpdatedAt {
-				// The handle is how the user refers to this account in this
-				// vault; the other side is a different vault's namespace, so
-				// the local one is kept rather than silently renamed.
-				local := out[idx].Handle
-				out[idx] = a
-				if local != "" {
-					out[idx].Handle = local
-				}
-				updated++
-			} else {
-				skipped++
-			}
-			continue
-		}
-		if content[dedupeKey(a)] {
-			skipped++
-			continue
-		}
-		if err := a.Validate(); err != nil {
-			skipped++
-			continue
-		}
-		byID[a.ID] = len(out)
-		content[dedupeKey(a)] = true
-		out = append(out, a)
-		added++
-	}
-	dedupeHandles(out)
-	return out, added, updated, skipped
-}
-
-// dedupeHandles clears any handle that repeats one already seen earlier in the
-// slice, keeping the first occurrence. Cleared handles are regenerated uniquely
-// by account.AssignHandles during save.
-func dedupeHandles(accts []account.Account) {
-	seen := map[string]bool{}
-	for i := range accts {
-		h := accts[i].Handle
-		if h == "" {
-			continue
-		}
-		if seen[h] {
-			accts[i].Handle = ""
-			continue
-		}
-		seen[h] = true
-	}
+	return c
 }

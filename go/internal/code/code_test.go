@@ -1,10 +1,13 @@
 package code
 
 import (
+	"errors"
+	"math"
 	"testing"
 	"time"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
+	"github.com/ibrahemid/tessera/go/internal/otp"
 )
 
 func TestForTOTPMatchesRFC(t *testing.T) {
@@ -41,5 +44,39 @@ func TestRemaining(t *testing.T) {
 	hotp := account.Account{Type: account.HOTP}
 	if r := Remaining(hotp, time.Now()); r != 0 {
 		t.Errorf("HOTP Remaining = %d, want 0", r)
+	}
+}
+
+func TestForRefusesUnknownTypes(t *testing.T) {
+	for _, typ := range []account.Type{"future-otp", ""} {
+		a := account.Account{ID: "x", Type: typ, Secret: []byte("12345678901234567890"), Algorithm: "SHA1", Digits: 6, Period: 30}
+		_, err := For(a, time.Unix(59, 0))
+		var unknown *UnknownTypeError
+		if !errors.As(err, &unknown) || unknown.Type != typ || unknown.ID != "x" {
+			t.Fatalf("type %q: err = %v, want an UnknownTypeError naming the account", typ, err)
+		}
+	}
+}
+
+func TestForRefusesACounterOutsideTheRange(t *testing.T) {
+	for _, c := range []int64{-1, math.MaxInt64} {
+		a := account.Account{ID: "x", Type: account.HOTP, Secret: []byte("12345678901234567890"), Algorithm: "SHA1", Digits: 6, Counter: c}
+		if _, err := For(a, time.Now()); !errors.Is(err, account.ErrCounterRange) {
+			t.Fatalf("counter %d: err = %v, want ErrCounterRange", c, err)
+		}
+	}
+}
+
+func TestForRefusesATimeBeforeTheEpoch(t *testing.T) {
+	for _, typ := range []account.Type{account.TOTP, account.Steam} {
+		a := account.Account{ID: "x", Type: typ, Secret: []byte("12345678901234567890"), Algorithm: "SHA1", Digits: 6, Period: 30}
+		for _, at := range []time.Time{time.Unix(-1, 0), time.Unix(-30, 0), time.Unix(0, -1), time.Unix(math.MinInt64, 0)} {
+			if _, err := For(a, at); !errors.Is(err, otp.ErrTimeRange) {
+				t.Fatalf("%s at %d: err = %v, want ErrTimeRange", typ, at.Unix(), err)
+			}
+		}
+		if _, err := For(a, time.Unix(math.MaxInt64, 0)); err != nil {
+			t.Fatalf("%s at the largest time: %v", typ, err)
+		}
 	}
 }

@@ -1,17 +1,22 @@
 package main
 
 import (
-	"bufio"
+	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io"
 	"os"
+	"os/signal"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
 	"github.com/ibrahemid/tessera/go/internal/code"
-	"github.com/ibrahemid/tessera/go/internal/keychain"
+	"github.com/ibrahemid/tessera/go/internal/secretstore"
 	"github.com/ibrahemid/tessera/go/internal/store"
 	"github.com/ibrahemid/tessera/go/internal/ui"
 	"github.com/ibrahemid/tessera/go/internal/vault"
@@ -31,6 +36,15 @@ type session struct {
 	dek        []byte
 	accounts   []account.Account
 	lock       *store.Lock
+	// notify receives the notices a write prints; nil prints them to warnOut.
+	notify func(string)
+}
+
+func (s *session) notifier() func(string) {
+	if s.notify != nil {
+		return s.notify
+	}
+	return printNote(warnOut)
 }
 
 // readPassphrase returns $TESSERA_PASSPHRASE if set, else prompts without echo.
@@ -39,6 +53,20 @@ func readPassphrase(prompt string) (string, error) {
 		return p, nil
 	}
 	return promptPassphrase(prompt)
+}
+
+// openWithPassphrase checks pass against env. A wrong passphrase that came
+// from $TESSERA_PASSPHRASE is reported as that variable's, so the fix is clear.
+func openWithPassphrase(env *vault.Envelope, path, pass string) error {
+	_, err := env.Open(pass)
+	return unlockFailure(path, pass, err)
+}
+
+func unlockFailure(path, pass string, err error) error {
+	if err != nil && errors.Is(err, vault.ErrWrongPassphrase) && pass == os.Getenv("TESSERA_PASSPHRASE") {
+		err = &passphraseSourceError{source: "TESSERA_PASSPHRASE", path: path, err: err}
+	}
+	return withRestoreHint(path, err)
 }
 
 // promptPassphrase reads a passphrase from the terminal without echo, ignoring
@@ -55,138 +83,331 @@ func promptPassphrase(prompt string) (string, error) {
 
 // confirmYN prints prompt and returns true only for an explicit y/yes.
 func confirmYN(prompt string) bool {
-	fmt.Fprint(os.Stderr, prompt)
-	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
-	s := strings.ToLower(strings.TrimSpace(line))
+	line, _ := promptLine(prompt)
+	s := strings.ToLower(line)
 	return s == "y" || s == "yes"
 }
+
+const (
+	// unlockLookupTimeout bounds the silent secret store read during unlock.
+	unlockLookupTimeout = 2 * time.Second
+	// storeProbeTimeout bounds the checks that pick or inspect a secret store.
+	storeProbeTimeout = 2 * time.Second
+	// interactiveStoreTimeout bounds a secret store write or delete, which may
+	// wait on the user to unlock the store.
+	interactiveStoreTimeout = 2 * time.Minute
+
+	keychainID      = "keychain"
+	kernelKeyringID = "kernel-keyring"
+)
+
+// errNoUnlockTerminal reports a passphrase that must be typed while stdin is not
+// a terminal.
+var errNoUnlockTerminal = errors.New("set $TESSERA_PASSPHRASE or run on a terminal to enter the vault passphrase")
 
 // unlockProvider supplies the side effects of passphrase resolution so the
 // ordering logic in resolvePassphrase stays pure and unit-testable.
 type unlockProvider struct {
-	envPass     string                              // $TESSERA_PASSPHRASE ("" if unset)
-	lookup      func() (string, bool, error)        // silent keychain lookup for this vault
-	store       func(pass string) error             // persist pass to the keychain
-	prompt      func(prompt string) (string, error) // interactive passphrase prompt
-	confirm     func(prompt string) bool            // y/N prompt
-	tryOpen     func(pass string) ([]account.Account, error)
-	canRemember bool // keychain available AND interactive: only then may we offer to store
+	path       string                                                              // vault path, named when a stored passphrase fails
+	envPass    string                                                              // $TESSERA_PASSPHRASE ("" if unset)
+	lookup     func() (pass string, from secretstore.Backend, hit bool, err error) // silent secret store lookup for this vault
+	rememberIn func() secretstore.Backend                                          // store for a typed passphrase; nil when none may be offered
+	store      func(b secretstore.Backend, pass string) error                      // persist pass in b
+	remove     func(b secretstore.Backend) error                                   // delete this vault's entry from b
+	prompt     func(prompt string) (string, error)                                 // interactive passphrase prompt
+	confirm    func(prompt string) bool                                            // y/N prompt
+	tryOpen    func(pass string) ([]account.Account, error)
 }
 
 // resolvePassphrase applies the unlock order: $TESSERA_PASSPHRASE, then a silent
-// keychain lookup, then an interactive prompt. After a successful interactive
-// unlock (and only then) it may offer to remember the passphrase. It returns the
-// passphrase and the opened accounts so the vault is decrypted exactly once.
+// secret store lookup, then an interactive prompt. After a successful
+// interactive unlock (and only then) it may offer to remember the passphrase. It
+// returns the passphrase and the opened accounts so the vault is decrypted
+// exactly once.
 func resolvePassphrase(p unlockProvider) (string, []account.Account, error) {
 	if p.envPass != "" {
 		accts, err := p.tryOpen(p.envPass)
 		if err != nil {
+			if errors.Is(err, vault.ErrWrongPassphrase) {
+				return "", nil, &passphraseSourceError{source: "TESSERA_PASSPHRASE", path: p.path, err: err}
+			}
 			return "", nil, err
 		}
 		return p.envPass, accts, nil
 	}
 
-	stale := false // a keychain passphrase that no longer opens the vault (rekeyed)
-	if kp, hit, err := p.lookup(); err == nil && hit {
-		if accts, oerr := p.tryOpen(kp); oerr == nil {
-			return kp, accts, nil
+	stale := false // a stored passphrase that no longer opens the vault (rekeyed)
+	var staleErr error
+	var staleFrom secretstore.Backend
+	if p.lookup != nil {
+		if kp, from, hit, err := p.lookup(); err == nil && hit {
+			accts, oerr := p.tryOpen(kp)
+			if oerr == nil {
+				return kp, accts, nil
+			}
+			stale, staleErr, staleFrom = true, oerr, from
 		}
-		stale = true
 	}
 
 	entered, err := p.prompt("Vault passphrase: ")
 	if err != nil {
+		if stale && errors.Is(staleErr, vault.ErrWrongPassphrase) {
+			return "", nil, &passphraseSourceError{store: storeNoun(staleFrom), path: p.path, err: staleErr}
+		}
 		return "", nil, err
 	}
 	accts, err := p.tryOpen(entered)
 	if err != nil {
 		return "", nil, err
 	}
-	if p.canRemember {
-		q := "Remember in the login keychain so tess stops prompting? [y/N] "
+	if chosen := rememberTarget(p); chosen != nil {
+		target := chosen
+		q := fmt.Sprintf("Remember in the %s so tess stops prompting? [y/N] ", chosen.Name())
 		if stale {
-			q = "Stored passphrase no longer opens the vault. Update the keychain entry? [y/N] "
+			if staleFrom != nil {
+				target = staleFrom
+			}
+			q = fmt.Sprintf("Stored passphrase no longer opens the vault. Update the %s entry? [y/N] ", storeNoun(target))
 		}
 		if p.confirm(q) {
-			if serr := p.store(entered); serr != nil {
-				fmt.Fprintln(os.Stderr, "warning:", serr)
+			if serr := storeTyped(p, target, chosen, entered); serr != nil {
+				fmt.Fprintln(os.Stderr, "warning:", ui.Sanitize(userMessage(serr)))
 			}
 		}
 	}
 	return entered, accts, nil
 }
 
-// openSession resolves the vault path, takes the vault lock, loads the envelope
-// and decrypts it, resolving the passphrase from env, the login keychain, or an
-// interactive prompt. Every caller must close the returned session.
+// storeTyped writes pass to target, the store that held a stale entry or else
+// the chosen one. When that write fails and the chosen store is another one,
+// pass goes to the chosen store and the stale entry in target is deleted after,
+// so the next unlock does not find it first.
+func storeTyped(p unlockProvider, target, chosen secretstore.Backend, pass string) error {
+	err := p.store(target, pass)
+	if err == nil || target.ID() == chosen.ID() {
+		return err
+	}
+	if cerr := p.store(chosen, pass); cerr != nil {
+		return errors.Join(err, cerr)
+	}
+	if p.remove == nil {
+		return nil
+	}
+	return p.remove(target)
+}
+
+// rememberTarget is the store a typed passphrase may be offered to, or nil.
+func rememberTarget(p unlockProvider) secretstore.Backend {
+	if p.rememberIn == nil {
+		return nil
+	}
+	return p.rememberIn()
+}
+
+// storeNoun names a secret store in prompts and errors about its entry. The
+// login keychain keeps its short name.
+func storeNoun(b secretstore.Backend) string {
+	if b == nil || b.ID() == keychainID {
+		return "keychain"
+	}
+	return b.Name()
+}
+
+// lookupStored reads the passphrase for path from the secret store within
+// timeout. It never prompts; a locked or unavailable store is an error or a
+// miss, and callers treat both as a miss.
+func lookupStored(path string, timeout time.Duration) (string, secretstore.Backend, bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return secretstore.Lookup(ctx, path)
+}
+
+// interactiveContext bounds a secret store call that may wait on the user, and
+// cancels it on Ctrl-C.
+func interactiveContext(parent context.Context) (context.Context, context.CancelFunc) {
+	ctx, stop := signal.NotifyContext(parent, os.Interrupt)
+	ctx, cancel := context.WithTimeout(ctx, interactiveStoreTimeout)
+	return ctx, func() {
+		cancel()
+		stop()
+	}
+}
+
+// promptVaultPassphrase reads the passphrase typed at the vault unlock prompt.
+var promptVaultPassphrase = promptPassphrase
+
+// interactiveUnlock resolves the passphrase from the environment, then the
+// secret store, then a terminal prompt, and offers to remember a typed one.
+func interactiveUnlock(path string) unlockProvider {
+	isTTY := stdinIsTTY()
+	return unlockProvider{
+		envPass: os.Getenv("TESSERA_PASSPHRASE"),
+		lookup: func() (string, secretstore.Backend, bool, error) {
+			return lookupStored(path, unlockLookupTimeout)
+		},
+		rememberIn: func() secretstore.Backend {
+			if !isTTY {
+				return nil
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), storeProbeTimeout)
+			defer cancel()
+			b, err := secretstore.ForStore(ctx)
+			if err != nil {
+				return nil
+			}
+			return b
+		},
+		store: func(b secretstore.Backend, pass string) error {
+			ctx, stop := interactiveContext(context.Background())
+			defer stop()
+			return b.Store(ctx, path, pass, 0)
+		},
+		remove: func(b secretstore.Backend) error {
+			ctx, stop := interactiveContext(context.Background())
+			defer stop()
+			return b.Delete(ctx, path)
+		},
+		prompt: func(q string) (string, error) {
+			if !isTTY {
+				return "", errNoUnlockTerminal
+			}
+			return promptVaultPassphrase(q)
+		},
+		confirm: confirmYN,
+	}
+}
+
+// openSession resolves the vault path and unlocks the vault with no lock held,
+// since that may prompt, then takes the vault lock and re-reads the vault under
+// it. Every caller must close the returned session.
 func openSession() (*session, error) {
 	path, err := store.Resolve(vaultPath)
 	if err != nil {
 		return nil, err
 	}
-	lock, err := store.Acquire(path)
+	s, seen, err := unlockVault(path, interactiveUnlock(path))
 	if err != nil {
 		return nil, err
 	}
-	s, err := loadSession(path)
+	lock, err := store.Acquire(path)
 	if err != nil {
-		_ = lock.Release()
+		s.close()
 		return nil, err
 	}
 	s.lock = lock
+	if err := s.reload(seen); err != nil {
+		s.close()
+		return nil, err
+	}
+	s.migrate()
 	return s, nil
 }
 
-// loadSession reads and decrypts the vault at path. The caller owns the lock.
-func loadSession(path string) (*session, error) {
+// unlockSession reads the vault at path, decrypts it with the passphrase p
+// resolves and persists the unlock migration. The caller owns the lock.
+func unlockSession(path string, p unlockProvider) (*session, error) {
+	s, _, err := unlockVault(path, p)
+	if err != nil {
+		return nil, err
+	}
+	s.migrate()
+	return s, nil
+}
+
+// unlockVault reads the vault at path and decrypts it with the passphrase p
+// resolves. It also returns the envelope as read, before the unlock changed it.
+func unlockVault(path string, p unlockProvider) (*session, []byte, error) {
 	env, err := store.Load(path)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	isTTY := term.IsTerminal(int(os.Stdin.Fd()))
-	var dek []byte
-	pass, accts, err := resolvePassphrase(unlockProvider{
-		envPass: os.Getenv("TESSERA_PASSPHRASE"),
-		lookup:  func() (string, bool, error) { return keychain.Lookup(path) },
-		store:   func(p string) error { return keychain.Store(path, p) },
-		prompt:  promptPassphrase,
-		confirm: confirmYN,
-		tryOpen: func(p string) ([]account.Account, error) {
-			d, err := env.UnwrapDEK(p)
-			if err != nil {
-				return nil, err
-			}
-			a, err := env.OpenWithDEK(d)
-			if err != nil {
-				return nil, err
-			}
-			dek = d
-			return a, nil
-		},
-		canRemember: keychain.Supported() && isTTY,
-	})
+	seen, err := env.Marshal()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	s := &session{path: path, env: env, passphrase: pass, dek: dek, accounts: accts}
-	// Migration: accounts written before handles existed gain one deterministically
-	// at unlock. An argon2 params.v upgrade performed during the unwrap rides the
-	// same write. Persist once, atomically (wraps otherwise untouched). A
-	// read-only vault keeps both in memory only; the next writable unlock redoes
-	// them from the same deterministic inputs.
-	if account.AssignHandles(s.accounts) || env.NeedsPersist() {
-		if err := env.UpdateAccountsWithDEK(dek, s.accounts); err == nil {
-			_ = store.Save(path, env)
+	var dek []byte
+	p.path = path
+	p.tryOpen = func(pass string) ([]account.Account, error) {
+		d, err := env.UnwrapDEK(pass)
+		if err != nil {
+			return nil, err
 		}
+		a, err := env.OpenWithDEK(d)
+		if err != nil {
+			zeroBytes(d)
+			return nil, err
+		}
+		dek = d
+		return a, nil
 	}
-	return s, nil
+	pass, accts, err := resolvePassphrase(p)
+	if err != nil {
+		return nil, nil, withRestoreHint(path, err)
+	}
+	return &session{path: path, env: env, passphrase: pass, dek: dek, accounts: accts}, seen, nil
 }
 
-// close releases the vault lock. Safe on a nil session and safe to call twice.
+// reload re-reads the vault under the lock and takes what is on disk when it
+// differs from seen, the envelope the unlock read.
+func (s *session) reload(seen []byte) error {
+	env, err := store.Load(s.path)
+	if err != nil {
+		return err
+	}
+	now, err := env.Marshal()
+	if err != nil {
+		return err
+	}
+	if bytes.Equal(now, seen) {
+		return nil
+	}
+	accts, err := env.OpenWithDEK(s.dek)
+	if err != nil {
+		dek, uerr := env.UnwrapDEK(s.passphrase)
+		if errors.Is(uerr, vault.ErrWrongPassphrase) {
+			return &vaultChangedError{path: s.path}
+		}
+		if uerr != nil {
+			return uerr
+		}
+		if accts, err = env.OpenWithDEK(dek); err != nil {
+			zeroBytes(dek)
+			return err
+		}
+		zeroBytes(s.dek)
+		s.dek = dek
+	}
+	s.env, s.accounts = env, accts
+	return nil
+}
+
+// migrate persists what the unlock changed in memory: a handle for each account
+// written before handles existed, and an argon2 params.v upgrade performed
+// during the unwrap. Both go out in one atomic write that leaves the wraps
+// otherwise untouched. A read-only vault keeps both in memory only; the next
+// writable unlock redoes them from the same deterministic inputs.
+func (s *session) migrate() {
+	if account.AssignHandles(s.accounts) || s.env.NeedsPersist() {
+		if err := s.env.UpdateAccountsWithDEK(s.dek, s.accounts); err == nil {
+			_, _ = saveVault(warnOut, s.notifier(), s.path, s.env, false)
+		}
+	}
+}
+
+// close releases the vault lock and clears the DEK. Safe on a nil session and
+// safe to call twice.
 func (s *session) close() {
 	if s == nil {
 		return
 	}
+	s.releaseLock()
+	zeroBytes(s.dek)
+	s.dek = nil
+}
+
+// releaseLock releases the vault lock and keeps the keys, for a command that
+// writes later through mutate. Safe to call twice.
+func (s *session) releaseLock() {
 	if err := s.lock.Release(); err != nil {
 		fmt.Fprintln(os.Stderr, "warning:", err)
 	}
@@ -204,14 +425,19 @@ func (s *session) mutate(fn func(*session) error) error {
 		return err
 	}
 	defer lock.Release()
+	return s.mutateHeld(fn)
+}
 
+// mutateHeld is mutate for a caller that already holds the vault lock.
+func (s *session) mutateHeld(fn func(*session) error) error {
 	env, err := store.Load(s.path)
 	if err != nil {
 		return err
 	}
 	dek := s.dek
 	accts, err := env.OpenWithDEK(dek)
-	if err != nil {
+	derived := err != nil
+	if derived {
 		// The vault was re-keyed while the view was idle: derive again.
 		dek, err = env.UnwrapDEK(s.passphrase)
 		if err != nil {
@@ -219,16 +445,24 @@ func (s *session) mutate(fn func(*session) error) error {
 		}
 		accts, err = env.OpenWithDEK(dek)
 		if err != nil {
+			zeroBytes(dek)
 			return err
 		}
 	}
 	account.AssignHandles(accts)
-	fresh := &session{path: s.path, env: env, passphrase: s.passphrase, dek: dek, accounts: accts}
-	if err := fn(fresh); err != nil {
+	fresh := &session{path: s.path, env: env, passphrase: s.passphrase, dek: dek, accounts: accts, notify: s.notify}
+	err = fn(fresh)
+	if err == nil {
+		err = fresh.save()
+	}
+	if err != nil {
+		if derived {
+			zeroBytes(dek)
+		}
 		return err
 	}
-	if err := fresh.save(); err != nil {
-		return err
+	if derived {
+		zeroBytes(s.dek)
 	}
 	s.env, s.dek, s.accounts = fresh.env, fresh.dek, fresh.accounts
 	return nil
@@ -244,7 +478,8 @@ func (s *session) save() error {
 	if err := s.env.UpdateAccountsWithDEK(s.dek, s.accounts); err != nil {
 		return err
 	}
-	return store.Save(s.path, s.env)
+	_, err := saveVault(warnOut, s.notifier(), s.path, s.env, false)
+	return err
 }
 
 // indexByID returns the position of the account with the given id, or -1.
@@ -257,89 +492,187 @@ func indexByID(accts []account.Account, id string) int {
 	return -1
 }
 
-// resolveMatches applies the spec account-resolution precedence and returns the
-// indices matched by the first stage that matches anything: exact handle, then
-// exact issuer/account (case-insensitive), then unique substring over
-// handle/issuer/account. A single index is a unique resolution; more than one
-// means the caller must disambiguate. Zero total matches is an error.
+// resolveMatches resolves query among live accounts. Trashed accounts are
+// reachable only through the Trash commands.
 func (s *session) resolveMatches(query string) ([]int, error) {
-	q := strings.ToLower(strings.TrimSpace(query))
+	return s.resolveIn(query, false)
+}
+
+// resolveIn applies the spec account-resolution precedence to the live accounts,
+// or to the trashed ones when trashed is set, and returns the indices matched by
+// the first stage that matches anything: exact id, then exact handle, then exact
+// issuer/account (case-insensitive), then substring over handle/issuer/account.
+// A single index is a unique resolution; more than one means the caller must
+// disambiguate. Zero total matches is an error.
+func (s *session) resolveIn(query string, trashed bool) ([]int, error) {
+	q := strings.TrimSpace(query)
 	if q == "" {
 		return nil, fmt.Errorf("empty query")
 	}
-	var stage []int
-	for i, a := range s.accounts {
-		if a.Handle != "" && a.Handle == q {
-			stage = append(stage, i)
+	if idxs := matchStages(s.accounts, q, trashed); len(idxs) > 0 {
+		return idxs, nil
+	}
+	if looksLikeSecret(query) {
+		return nil, errSecretQuery
+	}
+	if trashed {
+		return nil, fmt.Errorf("nothing in the Trash matches %q; `tess trash` lists the Trash", query)
+	}
+	switch inTrash := matchStages(s.accounts, q, true); len(inTrash) {
+	case 0:
+		return nil, fmt.Errorf("no account matches %q", query)
+	case 1:
+		return nil, fmt.Errorf("no account matches %q; %s is in the Trash, `tess restore %s` brings it back",
+			query, label(s.accounts[inTrash[0]]), displayHandle(s.accounts[inTrash[0]]))
+	default:
+		return nil, fmt.Errorf("no account matches %q; %d accounts in the Trash do, `tess trash` lists them", query, len(inTrash))
+	}
+}
+
+// matchStages returns the indices of the accounts in the chosen state matched by
+// the first resolution stage that matches any; query is trimmed. Only the id
+// stage compares it case-sensitively.
+func matchStages(accts []account.Account, query string, trashed bool) []int {
+	q := strings.ToLower(query)
+	stages := []func(account.Account) bool{
+		func(a account.Account) bool { return a.ID != "" && a.ID == query },
+		func(a account.Account) bool { return a.Handle != "" && a.Handle == q },
+		func(a account.Account) bool {
+			return strings.ToLower(a.Issuer) == q || strings.ToLower(a.Account) == q
+		},
+		func(a account.Account) bool {
+			return strings.Contains(strings.ToLower(a.Handle+" "+a.Issuer+" "+a.Account), q)
+		},
+	}
+	for _, match := range stages {
+		var idxs []int
+		for i, a := range accts {
+			if a.Trashed() == trashed && match(a) {
+				idxs = append(idxs, i)
+			}
+		}
+		if len(idxs) > 0 {
+			return idxs
 		}
 	}
-	if len(stage) > 0 {
-		return stage, nil
-	}
-	for i, a := range s.accounts {
-		if strings.ToLower(a.Issuer) == q || strings.ToLower(a.Account) == q {
-			stage = append(stage, i)
-		}
-	}
-	if len(stage) > 0 {
-		return stage, nil
-	}
-	for i, a := range s.accounts {
-		hay := strings.ToLower(a.Handle + " " + a.Issuer + " " + a.Account)
-		if strings.Contains(hay, q) {
-			stage = append(stage, i)
-		}
-	}
-	if len(stage) > 0 {
-		return stage, nil
-	}
-	return nil, fmt.Errorf("no account matches %q", query)
+	return nil
+}
+
+// errSecretQuery answers a query that is a setup key or an otpauth URI rather
+// than an account name, without repeating it.
+var errSecretQuery = errors.New("that looks like a secret, not an account; add it with `tess add`")
+
+// errAmbiguous reports a query that matched several accounts when the match
+// table went to stderr. Exit status 2 tells a script it named no single account.
+func errAmbiguous(n int, query string) error {
+	return &exitError{code: 2, err: fmt.Errorf("%d accounts match %q; pass an alias", n, query)}
 }
 
 // single resolves query to exactly one account index. On multiple matches it
 // prints the disambiguation table and returns an error so the command exits
-// non-zero (it cannot act without a unique target).
+// non-zero (it cannot act without a unique target). When stdout is not a
+// terminal the table goes to stderr, out of the way of a script reading stdout.
 func (s *session) single(cmd *cobra.Command, query string) (int, error) {
-	idxs, err := s.resolveMatches(query)
+	return s.singleIn(cmd, query, false)
+}
+
+// singleIn is single over the live accounts, or the trashed ones when trashed
+// is set.
+func (s *session) singleIn(cmd *cobra.Command, query string, trashed bool) (int, error) {
+	idxs, err := s.resolveIn(query, trashed)
 	if err != nil {
 		return -1, err
 	}
 	if len(idxs) > 1 {
+		if !stdoutIsTTY() {
+			printMatchTableTo(cmd.ErrOrStderr(), s.accounts, idxs, false)
+			return -1, errAmbiguous(len(idxs), query)
+		}
 		printMatchTable(cmd, s.accounts, idxs, false)
-		return -1, fmt.Errorf("be specific: use a handle")
+		return -1, fmt.Errorf("be specific: use an alias")
 	}
 	return idxs[0], nil
 }
 
-// printMatchTable renders the ambiguous matches as an aligned handle/issuer/
+// resolveScope names the accounts a query is resolved among.
+type resolveScope int
+
+const (
+	liveScope resolveScope = iota
+	trashScope
+	// liveThenTrashScope resolves among live accounts, and among trashed ones
+	// only when no live account matches.
+	liveThenTrashScope
+)
+
+// singleScoped is single over the accounts in sc.
+func (s *session) singleScoped(cmd *cobra.Command, query string, sc resolveScope) (int, error) {
+	switch sc {
+	case trashScope:
+		return s.singleIn(cmd, query, true)
+	case liveThenTrashScope:
+		q := strings.TrimSpace(query)
+		if q != "" && len(matchStages(s.accounts, q, false)) == 0 && len(matchStages(s.accounts, q, true)) > 0 {
+			return s.singleIn(cmd, query, true)
+		}
+	}
+	return s.singleIn(cmd, query, false)
+}
+
+// resolveEach resolves every query to one account before anything changes, so
+// a query that matches nothing or several accounts leaves the vault untouched.
+// It returns indices in query order, each account once.
+func (s *session) resolveEach(cmd *cobra.Command, queries []string, sc resolveScope) ([]int, error) {
+	idxs := make([]int, 0, len(queries))
+	seen := make(map[int]bool, len(queries))
+	for _, q := range queries {
+		i, err := s.singleScoped(cmd, q, sc)
+		if err != nil {
+			return nil, err
+		}
+		if !seen[i] {
+			seen[i] = true
+			idxs = append(idxs, i)
+		}
+	}
+	return idxs, nil
+}
+
+// printMatchTable renders the ambiguous matches as an aligned alias/issuer/
 // account table so the user can pick a unique reference. With withCodes it adds
-// each account's current code (used by `tess code` without --copy). The handle
+// each account's current code (used by `tess code` without --copy). The alias
 // column is never truncated: it is the string the user types.
 func printMatchTable(cmd *cobra.Command, accts []account.Account, idxs []int, withCodes bool) {
-	hw, iw, aw := len("handle"), len("issuer"), len("account")
+	printMatchTableTo(cmd.OutOrStdout(), accts, idxs, withCodes)
+}
+
+// printMatchTableTo writes the match table to w.
+func printMatchTableTo(w io.Writer, accts []account.Account, idxs []int, withCodes bool) {
+	hw, iw, aw := len("alias"), len("issuer"), len("account")
 	for _, i := range idxs {
-		hw = max(hw, len(accts[i].Handle))
-		iw = max(iw, len([]rune(accts[i].Issuer)))
-		aw = max(aw, len([]rune(accts[i].Account)))
+		hw = max(hw, utf8.RuneCountInString(displayHandle(accts[i])))
+		iw = max(iw, utf8.RuneCountInString(ui.Sanitize(accts[i].Issuer)))
+		aw = max(aw, utf8.RuneCountInString(ui.Sanitize(accts[i].Account)))
 	}
-	header := fmt.Sprintf("%s  %s  %s", padRight("handle", hw), padRight("issuer", iw), "account")
+	header := fmt.Sprintf("%s  %s  %s", padRight("alias", hw), padRight("issuer", iw), "account")
 	if withCodes {
-		header = fmt.Sprintf("%s  %s  %s  %s", padRight("handle", hw), padRight("issuer", iw), padRight("account", aw), "code")
+		header = fmt.Sprintf("%s  %s  %s  %s", padRight("alias", hw), padRight("issuer", iw), padRight("account", aw), "code")
 	}
-	out(cmd, "%s", ui.SubtleStyle.Render(header))
+	fmt.Fprintln(w, ui.SubtleStyle.Render(header))
 	t := now()
 	for _, i := range idxs {
 		a := accts[i]
-		h := ui.Handle(a.Issuer+a.Account, padRight(a.Handle, hw))
+		h := ui.Handle(a.Issuer+a.Account, padRight(displayHandle(a), hw))
+		issuer, acct := ui.Sanitize(a.Issuer), ui.Sanitize(a.Account)
 		if withCodes {
 			c, err := genCode(a, t)
 			if err != nil {
 				c = "------"
 			}
-			out(cmd, "%s  %s  %s  %s", h, padRight(a.Issuer, iw), padRight(a.Account, aw), ui.CodeStyle.Render(ui.GroupCode(c)))
+			fmt.Fprintf(w, "%s  %s  %s  %s\n", h, padRight(issuer, iw), padRight(acct, aw), ui.CodeStyle.Render(ui.GroupCode(c)))
 			continue
 		}
-		out(cmd, "%s  %s  %s", h, padRight(a.Issuer, iw), a.Account)
+		fmt.Fprintf(w, "%s  %s  %s\n", h, padRight(issuer, iw), acct)
 	}
 }
 
@@ -348,11 +681,14 @@ func printMatchTable(cmd *cobra.Command, accts []account.Account, idxs []int, wi
 func setHandle(s *session, idx int, newHandle string) error {
 	h := strings.ToLower(strings.TrimSpace(newHandle))
 	if !account.ValidHandle(h) {
-		return fmt.Errorf("invalid handle %q: 1-12 chars, lowercase letter first, then letters/digits", newHandle)
+		return fmt.Errorf("invalid alias %q: 1-12 chars, lowercase letter first, then letters/digits", newHandle)
 	}
 	for i, a := range s.accounts {
 		if i != idx && a.Handle == h {
-			return fmt.Errorf("handle %q already used by %s", h, label(a))
+			if a.Trashed() {
+				return fmt.Errorf("alias %q already used by %s in the Trash", h, label(a))
+			}
+			return fmt.Errorf("alias %q already used by %s", h, label(a))
 		}
 	}
 	s.accounts[idx].Handle = h
@@ -365,19 +701,26 @@ func genCode(a account.Account, t time.Time) (string, error) {
 	return code.For(a, t)
 }
 
+// label is an account's display name, issuer and account, with control and
+// bidi characters escaped so vault text cannot drive the terminal.
 func label(a account.Account) string {
 	if a.Issuer != "" {
-		return a.Issuer + " (" + a.Account + ")"
+		return ui.Sanitize(a.Issuer + " (" + a.Account + ")")
 	}
-	return a.Account
+	return ui.Sanitize(a.Account)
 }
 
-// labelText is the primary display name (issuer, else account).
+// labelText is the primary display name (issuer, else account), escaped like label.
 func labelText(a account.Account) string {
 	if a.Issuer != "" {
-		return a.Issuer
+		return ui.Sanitize(a.Issuer)
 	}
-	return a.Account
+	return ui.Sanitize(a.Account)
+}
+
+// displayHandle is an account's alias, escaped for display.
+func displayHandle(a account.Account) string {
+	return ui.Sanitize(a.Handle)
 }
 
 // handleWidth returns the widest handle among accts, so the handle column can
@@ -385,9 +728,7 @@ func labelText(a account.Account) string {
 func handleWidth(accts []account.Account) int {
 	w := 0
 	for _, a := range accts {
-		if len(a.Handle) > w {
-			w = len(a.Handle)
-		}
+		w = max(w, utf8.RuneCountInString(displayHandle(a)))
 	}
 	return w
 }
@@ -414,9 +755,13 @@ var now = time.Now
 const minPassphraseLen = 8
 
 // requireNewVaultPassphrase prompts twice and confirms a match. `vault init`
-// has no current passphrase, so $TESSERA_PASSPHRASE is the scripted source.
+// has no current passphrase, so $TESSERA_PASSPHRASE is the scripted source,
+// held to the same length floor as a typed one.
 func requireNewVaultPassphrase() (string, error) {
 	if p := os.Getenv("TESSERA_PASSPHRASE"); p != "" {
+		if len(p) < minPassphraseLen {
+			return "", fmt.Errorf("$TESSERA_PASSPHRASE must be at least %d characters", minPassphraseLen)
+		}
 		return p, nil
 	}
 	return promptNewPassphrase()
@@ -434,7 +779,7 @@ func requireChangedVaultPassphrase() (string, error) {
 		}
 		return p, nil
 	}
-	if !term.IsTerminal(int(os.Stdin.Fd())) {
+	if !stdinIsTTY() {
 		return "", fmt.Errorf("set $TESSERA_NEW_PASSPHRASE or run on a terminal to change the passphrase")
 	}
 	return promptNewPassphrase()

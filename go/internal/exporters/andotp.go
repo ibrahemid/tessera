@@ -43,6 +43,9 @@ func (andOTPExporter) Render(accts []account.Account) ([]File, []Skipped, error)
 			Thumbnail: "Default",
 			Tags:      []string{},
 		}
+		if len(a.Tags) > 0 {
+			e.Tags = a.Tags
+		}
 		if a.Type == account.HOTP {
 			e.Counter = int64Ptr(a.Counter)
 		} else {

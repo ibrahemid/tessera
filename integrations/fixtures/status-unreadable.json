@@ -1,0 +1,13 @@
+{
+  "path": "/Users/me/.local/share/tessera/vault.json",
+  "exists": true,
+  "size": 2453,
+  "modified": "2026-11-19T22:38:38Z",
+  "unreadable": "open /Users/me/.local/share/tessera/vault.json: permission denied",
+  "wraps": [],
+  "argon2": [],
+  "remembered_in": [
+    "login keychain"
+  ],
+  "locked_in": []
+}

@@ -20,9 +20,27 @@ import (
 )
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "edge" {
-		os.Stdout.Write(edgeCanonical())
-		return
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "edge":
+			os.Stdout.Write(edgeCanonical())
+			return
+		case "edge2":
+			os.Stdout.Write(edgeCanonicalV2())
+			return
+		case "casemap":
+			os.Stdout.Write(caseMappingJSON())
+			return
+		case "caseswift":
+			os.Stdout.Write(caseSwift())
+			return
+		case "v2":
+			if err := runV2(os.Stdin, os.Stdout); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+			return
+		}
 	}
 	steamVectors()
 	argon2Vectors()
@@ -32,12 +50,17 @@ func main() {
 	vaultVector()
 }
 
-// handlesVectors pins handle assignment and the canonical serialization of an
+// handlesVectors prints the handles block. Paste the emitted object into
+// /spec/testvectors.json under "handles".
+func handlesVectors() {
+	emit("handles", handlesBlock())
+}
+
+// handlesBlock pins handle assignment and the canonical serialization of an
 // account carrying a handle. Expected handles are computed by the reference
 // implementation (account.AssignHandles), so the block is always self-consistent
-// with Go; the Swift core MUST reproduce it byte-for-byte. Paste the emitted
-// object into /spec/testvectors.json under "handles".
-func handlesVectors() {
+// with Go; the Swift core MUST reproduce it byte-for-byte.
+func handlesBlock() map[string]any {
 	type inAcct struct {
 		ID        string `json:"id"`
 		Issuer    string `json:"issuer"`
@@ -70,8 +93,13 @@ func handlesVectors() {
 			{ID: "u2", Issuer: "ACME", CreatedAt: 2, Handle: "ac2"},
 			{ID: "u3", Issuer: "ACME", CreatedAt: 3},
 		},
+		{{ID: "h1", Issuer: "", Account: "x@\u0301y.com", CreatedAt: 1}},
+		{
+			{ID: "\u00e9", Issuer: "ACME", CreatedAt: 1},
+			{ID: "e\u0301", Issuer: "ACME", CreatedAt: 1},
+		},
 	}
-	names := []string{"multi-word", "github-single-word-caps", "digit-leading", "empty-issuer-email", "empty-issuer-and-account", "collision-chain", "user-edited-skip"}
+	names := []string{"multi-word", "github-single-word-caps", "digit-leading", "empty-issuer-email", "empty-issuer-and-account", "collision-chain", "user-edited-skip", "combining-mark-after-at", "id-byte-order"}
 
 	var out []acase
 	for i, in := range cases {
@@ -97,11 +125,11 @@ func handlesVectors() {
 		panic(err)
 	}
 
-	emit("handles", map[string]any{
+	return map[string]any{
 		"_status":    "Deterministic handle assignment + canonical serialization. Both cores MUST produce identical handles and identical canonical bytes.",
 		"canonical":  map[string]string{"expected_canonical_json": string(canon)},
 		"assignment": out,
-	})
+	}
 }
 
 // hchachaVector pins an HChaCha20 known-answer test (draft-irtf-cfrg-xchacha
@@ -134,7 +162,7 @@ func edgeAccount() account.Account {
 	return account.Account{
 		ID:      "00000000-0000-4000-8000-0000000000ff",
 		Type:    account.TOTP,
-		Issuer:  "A\"B\\C\n\tD<e>&f  é🔐",
+		Issuer:  "A\"B\\C\n\tD<e>&f\u2028\u2029\u0001é🔐",
 		Account: "user/name",
 		// spec/vault-format.md § handle test vectors: the edge case must also
 		// carry a handle so its sorted position between "folder" and "id" is
@@ -271,5 +299,5 @@ func emit(name string, v any) {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Printf("\n=== %s ===\n%s\n", name, b)
+	fmt.Printf("\n=== %s ===\n%s\n", name, asciiJSON(b))
 }

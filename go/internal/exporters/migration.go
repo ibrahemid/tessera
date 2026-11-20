@@ -16,8 +16,17 @@ import (
 // migrationExporter writes Google Authenticator transfer QR codes
 // (otpauth-migration://offline?data=...). The payload is the same MigrationPayload
 // protobuf the migration package decodes, encoded here with protowire — no
-// protoc, no codegen.
-type migrationExporter struct{}
+// protoc, no codegen. batchID draws the id every batch of one export shares.
+type migrationExporter struct {
+	batchID func() (int32, error)
+}
+
+// MigrationCode is one transfer QR of a google-migration export: the PNG file
+// name and the otpauth-migration URI the image encodes.
+type MigrationCode struct {
+	Name string
+	URI  string
+}
 
 func (migrationExporter) Name() string { return "google-migration" }
 
@@ -76,50 +85,74 @@ const (
 	typeTOTP = 2
 )
 
-func (migrationExporter) Render(accts []account.Account) ([]File, []Skipped, error) {
-	var (
-		encoded [][]byte
-		skipped []Skipped
-	)
-	for _, a := range accts {
-		params, reason := encodeOtpParameters(a)
-		if reason != "" {
-			skipped = append(skipped, Skipped{label(a), reason})
-			continue
-		}
-		encoded = append(encoded, params)
-	}
+func (e migrationExporter) Render(accts []account.Account) ([]File, []Skipped, error) {
+	encoded, skipped := encodeEligible(accts)
 	if len(encoded) == 0 {
 		return nil, skipped, nil
 	}
-
-	batches := partitionBatches(encoded)
-	batchID, err := randomBatchID()
+	batchID, err := e.batchID()
 	if err != nil {
 		return nil, nil, err
 	}
-	files := make([]File, 0, len(batches))
-	for i, batch := range batches {
-		payload := assemblePayload(batch, len(batches), i, batchID)
-		uri := "otpauth-migration://offline?data=" +
-			url.QueryEscape(base64.StdEncoding.EncodeToString(payload))
-		png, err := qr.EncodePNGBytes(uri, qrPixelSize)
+	codes := assembleCodes(encoded, batchID)
+	files := make([]File, 0, len(codes))
+	for _, c := range codes {
+		png, err := qr.EncodePNGBytes(c.URI, qrPixelSize)
 		if err != nil {
 			return nil, nil, err
 		}
-		files = append(files, File{
-			Name: fmt.Sprintf("google-migration-%d-of-%d.png", i+1, len(batches)),
-			Data: png,
-		})
+		files = append(files, File{Name: c.Name, Data: png})
 	}
 	return files, skipped, nil
 }
 
+// MigrationCodes renders the google-migration export of accts with a given
+// batch id: the file name and URI of every QR in order, and the accounts left
+// out. It is Render without the random batch id and the PNG encoding, so the
+// URIs can be compared byte for byte.
+func MigrationCodes(accts []account.Account, batchID int32) ([]MigrationCode, []Skipped) {
+	encoded, skipped := encodeEligible(accts)
+	return assembleCodes(encoded, batchID), skipped
+}
+
+// encodeEligible encodes every account the schema can carry, in order, and
+// reports the rest.
+func encodeEligible(accts []account.Account) (encoded [][]byte, skipped []Skipped) {
+	for _, a := range accts {
+		params, reason, kind := encodeOtpParameters(a)
+		if reason != "" {
+			skipped = append(skipped, Skipped{Label: label(a), Reason: reason, Kind: kind})
+			continue
+		}
+		encoded = append(encoded, params)
+	}
+	return encoded, skipped
+}
+
+// assembleCodes splits encoded accounts into batches and builds each batch's
+// file name and URI.
+func assembleCodes(encoded [][]byte, batchID int32) []MigrationCode {
+	if len(encoded) == 0 {
+		return nil
+	}
+	batches := partitionBatches(encoded)
+	codes := make([]MigrationCode, 0, len(batches))
+	for i, batch := range batches {
+		payload := assemblePayload(batch, len(batches), i, batchID)
+		codes = append(codes, MigrationCode{
+			Name: fmt.Sprintf("google-migration-%d-of-%d.png", i+1, len(batches)),
+			URI: "otpauth-migration://offline?data=" +
+				url.QueryEscape(base64.StdEncoding.EncodeToString(payload)),
+		})
+	}
+	return codes
+}
+
 // encodeOtpParameters renders one account as an OtpParameters submessage. An
-// account the schema cannot carry is refused with a reason rather than
-// downgraded: rewriting a period or a digit count would generate wrong codes
-// for as long as the account lived in the other app.
-func encodeOtpParameters(a account.Account) (params []byte, reason string) {
+// account the schema cannot carry is refused with a reason and its kind rather
+// than downgraded: rewriting a period or a digit count would generate wrong
+// codes for as long as the account lived in the other app.
+func encodeOtpParameters(a account.Account) (params []byte, reason string, kind SkipKind) {
 	var typ uint64
 	switch a.Type {
 	case account.TOTP:
@@ -127,7 +160,7 @@ func encodeOtpParameters(a account.Account) (params []byte, reason string) {
 	case account.HOTP:
 		typ = typeHOTP
 	default:
-		return nil, "Google Authenticator has no Steam entry type"
+		return nil, "Google Authenticator has no Steam entry type", SkipUnsupportedType
 	}
 	var alg uint64
 	switch a.Algorithm {
@@ -138,7 +171,7 @@ func encodeOtpParameters(a account.Account) (params []byte, reason string) {
 	case "SHA512":
 		alg = algSHA512
 	default:
-		return nil, fmt.Sprintf("Google Authenticator does not store the %s algorithm", a.Algorithm)
+		return nil, fmt.Sprintf("Google Authenticator does not store the %s algorithm", a.Algorithm), SkipUnsupportedAlgorithm
 	}
 	var digits uint64
 	switch a.Digits {
@@ -147,10 +180,13 @@ func encodeOtpParameters(a account.Account) (params []byte, reason string) {
 	case 8:
 		digits = digitsEight
 	default:
-		return nil, fmt.Sprintf("Google Authenticator stores only 6- and 8-digit codes, this one has %d", a.Digits)
+		return nil, fmt.Sprintf("Google Authenticator stores only 6- and 8-digit codes, this one has %d", a.Digits), SkipUnsupportedDigits
 	}
 	if a.Type == account.TOTP && a.Period != 30 {
-		return nil, fmt.Sprintf("Google Authenticator stores only 30-second codes, this one uses %ds", a.Period)
+		return nil, fmt.Sprintf("Google Authenticator stores only 30-second codes, this one uses %ds", a.Period), SkipUnsupportedPeriod
+	}
+	if len(a.Secret) == 0 {
+		return nil, "the account has no secret", SkipEmptySecret
 	}
 
 	var b []byte
@@ -174,7 +210,7 @@ func encodeOtpParameters(a account.Account) (params []byte, reason string) {
 		b = protowire.AppendTag(b, paramCounter, protowire.VarintType)
 		b = protowire.AppendVarint(b, uint64(a.Counter))
 	}
-	return b, ""
+	return b, "", ""
 }
 
 // migrationName builds the name field the way Google Authenticator writes it:

@@ -2,36 +2,54 @@ import Foundation
 
 extension Importers {
 
-    static func parseRaivo(_ entries: [[String: Any]]) throws -> [Account] {
+    struct RaivoEntry {
+        var issuer = ""
+        var account = ""
+        var secret = ""
+        var algorithm = ""
+        var digits = ""
+        var kind = ""
+        var timer = ""
+        var counter = ""
+        var pinned: Int?
+    }
+
+    static func parseRaivo(_ doc: GoJSON) throws -> [Account] {
+        var entries = GoSlice<RaivoEntry>()
+        try wrapping("") {
+            let d = GoJSONDecoder(doc, root: "")
+            try d.slice(doc.root, &entries, type: "[]importers.raivoEntry", zero: RaivoEntry()) { e, x in
+                try d.object(e, type: "importers.raivoEntry",
+                             fields: ["issuer", "account", "secret", "algorithm", "digits", "kind", "timer", "counter", "pinned"]) { f, v in
+                    switch f {
+                    case 0: try d.string(v, &x.issuer)
+                    case 1: try d.string(v, &x.account)
+                    case 2: try d.string(v, &x.secret)
+                    case 3: try d.string(v, &x.algorithm)
+                    case 4: try d.string(v, &x.digits)
+                    case 5: try d.string(v, &x.kind)
+                    case 6: try d.string(v, &x.timer)
+                    case 7: try d.string(v, &x.counter)
+                    default: x.pinned = v
+                    }
+                }
+            }
+        }
         var out: [Account] = []
         out.reserveCapacity(entries.count)
-        for e in entries {
-            let issuer = str(e["issuer"])
+        for e in entries.items {
             // Raivo stores numbers as strings.
-            let secret = str(e["secret"])
-            if secret.isEmpty {
-                throw ImporterError.malformed("raivo entry \"\(issuer)\": missing secret")
+            let label = "raivo entry \(quoteBounded(e.issuer))"
+            if e.secret.isEmpty { throw ImporterError.malformed(.missingSecret, "\(label): missing secret") }
+            let digits = try wrapping("\(label): digits: ") { try atoiDefault(e.digits, 6) }
+            let period = try wrapping("\(label): timer: ") { try atoiDefault(e.timer, 30) }
+            let counter = try wrapping("\(label): counter: ") { try atoiDefault(e.counter, 0) }
+            var a = try wrapping("\(label): ") {
+                try buildAccount(type: e.kind, issuer: e.issuer, acct: e.account, secretB32: e.secret,
+                                 algo: e.algorithm, digits: digits, period: period, counter: Int64(counter))
             }
-            let digits: Int, period: Int, counter: Int
-            do { digits = try atoiDefault(str(e["digits"]), 6) }
-            catch { throw ImporterError.malformed("raivo entry \"\(issuer)\": digits: \(message(error))") }
-            do { period = try atoiDefault(str(e["timer"]), 30) }
-            catch { throw ImporterError.malformed("raivo entry \"\(issuer)\": timer: \(message(error))") }
-            do { counter = try atoiDefault(str(e["counter"]), 0) }
-            catch { throw ImporterError.malformed("raivo entry \"\(issuer)\": counter: \(message(error))") }
-            do {
-                out.append(try buildAccount(
-                    type: str(e["kind"]),
-                    issuer: issuer,
-                    acct: str(e["account"]),
-                    secretB32: secret,
-                    algo: str(e["algorithm"]),
-                    digits: digits,
-                    period: period,
-                    counter: Int64(counter)))
-            } catch {
-                throw ImporterError.malformed("raivo entry \"\(issuer)\": \(message(error))")
-            }
+            a.pinned = rawString(doc, e.pinned) == "true" || rawIsTrue(doc, e.pinned)
+            out.append(a)
         }
         return out
     }

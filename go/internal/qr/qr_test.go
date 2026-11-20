@@ -63,9 +63,7 @@ func TestEncodePNGRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat: %v", err)
 	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Fatalf("QR PNG mode = %o, want 600 (cleartext secret)", perm)
-	}
+	assertMode(t, "QR PNG", info, 0o600)
 }
 
 // TestEncodePNGTightensExistingFilePerms covers the case O_CREATE's mode does
@@ -88,9 +86,7 @@ func TestEncodePNGOverwriteTightensPerms(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Fatalf("QR PNG mode = %o, want 600 (cleartext secret)", perm)
-	}
+	assertMode(t, "QR PNG", info, 0o600)
 	got, err := DecodeFile(path)
 	if err != nil || got != testURI {
 		t.Fatalf("overwritten file did not round-trip: %q, %v", got, err)

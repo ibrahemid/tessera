@@ -55,7 +55,7 @@ func parseFreeOTPPlus(data []byte) ([]account.Account, error) {
 		}
 		secret, err := javaSignedBytes(tk.Secret)
 		if err != nil {
-			return nil, fmt.Errorf("freeotp+ token %q: %w", issuer, err)
+			return nil, fmt.Errorf("freeotp+ token %s: %w", quoteBounded(issuer), err)
 		}
 		counter := tk.Counter
 		if strings.EqualFold(tk.Type, "HOTP") {
@@ -66,7 +66,7 @@ func parseFreeOTPPlus(data []byte) ([]account.Account, error) {
 		a, err := buildAccountRaw(typ, issuer, label, secret,
 			tk.Algo, tk.Digits, tk.Period, counter)
 		if err != nil {
-			return nil, fmt.Errorf("freeotp+ token %q: %w", issuer, err)
+			return nil, fmt.Errorf("freeotp+ token %s: %w", quoteBounded(issuer), err)
 		}
 		out = append(out, a)
 	}

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
+	"github.com/ibrahemid/tessera/go/internal/store/storetest"
 	"github.com/ibrahemid/tessera/go/internal/vault"
 )
 
@@ -22,13 +23,8 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	if err := Save(path, env); err != nil {
 		t.Fatal(err)
 	}
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Mode().Perm() != 0o600 {
-		t.Errorf("vault perms = %v, want 0600", info.Mode().Perm())
-	}
+	storetest.AssertOwnerOnly(t, path)
+	storetest.AssertOwnerOnlyDir(t, filepath.Dir(path))
 	loaded, err := Load(path)
 	if err != nil {
 		t.Fatal(err)
@@ -42,18 +38,28 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 }
 
-func TestLoadMissingReturnsNotFound(t *testing.T) {
-	if _, err := Load(filepath.Join(t.TempDir(), "nope.json")); err != ErrNotFound {
-		t.Errorf("expected ErrNotFound, got %v", err)
+func TestMkdirPrivateCreatesEachMissingLevelOwnerOnly(t *testing.T) {
+	top := filepath.Join(t.TempDir(), "a")
+	leaf := filepath.Join(top, "b")
+	if err := MkdirPrivate(leaf); err != nil {
+		t.Fatal(err)
+	}
+	storetest.AssertOwnerOnlyDir(t, top)
+	storetest.AssertOwnerOnlyDir(t, leaf)
+	if err := MkdirPrivate(leaf); err != nil {
+		t.Fatalf("MkdirPrivate on an existing directory: %v", err)
+	}
+	file := filepath.Join(top, "file")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := MkdirPrivate(file); err == nil {
+		t.Fatal("MkdirPrivate over a file succeeded")
 	}
 }
 
-func TestResolvePrecedence(t *testing.T) {
-	t.Setenv("TESSERA_VAULT", "/env/path.json")
-	if p, _ := Resolve("/override.json"); p != "/override.json" {
-		t.Errorf("override should win, got %s", p)
-	}
-	if p, _ := Resolve(""); p != "/env/path.json" {
-		t.Errorf("env should win when no override, got %s", p)
+func TestLoadMissingReturnsNotFound(t *testing.T) {
+	if _, err := Load(filepath.Join(t.TempDir(), "nope.json")); err != ErrNotFound {
+		t.Errorf("expected ErrNotFound, got %v", err)
 	}
 }

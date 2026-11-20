@@ -2,11 +2,12 @@ package store
 
 import (
 	"errors"
-	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/ibrahemid/tessera/go/internal/store/storetest"
 )
 
 func TestLockIsExclusive(t *testing.T) {
@@ -123,11 +124,5 @@ func TestLockCreatesSidecarWithOwnerOnlyPerms(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer l.Release()
-	info, err := os.Stat(LockPath(path))
-	if err != nil {
-		t.Fatalf("stat lock file: %v", err)
-	}
-	if info.Mode().Perm() != 0o600 {
-		t.Errorf("lock perms = %v, want 0600", info.Mode().Perm())
-	}
+	storetest.AssertOwnerOnly(t, LockPath(path))
 }

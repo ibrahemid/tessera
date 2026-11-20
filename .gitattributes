@@ -1,0 +1,2 @@
+* text=auto eol=lf
+go/internal/importers/testdata/** -text

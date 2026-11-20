@@ -8,15 +8,21 @@ import (
 )
 
 type bitwardenFile struct {
-	Items []bitwardenItem `json:"items"`
+	Items       []bitwardenItem `json:"items"`
+	Folders     json.RawMessage `json:"folders"`
+	Collections json.RawMessage `json:"collections"`
 }
 
 type bitwardenItem struct {
 	Name  string `json:"name"`
+	Notes string `json:"notes"`
 	Login *struct {
 		Username string `json:"username"`
 		TOTP     string `json:"totp"`
 	} `json:"login"`
+	FolderID      json.RawMessage `json:"folderId"`
+	CollectionIDs json.RawMessage `json:"collectionIds"`
+	Favorite      json.RawMessage `json:"favorite"`
 }
 
 // parseBitwardenItems walks the item list shared by the Bitwarden password
@@ -27,6 +33,8 @@ func parseBitwardenItems(data []byte) ([]account.Account, error) {
 	if err := json.Unmarshal(data, &f); err != nil {
 		return nil, fmt.Errorf("bitwarden: %w", err)
 	}
+	folders := indexGroups[idGroup](f.Folders)
+	collections := indexGroups[idGroup](f.Collections)
 	out := make([]account.Account, 0, len(f.Items))
 	for _, it := range f.Items {
 		if it.Login == nil {
@@ -34,11 +42,15 @@ func parseBitwardenItems(data []byte) ([]account.Account, error) {
 		}
 		a, ok, err := parseOTPValue(it.Login.TOTP, it.Name, it.Login.Username)
 		if err != nil {
-			return nil, fmt.Errorf("bitwarden item %q: %w", it.Name, err)
+			return nil, fmt.Errorf("bitwarden item %s: %w", quoteBounded(it.Name), err)
 		}
 		if !ok {
 			continue
 		}
+		a.Note = account.CleanNote(it.Notes)
+		names := groupName(nil, folders, it.FolderID)
+		a.Folder, a.Tags = placeGroups(groupNames(names, collections, it.CollectionIDs))
+		a.Pinned = rawIsTrue(it.Favorite)
 		out = append(out, a)
 	}
 	return out, nil

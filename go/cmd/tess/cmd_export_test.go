@@ -9,6 +9,7 @@ import (
 
 	"github.com/ibrahemid/tessera/go/internal/account"
 	"github.com/ibrahemid/tessera/go/internal/importers"
+	"github.com/ibrahemid/tessera/go/internal/store/storetest"
 )
 
 // runExport executes the export command with args, returning stdout, stderr
@@ -80,13 +81,7 @@ func TestExportFormatWritesFile(t *testing.T) {
 	if _, _, err := runExport(t, "--format", "aegis", "--out", dst); err != nil {
 		t.Fatalf("export: %v", err)
 	}
-	info, err := os.Stat(dst)
-	if err != nil {
-		t.Fatalf("stat: %v", err)
-	}
-	if info.Mode().Perm() != 0o600 {
-		t.Errorf("export file mode = %v, want 0600", info.Mode().Perm())
-	}
+	storetest.AssertOwnerOnly(t, dst)
 }
 
 // TestExportFormatWritesDirectory covers the multi-file format: a directory is
@@ -114,21 +109,9 @@ func TestExportFormatWritesDirectory(t *testing.T) {
 	if !strings.Contains(stdout, "google-migration-1-of-") {
 		t.Errorf("expected the written paths on stdout, got %q", stdout)
 	}
-	info, err := os.Stat(dir)
-	if err != nil {
-		t.Fatalf("stat dir: %v", err)
-	}
-	if info.Mode().Perm() != 0o700 {
-		t.Errorf("export directory mode = %v, want 0700", info.Mode().Perm())
-	}
+	storetest.AssertOwnerOnlyDir(t, dir)
 	for _, e := range entries {
-		fi, err := os.Stat(filepath.Join(dir, e.Name()))
-		if err != nil {
-			t.Fatalf("stat %s: %v", e.Name(), err)
-		}
-		if fi.Mode().Perm() != 0o600 {
-			t.Errorf("%s mode = %v, want 0600", e.Name(), fi.Mode().Perm())
-		}
+		storetest.AssertOwnerOnly(t, filepath.Join(dir, e.Name()))
 	}
 }
 
@@ -143,24 +126,8 @@ func TestExportFormatSingleBatchStillWritesADirectory(t *testing.T) {
 	if _, _, err := runExport(t, "--format", "google-migration", "--out", dir); err != nil {
 		t.Fatalf("export: %v", err)
 	}
-	info, err := os.Stat(dir)
-	if err != nil {
-		t.Fatalf("stat %q: %v", dir, err)
-	}
-	if !info.IsDir() {
-		t.Fatalf("%q is not a directory", dir)
-	}
-	if info.Mode().Perm() != 0o700 {
-		t.Errorf("export directory mode = %v, want 0700", info.Mode().Perm())
-	}
-	file := filepath.Join(dir, "google-migration-1-of-1.png")
-	fi, err := os.Stat(file)
-	if err != nil {
-		t.Fatalf("stat %q: %v", file, err)
-	}
-	if fi.Mode().Perm() != 0o600 {
-		t.Errorf("%s mode = %v, want 0600", fi.Name(), fi.Mode().Perm())
-	}
+	storetest.AssertOwnerOnlyDir(t, dir)
+	storetest.AssertOwnerOnly(t, filepath.Join(dir, "google-migration-1-of-1.png"))
 }
 
 // TestExportFormatRejectsIllegalCombinations: every rejected run must write

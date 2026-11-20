@@ -25,12 +25,36 @@ type File struct {
 	Data []byte
 }
 
-// Skipped names one account a format cannot represent, with the reason. Label
-// never contains a secret.
+// Skipped names one account, or one field of it, that a format cannot carry,
+// with the reason. Label never contains a secret. Kind identifies the reason
+// for code; Reason is the text a person reads.
 type Skipped struct {
 	Label  string
 	Reason string
+	Kind   SkipKind
 }
+
+// SkipKind is the stable identifier of why a format left an account, or one
+// field of it, out. It never changes with the reason's wording.
+type SkipKind string
+
+const (
+	// SkipUnsupportedType: the format has no entry for the account's type.
+	SkipUnsupportedType SkipKind = "unsupported_type"
+	// SkipUnsupportedAlgorithm: the format cannot store the account's algorithm.
+	SkipUnsupportedAlgorithm SkipKind = "unsupported_algorithm"
+	// SkipUnsupportedDigits: the format cannot store the account's digit count.
+	SkipUnsupportedDigits SkipKind = "unsupported_digits"
+	// SkipUnsupportedPeriod: the format cannot store the account's period.
+	SkipUnsupportedPeriod SkipKind = "unsupported_period"
+	// SkipFormulaName: the account's issuer or account name starts like a
+	// spreadsheet formula, so the whole account is left out.
+	SkipFormulaName SkipKind = "formula_name"
+	// SkipFormulaNote: the account's note starts like a spreadsheet formula, so
+	// the account is written without its note.
+	SkipFormulaNote SkipKind = "formula_note"
+	SkipEmptySecret SkipKind = "empty_secret"
+)
 
 // Exporter renders accounts into one or more files.
 type Exporter interface {
@@ -61,7 +85,7 @@ func init() {
 	register(protonExporter{})
 	register(andOTPExporter{})
 	register(appleCSVExporter{})
-	register(migrationExporter{})
+	register(migrationExporter{batchID: randomBatchID})
 }
 
 // Lookup returns the exporter registered under name.
@@ -135,10 +159,55 @@ func otpauthLabel(a account.Account) string {
 // carry. It is a hash of the vault id, so re-exporting an unchanged vault
 // produces byte-identical files, and it is well formed for any id (test and
 // legacy vaults hold ids that are not 32 hex characters). No importer reads it.
-func exportID(id string) string {
-	sum := sha256.Sum256([]byte("tessera-export-id:" + id))
+func exportID(id string) string { return hashedID("tessera-export-id:" + id) }
+
+// folderID derives the id a format gives a group or folder from the folder
+// name, the way exportID derives an entry id, so every entry in one folder
+// names the same group and re-exporting is byte-identical.
+func folderID(name string) string { return hashedID("tessera-export-folder:" + name) }
+
+// hashedID is the first 16 bytes of SHA-256(s), dashed 8-4-4-4-12.
+func hashedID(s string) string {
+	sum := sha256.Sum256([]byte(s))
 	b := sum[:16]
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
+// exportFolder is one folder as a format's group list carries it, with the
+// latest UpdatedAt of its accounts.
+type exportFolder struct {
+	id            string
+	name          string
+	lastUpdatedAt int64
+}
+
+// foldersOf lists the distinct folders of accts in order of first appearance.
+// An account with no folder adds none.
+func foldersOf(accts []account.Account) []exportFolder {
+	out := []exportFolder{}
+	at := map[string]int{}
+	for _, a := range accts {
+		if a.Folder == "" {
+			continue
+		}
+		i, ok := at[a.Folder]
+		if !ok {
+			i = len(out)
+			at[a.Folder] = i
+			out = append(out, exportFolder{id: folderID(a.Folder), name: a.Folder})
+		}
+		out[i].lastUpdatedAt = max(out[i].lastUpdatedAt, a.UpdatedAt)
+	}
+	return out
+}
+
+// optionalFolderID is the account's folder id, or nil with no folder.
+func optionalFolderID(a account.Account) *string {
+	if a.Folder == "" {
+		return nil
+	}
+	id := folderID(a.Folder)
+	return &id
 }
 
 // tokenType renders the account type the way the JSON authenticators spell it.
@@ -149,3 +218,11 @@ func tokenType(t account.Type) string {
 func intPtr(v int) *int       { return &v }
 func int64Ptr(v int64) *int64 { return &v }
 func strPtr(v string) *string { return &v }
+
+// optionalStr is nil for an empty string, so a format's null stays null.
+func optionalStr(v string) *string {
+	if v == "" {
+		return nil
+	}
+	return &v
+}

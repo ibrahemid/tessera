@@ -11,14 +11,39 @@ public enum OTP {
     public enum Algorithm: String, Sendable {
         case sha1 = "SHA1", sha256 = "SHA256", sha512 = "SHA512"
 
+        /// Go `otp.ParseAlgorithm`: trimmed, case-insensitive, empty meaning SHA1.
         public static func parse(_ s: String) throws -> Algorithm {
-            switch s.uppercased() {
-            case "", "SHA1": return .sha1
-            case "SHA256": return .sha256
-            case "SHA512": return .sha512
-            default: throw AccountError.invalid("unsupported algorithm \(s)")
+            let name = Array(GoText.toUpper(GoText.trimSpace(s)).utf8)
+            switch name {
+            case [], Array("SHA1".utf8): return .sha1
+            case Array("SHA256".utf8): return .sha256
+            case Array("SHA512".utf8): return .sha512
+            default: throw AccountError.invalid("otp: unsupported algorithm \(GoQuote.quote(s))")
             }
         }
+    }
+
+    /// A time before the Unix epoch or past the largest whole second an
+    /// `Int64` holds: no code step exists for it.
+    public struct TimeRangeError: Error, Equatable, Sendable, CustomStringConvertible, LocalizedError {
+        public init() {}
+        public var description: String { "otp: the system clock is out of range; set the correct date and time" }
+        public var errorDescription: String? { description }
+    }
+
+    /// An account whose type this build generates no code for: a type from a
+    /// newer Tessera, or none at all.
+    public struct UnknownTypeError: Error, Equatable, Sendable, CustomStringConvertible, LocalizedError {
+        public let id: String
+        public let type: String
+        public init(id: String, type: String) {
+            self.id = id
+            self.type = type
+        }
+        public var description: String {
+            "account \(GoQuote.quote(id)): unknown type \(GoQuote.quote(type)); update Tessera to generate its codes"
+        }
+        public var errorDescription: String? { description }
     }
 
     private static func hmac(_ secret: Data, _ message: Data, _ alg: Algorithm) -> Data {
@@ -45,8 +70,8 @@ public enum OTP {
     }
 
     public static func hotp(secret: Data, counter: UInt64, digits: Int, algorithm: Algorithm) throws -> String {
-        if secret.isEmpty { throw AccountError.invalid("empty secret") }
-        if digits < 6 || digits > 8 { throw AccountError.invalid("digits must be 6-8") }
+        if secret.isEmpty { throw AccountError.invalid("otp: empty secret") }
+        if digits < 6 || digits > 8 { throw AccountError.invalid("otp: digits must be 6-8, got \(digits)") }
         let mac = hmac(secret, counterBytes(counter), algorithm)
         let bin = truncate(mac)
         let mod = UInt32(pow(10.0, Double(digits)))
@@ -54,9 +79,23 @@ public enum OTP {
     }
 
     public static func totp(secret: Data, time: Date, period: Int, digits: Int, algorithm: Algorithm) throws -> String {
-        if period <= 0 { throw AccountError.invalid("period must be positive") }
-        let counter = UInt64(Int64(time.timeIntervalSince1970) / Int64(period))
-        return try hotp(secret: secret, counter: counter, digits: digits, algorithm: algorithm)
+        if period <= 0 { throw AccountError.invalid("otp: period must be positive, got \(period)") }
+        let step = try timeStep(time, period: Int64(period))
+        return try hotp(secret: secret, counter: step, digits: digits, algorithm: algorithm)
+    }
+
+    /// Whole seconds since the epoch, rounded down as Go's `Time.Unix` does;
+    /// refuses what Go refuses and what an `Int64` cannot hold.
+    static func unixSeconds(_ time: Date) throws -> Int64 {
+        let s = time.timeIntervalSince1970.rounded(.down)
+        guard s.isFinite, s >= 0, s < 9_223_372_036_854_775_808.0 else { throw TimeRangeError() }
+        return Int64(s)
+    }
+
+    private static func timeStep(_ time: Date, period: Int64) throws -> UInt64 {
+        let (q, overflow) = try unixSeconds(time).dividedReportingOverflow(by: period)
+        guard !overflow, q >= 0 else { throw TimeRangeError() }
+        return UInt64(q)
     }
 
     public static func remainingSeconds(time: Date, period: Int) -> Int {
@@ -68,15 +107,15 @@ public enum OTP {
 
     public static func decodeSteamSecret(_ b64: String) throws -> Data {
         guard let d = Data(base64Encoded: b64.trimmingCharacters(in: .whitespacesAndNewlines)) else {
-            throw AccountError.invalid("steam secret base64")
+            throw AccountError.invalid("otp: steam secret base64")
         }
         return d
     }
 
     public static func steam(secret: Data, time: Date) throws -> String {
-        if secret.isEmpty { throw AccountError.invalid("empty secret") }
-        let counter = UInt64(Int64(time.timeIntervalSince1970) / 30)
-        var full = truncate(hmac(secret, counterBytes(counter), .sha1))
+        if secret.isEmpty { throw AccountError.invalid("otp: empty secret") }
+        let step = try timeStep(time, period: 30)
+        var full = truncate(hmac(secret, counterBytes(step), .sha1))
         var out = ""
         for _ in 0..<5 {
             out.append(steamAlphabet[Int(full % UInt32(steamAlphabet.count))])
@@ -85,20 +124,24 @@ public enum OTP {
         return out
     }
 
-    /// Compute the current code for an account.
+    /// Compute the current code for an account, checking in the Go core's
+    /// order. Steam ignores the algorithm field.
     public static func code(for a: Account, at time: Date) throws -> String {
-        let alg = try Algorithm.parse(a.algorithm)
         switch a.type {
-        case .totp: return try totp(secret: a.secret, time: time, period: a.period, digits: a.digits, algorithm: alg)
-        case .steam: return try steam(secret: a.secret, time: time)
+        case .totp:
+            let alg = try Algorithm.parse(a.algorithm)
+            return try totp(secret: a.secret, time: time, period: a.period, digits: a.digits, algorithm: alg)
+        case .steam:
+            return try steam(secret: a.secret, time: time)
         case .hotp:
-            // A stored counter can only be negative if the vault was written by a
-            // buggy or hostile producer; throw so the caller renders a placeholder
-            // instead of trapping on the conversion.
-            guard let counter = UInt64(exactly: a.counter) else {
-                throw AccountError.invalid("account \(a.id): counter must not be negative")
+            let alg = try Algorithm.parse(a.algorithm)
+            guard a.counter >= 0, a.counter <= Account.maxCounter else {
+                throw AccountError.invalid(
+                    "account \(GoQuote.quote(a.id)): counter outside 0..\(Account.maxCounter), got \(a.counter)")
             }
-            return try hotp(secret: a.secret, counter: counter, digits: a.digits, algorithm: alg)
+            return try hotp(secret: a.secret, counter: UInt64(a.counter), digits: a.digits, algorithm: alg)
+        case .unrecognized(let t):
+            throw UnknownTypeError(id: a.id, type: t)
         }
     }
 }

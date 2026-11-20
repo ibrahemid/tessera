@@ -43,41 +43,35 @@ public enum Base32 {
     /// is always truncated input.
     private static let badQuantum: Set<Int> = [1, 3, 6]
 
-    /// Decodes base32: whitespace, `-` and `=` padding are stripped and the
-    /// input is uppercased before decoding. Input that cannot be re-encoded to
-    /// itself is rejected — an empty secret, a truncated final group, or
-    /// non-zero bits past the last whole byte all yield a key that does not
-    /// round-trip, which would silently produce wrong codes forever.
+    /// Decodes base32: space, tab, CR, LF, `-` and `=` are stripped and the
+    /// rest is uppercased (Go `strings.ToUpper`) before decoding. Input that
+    /// cannot be re-encoded to itself is rejected: an empty secret, a truncated
+    /// final group, or non-zero bits past the last whole byte all yield a key
+    /// that does not round-trip, which would silently produce wrong codes.
     public static func decode(_ input: String) throws -> Data {
-        var cleaned = ""
-        for ch in input.uppercased() {
-            if ch == " " || ch == "\t" || ch == "\n" || ch == "\r" || ch == "-" || ch == "=" { continue }
-            cleaned.append(ch)
+        var cleaned = String.UnicodeScalarView()
+        for u in input.unicodeScalars {
+            switch u {
+            case " ", "\t", "\n", "\r", "-", "=": continue
+            default: cleaned.append(GoText.upper(u))
+            }
         }
-        if cleaned.isEmpty {
-            throw AccountError.invalid("base32: empty input")
-        }
-        if badQuantum.contains(cleaned.count % 8) {
-            throw AccountError.invalid("base32: truncated final group")
-        }
+        let clean = String(cleaned)
+        if clean.isEmpty || badQuantum.contains(clean.utf8.count % 8) { throw invalidInput }
         var out = Data()
         var buffer = 0, bits = 0
-        for ch in cleaned {
-            guard let v = reverse[ch] else {
-                throw AccountError.invalid("base32: invalid character \(ch)")
-            }
-            buffer = (buffer << 5) | Int(v)
+        for u in clean.unicodeScalars {
+            guard u.isASCII, let v = reverse[Character(u)] else { throw invalidInput }
+            buffer = ((buffer << 5) | Int(v)) & 0xFFFF
             bits += 5
             if bits >= 8 {
                 bits -= 8
                 out.append(UInt8((buffer >> bits) & 0xff))
             }
         }
-        // Non-canonical trailing bits decode without error but do not re-encode
-        // to the input; such a secret is not the secret the user was given.
-        if encodeNoPad(out) != cleaned {
-            throw AccountError.invalid("base32: non-canonical trailing bits")
-        }
+        if encodeNoPad(out) != clean { throw invalidInput }
         return out
     }
+
+    private static let invalidInput = AccountError.invalid("base32x: invalid base32 input")
 }

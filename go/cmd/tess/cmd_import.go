@@ -1,16 +1,17 @@
 package main
 
 import (
+	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
-	"github.com/ibrahemid/tessera/go/internal/base32x"
 	"github.com/ibrahemid/tessera/go/internal/detect"
+	"github.com/ibrahemid/tessera/go/internal/merge"
 	"github.com/ibrahemid/tessera/go/internal/qr"
+	"github.com/ibrahemid/tessera/go/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -20,6 +21,7 @@ func newImportCmd() *cobra.Command {
 		otpauthURIs   []string
 		qrPaths       []string
 		filePaths     []string
+		asJSON        bool
 	)
 	cmd := &cobra.Command{
 		Use:   "import [path...]",
@@ -46,15 +48,23 @@ Exports it reads, recognized by content rather than by file name:
 An export must be unencrypted; an encrypted one is refused by name rather than
 half-read. Items with no one-time-password field, which is most of a password
 manager's export, are left out. Duplicate accounts (same type, issuer, account
-and secret) are skipped. docs/TRANSFER.md lists what to export from each app.`,
+and secret) are skipped. docs/TRANSFER.md lists what to export from each app.
+
+tess lists each account it added or skipped, each item it could not import
+and why, then the totals. --json writes the same report as JSON.
+
+` + argumentNote,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(migrationURIs)+len(otpauthURIs) > 0 && stdinIsTTY() {
+				defer errOut(cmd, "%s", historyWarning)
+			}
 			batch := collectImport(qrPaths, filePaths, migrationURIs, otpauthURIs, args)
 			if len(batch.accounts) == 0 && len(batch.problems) == 0 {
-				return fmt.Errorf("specify --file, --qr, --migration, --otpauth, or a file path")
+				return errImportNoSource
 			}
 			if len(batch.accounts) == 0 {
-				printProblems(cmd, batch.problems)
-				return fmt.Errorf("no accounts imported")
+				reportImport(cmd, nil, mergeResult{}, batch.problems, asJSON)
+				return errNothingImported
 			}
 
 			s, err := openSession()
@@ -62,17 +72,15 @@ and secret) are skipped. docs/TRANSFER.md lists what to export from each app.`,
 				return err
 			}
 			defer s.close()
-			added, skipped, failed := mergeAccounts(s, batch.accounts)
-			batch.problems = append(batch.problems, failed...)
-			if added > 0 {
+			merged := mergeAccountsDetailed(s, batch.accounts)
+			if len(merged.added) > 0 {
 				if err := s.save(); err != nil {
 					return err
 				}
 			}
-			printImportSummary(cmd, added, skipped)
-			printProblems(cmd, batch.problems)
-			if added == 0 && len(batch.problems) > 0 {
-				return fmt.Errorf("no accounts imported")
+			reportImport(cmd, s, merged, batch.problems, asJSON)
+			if len(merged.added) == 0 && len(batch.problems)+len(merged.failed) > 0 {
+				return errNothingImported
 			}
 			return nil
 		},
@@ -82,8 +90,14 @@ and secret) are skipped. docs/TRANSFER.md lists what to export from each app.`,
 	f.StringArrayVar(&migrationURIs, "migration", nil, "Google Authenticator otpauth-migration:// URI (repeatable)")
 	f.StringArrayVar(&otpauthURIs, "otpauth", nil, "single otpauth:// URI (repeatable)")
 	f.StringArrayVar(&qrPaths, "qr", nil, "QR image file (repeatable; png/jpeg/webp/tiff/bmp)")
+	f.BoolVar(&asJSON, "json", false, "write the report as JSON")
 	return cmd
 }
+
+var (
+	errImportNoSource  = errors.New("specify --file, --qr, --migration, --otpauth, or a file path")
+	errNothingImported = errors.New("no accounts imported")
+)
 
 // importBatch accumulates the accounts parsed from every source in one run along
 // with a per-item problem for each source that failed. Collecting the batch does
@@ -131,11 +145,7 @@ func collectImport(qrPaths, filePaths, migrationURIs, otpauthURIs, args []string
 func (b *importBatch) addImage(path string) {
 	payloads, err := qr.DecodeFileAll(path)
 	if err != nil {
-		reason := "no QR code found"
-		if strings.Contains(err.Error(), "decode image") {
-			reason = "unreadable image"
-		}
-		b.problems = append(b.problems, importProblem{path, reason})
+		b.problems = append(b.problems, importProblem{path, imageProblem(err)})
 		return
 	}
 	for i, payload := range payloads {
@@ -146,9 +156,26 @@ func (b *importBatch) addImage(path string) {
 		accts, errs := detect.ParseText(payload)
 		b.accounts = append(b.accounts, accts...)
 		for _, e := range errs {
-			b.problems = append(b.problems, importProblem{src, e.Err.Error()})
+			b.problems = append(b.problems, importProblem{src, userMessage(e.Err)})
 		}
 	}
+}
+
+// imageProblem is the reason an image yielded no QR payload: the operating
+// system's reason, a size limit, no code in it, or an undecodable file.
+func imageProblem(err error) string {
+	var pathErr *os.PathError
+	switch {
+	case errors.Is(err, qr.ErrTooManyPixels):
+		return qr.ErrTooManyPixels.Error()
+	case errors.Is(err, qr.ErrImageFileTooLarge):
+		return qr.ErrImageFileTooLarge.Error()
+	case errors.As(err, &pathErr):
+		return pathErr.Err.Error()
+	case errors.Is(err, qr.ErrNoQRCode):
+		return qr.ErrNoQRCode.Error()
+	}
+	return "unreadable image"
 }
 
 // addTextFile reads a file and parses it as text/JSON, recording per-line
@@ -158,38 +185,26 @@ func (b *importBatch) addTextFile(path string) {
 		b.addStdin()
 		return
 	}
-	data, err := os.ReadFile(path)
+	data, err := readFileCapped(path)
 	if err != nil {
-		b.problems = append(b.problems, importProblem{path, "could not read file"})
+		b.problems = append(b.problems, importProblem{path, readProblem(err)})
 		return
 	}
 	accts, errs := detect.ParseText(string(data))
 	b.accounts = append(b.accounts, accts...)
-	for _, e := range errs {
-		src := path
-		if e.Line > 0 {
-			src = fmt.Sprintf("%s line %d", path, e.Line)
-		}
-		b.problems = append(b.problems, importProblem{src, e.Err.Error()})
-	}
+	b.problems = append(b.problems, itemProblems(path, errs)...)
 }
 
 // addStdin reads all of stdin as import text, so tess can end a pipeline.
 func (b *importBatch) addStdin() {
-	data, err := io.ReadAll(stdinReader)
+	data, err := readCapped(stdinReader, "stdin")
 	if err != nil {
-		b.problems = append(b.problems, importProblem{"stdin", "could not read stdin"})
+		b.problems = append(b.problems, importProblem{"stdin", readProblem(err)})
 		return
 	}
 	accts, errs := detect.ParseText(string(data))
 	b.accounts = append(b.accounts, accts...)
-	for _, e := range errs {
-		src := "stdin"
-		if e.Line > 0 {
-			src = fmt.Sprintf("stdin line %d", e.Line)
-		}
-		b.problems = append(b.problems, importProblem{src, e.Err.Error()})
-	}
+	b.problems = append(b.problems, itemProblems("stdin", errs)...)
 }
 
 // addPayload parses a single URI passed via a flag.
@@ -197,7 +212,7 @@ func (b *importBatch) addPayload(source, text string) {
 	accts, errs := detect.ParseText(text)
 	b.accounts = append(b.accounts, accts...)
 	for _, e := range errs {
-		b.problems = append(b.problems, importProblem{source, e.Err.Error()})
+		b.problems = append(b.problems, importProblem{source, userMessage(e.Err)})
 	}
 }
 
@@ -211,22 +226,133 @@ func isImagePath(path string) bool {
 	return imageExts[strings.ToLower(filepath.Ext(path))]
 }
 
-func printImportSummary(cmd *cobra.Command, added, skipped int) {
-	if skipped > 0 {
-		out(cmd, "Imported %d, skipped %d duplicate(s)", added, skipped)
-	} else {
-		out(cmd, "Imported %d", added)
-	}
+// importItem is the JSON shape of one reported item in `tess import --json`;
+// docs/CLI-JSON.md is its contract. An account carries issuer, account and
+// type; an item that never became an account carries source instead.
+type importItem struct {
+	Status  string  `json:"status"`
+	ID      string  `json:"id,omitempty"`
+	Handle  string  `json:"handle,omitempty"`
+	Issuer  *string `json:"issuer,omitempty"`
+	Account *string `json:"account,omitempty"`
+	Type    *string `json:"type,omitempty"`
+	Source  string  `json:"source,omitempty"`
+	Reason  string  `json:"reason,omitempty"`
 }
 
+// importReport is the JSON shape of `tess import --json`.
+type importReport struct {
+	Items   []importItem `json:"items"`
+	Added   int          `json:"added"`
+	Skipped int          `json:"skipped"`
+	Failed  int          `json:"failed"`
+}
+
+const reasonAlreadyInVault = "already in the vault"
+
+// reportImport writes what the import did with each item, then the totals.
+// Without --json, added and skipped accounts go to stdout and the items that
+// failed to stderr, so a script reading stdout sees only the vault's side.
+// s is nil when nothing reached the vault.
+func reportImport(cmd *cobra.Command, s *session, merged mergeResult, problems []importProblem, asJSON bool) {
+	failed := len(problems)
+	for _, o := range merged.outcomes {
+		if o.status == outcomeFailed {
+			failed++
+		}
+	}
+	if asJSON {
+		r := importReport{Items: make([]importItem, 0, len(merged.outcomes)+len(problems)),
+			Added: len(merged.added), Skipped: len(merged.skipped), Failed: failed}
+		for _, o := range merged.outcomes {
+			item := importItem{Status: string(o.status), Issuer: &o.issuer, Account: &o.account, Type: &o.typ, Reason: o.reason}
+			if o.status == outcomeAdded {
+				item.ID = o.id
+				if s != nil {
+					if i := indexByID(s.accounts, o.id); i >= 0 {
+						item.Handle = s.accounts[i].Handle
+					}
+				}
+			}
+			r.Items = append(r.Items, item)
+		}
+		for _, p := range problems {
+			r.Items = append(r.Items, importItem{Status: string(outcomeFailed), Source: p.source, Reason: p.reason})
+		}
+		out(cmd, "%s", mustJSON(r))
+		return
+	}
+	var failures []importProblem
+	for _, o := range merged.outcomes {
+		switch o.status {
+		case outcomeAdded:
+			h := ""
+			if i := indexByID(s.accounts, o.id); i >= 0 {
+				h = displayHandle(s.accounts[i])
+			}
+			out(cmd, "Added %s as %s", o.label, h)
+		case outcomeSkipped:
+			out(cmd, "Skipped %s: %s", o.label, o.reason)
+		case outcomeFailed:
+			failures = append(failures, importProblem{o.label, o.reason})
+		}
+	}
+	printProblems(cmd, append(append([]importProblem{}, problems...), failures...))
+	if len(merged.outcomes) == 0 {
+		return
+	}
+	summary := fmt.Sprintf("Imported %d", len(merged.added))
+	if n := len(merged.skipped); n > 0 {
+		summary += fmt.Sprintf(", skipped %d", n)
+	}
+	if failed > 0 {
+		summary += fmt.Sprintf(", failed %d", failed)
+	}
+	out(cmd, "%s", summary)
+}
+
+// printProblems lists the items that could not be imported on stderr, so a
+// script reading stdout sees only what was added.
 func printProblems(cmd *cobra.Command, problems []importProblem) {
 	if len(problems) == 0 {
 		return
 	}
-	out(cmd, "Could not import %d item(s):", len(problems))
-	for _, p := range problems {
-		out(cmd, "  %s: %s", p.source, p.reason)
+	if len(problems) == 1 {
+		errOut(cmd, "Could not import 1 item:")
+	} else {
+		errOut(cmd, "Could not import %d items:", len(problems))
 	}
+	for _, p := range problems {
+		errOut(cmd, "  %s: %s", ui.Sanitize(p.source), ui.Sanitize(p.reason))
+	}
+}
+
+// mergeResult is what merging a batch into the session did with each account.
+type mergeResult struct {
+	added    []string // ids of the accounts appended
+	skipped  []string // labels of the accounts the vault already holds
+	failed   []importProblem
+	outcomes []mergeOutcome // every account of the batch, in batch order
+}
+
+type mergeStatus string
+
+const (
+	outcomeAdded   mergeStatus = "added"
+	outcomeSkipped mergeStatus = "skipped"
+	outcomeFailed  mergeStatus = "failed"
+)
+
+// mergeOutcome is what happened to one account of a batch. It holds the
+// account's names, never its secret.
+type mergeOutcome struct {
+	status  mergeStatus
+	id      string // added only
+	label   string // escaped for display
+	issuer  string
+	account string
+	typ     string
+	reason  string // skipped and failed only
 }
 
 // mergeAccounts stamps and appends imported accounts to the session, skipping
@@ -235,29 +361,43 @@ func printProblems(cmd *cobra.Command, problems []importProblem) {
 // returned as a problem with the reason so the summary does not claim the user
 // already had it.
 func mergeAccounts(s *session, imported []account.Account) (added, skipped int, failed []importProblem) {
+	r := mergeAccountsDetailed(s, imported)
+	return len(r.added), len(r.skipped), r.failed
+}
+
+// mergeAccountsDetailed is mergeAccounts reporting which accounts went where.
+func mergeAccountsDetailed(s *session, imported []account.Account) mergeResult {
+	var r mergeResult
 	seen := map[string]bool{}
-	for _, a := range s.accounts {
-		seen[dedupeKey(a)] = true
+	for _, a := range account.Live(s.accounts) {
+		seen[merge.ContentKey(a)] = true
 	}
 	ts := now().Unix()
 	for _, a := range imported {
-		key := dedupeKey(a)
+		key := merge.ContentKey(a)
+		o := mergeOutcome{label: importedLabel(a), issuer: a.Issuer, account: a.Account, typ: string(a.Type)}
 		if seen[key] {
-			skipped++
+			r.skipped = append(r.skipped, o.label)
+			o.status, o.reason = outcomeSkipped, reasonAlreadyInVault
+			r.outcomes = append(r.outcomes, o)
 			continue
 		}
 		a.ID = newID()
 		a.CreatedAt = ts
 		a.UpdatedAt = ts
 		if err := a.Validate(); err != nil {
-			failed = append(failed, importProblem{importedLabel(a), err.Error()})
+			r.failed = append(r.failed, importProblem{o.label, userMessage(err)})
+			o.status, o.reason = outcomeFailed, userMessage(err)
+			r.outcomes = append(r.outcomes, o)
 			continue
 		}
 		seen[key] = true
 		s.accounts = append(s.accounts, a)
-		added++
+		r.added = append(r.added, a.ID)
+		o.status, o.id = outcomeAdded, a.ID
+		r.outcomes = append(r.outcomes, o)
 	}
-	return added, skipped, failed
+	return r
 }
 
 // importedLabel names an imported account in a problem line without exposing
@@ -267,11 +407,4 @@ func importedLabel(a account.Account) string {
 		return l
 	}
 	return "unnamed account"
-}
-
-func dedupeKey(a account.Account) string {
-	return strings.Join([]string{
-		string(a.Type), strings.ToLower(a.Issuer), strings.ToLower(a.Account),
-		base32x.EncodeNoPad(a.Secret),
-	}, "|")
 }

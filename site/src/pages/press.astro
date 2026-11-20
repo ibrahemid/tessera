@@ -1,9 +1,11 @@
 ---
+import { Image } from "astro:assets";
 import Base from "../layouts/Base.astro";
 import PageHead from "../components/PageHead.astro";
 import AppShot from "../components/AppShot.astro";
-import Still from "../components/Still.astro";
-import codesStill from "../assets/still-codes.png";
+import { CLI_PLATFORMS as cliPlatforms, versions } from "../data/release";
+import cliLight from "../../../docs/appstore-assets/03-cli-light.png";
+import cliDark from "../../../docs/appstore-assets/03-cli-dark.png";
 
 const repo = "https://github.com/ibrahemid/tessera";
 const raw = "https://raw.githubusercontent.com/ibrahemid/tessera/main/docs/appstore-assets";
@@ -14,24 +16,30 @@ const facts = [
   ["What it is", "A TOTP, HOTP and Steam Guard authenticator for macOS: a native app and a command-line tool that can share one encrypted vault."],
   ["Price", "Free. No in-app purchases."],
   ["License", "Apache-2.0. Source at github.com/ibrahemid/tessera."],
-  ["Platforms", "macOS 14 or later for the app. The CLI runs on macOS and Linux, arm64 and x86_64."],
-  ["Versions", "App 1.1.0 on the Mac App Store (2026-09-05). tess 1.1.0 (2026-09-05)."],
+  ["Platforms", `macOS ${versions.app.minimumMacOS} or later for the app. The CLI runs on ${cliPlatforms}, arm64 and x86_64.`],
+  ["Versions", `App ${versions.app.version} on the Mac App Store (${versions.app.date}). tess ${versions.cli.version} (${versions.cli.date}).`],
   ["First release", "App Store 2026-07-19. CLI 2026-07-21."],
   ["Storage", "An encrypted local file. XChaCha20-Poly1305 payload; the key is wrapped by argon2id from a passphrase and, in the app, by the Secure Enclave. There is no account and no server."],
   ["Contact", "support@ibrahemid.com"],
 ];
 
-const downloads = [
-  ["/press/tessera-icon-1024.png", "App icon, 1024 × 1024 PNG"],
-  [`${raw}/01-vault-dark.png`, "The app, dark, 2560 × 1600 PNG"],
-  [`${raw}/01-vault-light.png`, "The app, light, 2560 × 1600 PNG"],
-  [`${raw}/03-cli-dark.png`, "tess watch, dark, 2560 × 1600 PNG"],
-  [`${raw}/03-cli-light.png`, "tess watch, light, 2560 × 1600 PNG"],
-  ["/media/hero.mp4", "Terminal recording, 1000 × 560 MP4"],
-  ["/media/hero-poster.webp", "Terminal still, 1000 × 560 WebP"],
+type Download = { href: string; label: string };
+const iconFiles: Download[] = [{ href: "/press/tessera-icon-1024.png", label: "1024 × 1024 PNG" }];
+const appFiles: Download[] = [
+  { href: `${raw}/01-vault-dark.png`, label: "Dark, 2560 × 1600 PNG" },
+  { href: `${raw}/01-vault-light.png`, label: "Light, 2560 × 1600 PNG" },
 ];
+const watchFiles: Download[] = [
+  { href: `${raw}/03-cli-dark.png`, label: "Dark, 2560 × 1600 PNG" },
+  { href: `${raw}/03-cli-light.png`, label: "Light, 2560 × 1600 PNG" },
+];
+const recordingFiles: Download[] = [
+  { href: "/media/hero.mp4", label: "Recording, 1280 × 720 MP4" },
+  { href: "/media/hero-poster.webp", label: "Still, 1280 × 720 WebP" },
+];
+const watchAlt = "tess watch in a terminal window: the account list with codes and countdown bars";
 ---
-<Base title="Press kit — Tessera" description="Facts, links and downloadable assets for writing about Tessera: the app icon, screenshots and a terminal recording." current="/press">
+<Base title="Press kit · Tessera" description="Facts, links and downloadable assets for writing about Tessera: the app icon, screenshots and a terminal recording." current="/press">
   <PageHead kicker="Press" title="Facts and assets.">
     Everything on this page can be checked against the repository or the App Store listing. There are no quotes to attribute; if you need one, write to <a href="mailto:support@ibrahemid.com">support@ibrahemid.com</a>.
     <AppShot slot="media" sizes="(min-width: 900px) 34vw, 80vw" />
@@ -43,7 +51,7 @@ const downloads = [
         <div class="row"><dt>{k}</dt><dd>{v}</dd></div>
       ))}
     </dl>
-    <p class="mt-5 mono text-[0.8rem]">
+    <p class="mt-3 text-sm links">
       <a href={appStore} rel="noopener">App Store</a><span class="faint"> · </span>
       <a href={repo} rel="noopener">GitHub</a><span class="faint"> · </span>
       <a href="/security">Security</a><span class="faint"> · </span>
@@ -54,25 +62,72 @@ const downloads = [
 
   <section class="u-wide assets">
     <h2 class="h-sub">Assets</h2>
-    <div class="asset-preview mt-6">
-      <img src="/press/tessera-icon-1024.png" alt="The Tessera app icon: four rounded tiles, one gold" width="1024" height="1024" loading="lazy" class="icon" />
-      <Still src={codesStill} alt="tess printing four accounts with codes and countdown bars" sizes="(min-width: 900px) 40vw, 92vw" />
-      <AppShot sizes="(min-width: 900px) 22vw, 60vw" />
+    <div class="asset-grid mt-6">
+      <figure class="asset">
+        <div class="asset-media icon-media">
+          <img src="/press/tessera-icon-1024.png" alt="The Tessera app icon: four rounded tiles, one gold" width="1024" height="1024" loading="lazy" class="icon" />
+        </div>
+        <figcaption>
+          <span class="asset-name">App icon</span>
+          <ul class="files">
+            {iconFiles.map((f) => <li><a href={f.href} rel="noopener"><span class="sr-only">App icon, </span>{f.label}</a></li>)}
+          </ul>
+        </figcaption>
+      </figure>
+      <figure class="asset">
+        <div class="asset-media">
+          <AppShot sizes="(min-width: 900px) 40vw, 92vw" />
+        </div>
+        <figcaption>
+          <span class="asset-name">The app</span>
+          <ul class="files">
+            {appFiles.map((f) => <li><a href={f.href} rel="noopener"><span class="sr-only">The app, </span>{f.label}</a></li>)}
+          </ul>
+        </figcaption>
+      </figure>
+      <figure class="asset">
+        <div class="asset-media">
+          <Image src={cliLight} alt={watchAlt} widths={[720, 1440]} sizes="(min-width: 900px) 40vw, 92vw" format="webp" quality={88} loading="lazy" class="shot shot-light" />
+          <Image src={cliDark} alt={watchAlt} widths={[720, 1440]} sizes="(min-width: 900px) 40vw, 92vw" format="webp" quality={88} loading="lazy" class="shot shot-dark" />
+        </div>
+        <figcaption>
+          <span class="asset-name">tess watch</span>
+          <ul class="files">
+            {watchFiles.map((f) => <li><a href={f.href} rel="noopener"><span class="sr-only">tess watch, </span>{f.label}</a></li>)}
+          </ul>
+        </figcaption>
+      </figure>
+      <figure class="asset">
+        <div class="asset-media">
+          <img src="/media/hero-poster.webp" alt="The first frame of the terminal recording: tess watch with five accounts, codes and countdown bars" width="1280" height="720" loading="lazy" class="poster" />
+        </div>
+        <figcaption>
+          <span class="asset-name">Terminal recording</span>
+          <ul class="files">
+            {recordingFiles.map((f) => <li><a href={f.href} rel="noopener"><span class="sr-only">Terminal recording, </span>{f.label}</a></li>)}
+          </ul>
+        </figcaption>
+      </figure>
     </div>
-    <ul class="downloads mt-8">
-      {downloads.map(([href, label]) => (
-        <li><a href={href} rel="noopener">{label}</a></li>
-      ))}
-    </ul>
-    <p class="mt-6 soft measure">Use them as they are. The name is Tessera, set in the same case; the icon is not to be recolored.</p>
+    <p class="mt-8 soft measure">Use them as they are. The name is Tessera, set in the same case; the icon is not to be recolored.</p>
   </section>
 </Base>
 
 <style>
+  .links a { display: inline-flex; align-items: center; min-height: 44px; }
   .assets { padding-block: 5rem 6rem; }
-  .asset-preview { display: grid; gap: 1.5rem; align-items: start; grid-template-columns: 1fr; }
-  @media (min-width: 900px) { .asset-preview { grid-template-columns: 0.35fr 1.3fr 0.75fr; gap: 2.5rem; } }
-  .asset-preview .icon { display: block; width: 100%; max-width: 200px; height: auto; }
-  .downloads { display: grid; gap: 0.5rem 2rem; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); font-size: 0.95rem; }
-  .downloads a { color: var(--gold); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.15em; }
+  .asset-grid { display: grid; gap: 2.5rem 2.5rem; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 700px) { .asset-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .asset { margin: 0; display: flex; flex-direction: column; gap: 1rem; }
+  .asset-media { line-height: 0; }
+  .asset-media :global(.app-shot .shot) { max-width: none; }
+  .icon-media { aspect-ratio: 1.6; display: flex; align-items: center; justify-content: center; background: var(--surface-sunken); border-radius: 10px; box-shadow: 0 0 0 1px var(--line); }
+  .icon { display: block; width: 38%; max-width: 200px; height: auto; }
+  .shot, .poster { display: block; width: 100%; height: auto; border-radius: 10px; box-shadow: 0 0 0 1px var(--line-strong); }
+  .shot-dark { display: none; }
+  :global(html.dark) .shot-light { display: none; }
+  :global(html.dark) .shot-dark { display: block; }
+  .asset-name { display: block; font-family: var(--font-display); font-weight: 600; }
+  .files { display: flex; flex-wrap: wrap; column-gap: 1.5rem; font-size: 0.95rem; }
+  .files a { display: inline-flex; align-items: center; min-height: 44px; color: var(--gold); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.15em; }
 </style>

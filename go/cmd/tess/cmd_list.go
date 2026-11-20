@@ -1,7 +1,6 @@
 package main
 
 import (
-	"sort"
 	"strings"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
@@ -24,20 +23,15 @@ func newListCmd() *cobra.Command {
 			defer s.close()
 			accts := filterAccounts(s.accounts, folder, tag)
 			if asJSON {
-				type row struct {
-					ID      string   `json:"id"`
-					Issuer  string   `json:"issuer"`
-					Account string   `json:"account"`
-					Type    string   `json:"type"`
-					Folder  string   `json:"folder,omitempty"`
-					Tags    []string `json:"tags,omitempty"`
-					Pinned  bool     `json:"pinned"`
-				}
-				rows := make([]row, 0, len(accts))
+				rows := make([]listRow, 0, len(accts))
 				for _, a := range accts {
-					rows = append(rows, row{a.ID, a.Issuer, a.Account, string(a.Type), a.Folder, a.Tags, a.Pinned})
+					rows = append(rows, newListRow(a))
 				}
 				out(cmd, "%s", mustJSON(rows))
+				return nil
+			}
+			if len(account.Live(s.accounts)) == 0 {
+				out(cmd, "%s", ui.SubtleStyle.Render("No accounts. Add one with `tess add`."))
 				return nil
 			}
 			if len(accts) == 0 {
@@ -53,11 +47,12 @@ func newListCmd() *cobra.Command {
 				if len(a.Tags) > 0 {
 					meta += " #" + strings.Join(a.Tags, " #")
 				}
+				meta = ui.Sanitize(meta)
 				pin := "  "
 				if a.Pinned {
 					pin = ui.AccentStyle.Render("★ ")
 				}
-				out(cmd, "%s%s  %s  %s", pin, ui.Handle(a.Issuer+a.Account, padRight(a.Handle, hw)),
+				out(cmd, "%s%s  %s  %s", pin, ui.Handle(a.Issuer+a.Account, padRight(displayHandle(a), hw)),
 					ui.IssuerStyle.Render(padRight(label(a), 34)), ui.SubtleStyle.Render(meta))
 			}
 			return nil
@@ -69,9 +64,32 @@ func newListCmd() *cobra.Command {
 	return cmd
 }
 
+// listRow is the JSON shape of one account in `tess list --json`;
+// docs/CLI-JSON.md is its contract. It carries whether a note exists, never
+// the note.
+type listRow struct {
+	ID      string   `json:"id"`
+	Handle  string   `json:"handle"`
+	Issuer  string   `json:"issuer"`
+	Account string   `json:"account"`
+	Type    string   `json:"type"`
+	Folder  string   `json:"folder,omitempty"`
+	Tags    []string `json:"tags,omitempty"`
+	Pinned  bool     `json:"pinned"`
+	HasNote bool     `json:"has_note"`
+	Order   int      `json:"order,omitempty"`
+}
+
+func newListRow(a account.Account) listRow {
+	return listRow{
+		ID: a.ID, Handle: a.Handle, Issuer: a.Issuer, Account: a.Account, Type: string(a.Type),
+		Folder: a.Folder, Tags: a.Tags, Pinned: a.Pinned, HasNote: a.Note != "", Order: a.Order,
+	}
+}
+
 func filterAccounts(in []account.Account, folder, tag string) []account.Account {
 	var out []account.Account
-	for _, a := range in {
+	for _, a := range account.Live(in) {
 		if folder != "" && a.Folder != folder {
 			continue
 		}
@@ -80,12 +98,7 @@ func filterAccounts(in []account.Account, folder, tag string) []account.Account 
 		}
 		out = append(out, a)
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Pinned != out[j].Pinned {
-			return out[i].Pinned
-		}
-		return strings.ToLower(label(out[i])) < strings.ToLower(label(out[j]))
-	})
+	sortForDisplay(out)
 	return out
 }
 

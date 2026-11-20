@@ -17,13 +17,30 @@ public struct Argon2Reference: Argon2idProvider {
     public func deriveKey(passphrase: Data, salt: Data, memoryKiB: UInt32, iterations: UInt32,
                           parallelism: UInt8, keyLength: Int) throws -> Data {
         var out = [UInt8](repeating: 0, count: keyLength)
-        let pwd = [UInt8](passphrase)
+        var pwd = [UInt8](passphrase)
         let slt = [UInt8](salt)
+        defer {
+            SecureZero.zero(&pwd)
+            SecureZero.zero(&out)
+        }
         let rc = argon2id_hash_raw(
             iterations, memoryKiB, UInt32(parallelism),
             pwd, pwd.count, slt, slt.count, &out, keyLength
         )
         guard rc == 0 else { throw Argon2Error.failed(rc) }
-        return Data(out)
+        return out.withUnsafeBytes { Data($0) }
+    }
+}
+
+enum SecureZero {
+    static func zero(_ bytes: inout [UInt8]) {
+        bytes.withUnsafeMutableBytes { buf in
+            guard let base = buf.baseAddress, buf.count > 0 else { return }
+            #if canImport(Darwin)
+            _ = memset_s(base, buf.count, 0, buf.count)
+            #else
+            buf.initializeMemory(as: UInt8.self, repeating: 0)
+            #endif
+        }
     }
 }

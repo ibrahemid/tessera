@@ -2,15 +2,17 @@
 import Base from "../layouts/Base.astro";
 import PageHead from "../components/PageHead.astro";
 import AppShot from "../components/AppShot.astro";
+import { SECRET_STORES, versions } from "../data/release";
+import { joinList } from "../data/release-model";
 const repo = "https://github.com/ibrahemid/tessera";
 const sections = [
   {
     h: "What Tessera stores",
-    b: "Your two-factor accounts (issuer, label, and secret keys) are kept in an encrypted vault on your Mac. The vault is sealed with XChaCha20-Poly1305 under a random key. That key is wrapped independently by each unlock method: the Secure Enclave on a Mac, and an argon2id key derived from your passphrase. Touch ID can gate the Secure Enclave wrap.",
+    b: `Your two-factor accounts (issuer, label, and secret keys) are kept in an encrypted vault on your device: your Mac for the app, and ${joinList(versions.cli.platforms, "or")} for the tess CLI. The vault is sealed with XChaCha20-Poly1305 under a random key. That key is wrapped independently by each unlock method: the Secure Enclave on a Mac, and an argon2id key derived from your passphrase. Touch ID can gate the Secure Enclave wrap. If you run tess vault remember, the CLI stores your passphrase in the system secret store: ${joinList(SECRET_STORES, "or")}. tess vault forget removes it.`,
   },
   {
     h: "What Tessera transmits",
-    b: "Nothing. Codes are generated offline. Tessera connects to no server we operate and contains no analytics, advertising, or crash-reporting SDKs. The app has no network entitlement.",
+    b: "Nothing. Codes are generated offline. Tessera connects to no server we operate and contains no analytics, advertising, or crash-reporting SDKs. The app has no network entitlement. The tess CLI links no HTTP or TLS code and never opens a network connection; on Linux it talks to the Secret Service over the local D-Bus socket.",
   },
   {
     h: "Permissions",
@@ -26,10 +28,10 @@ const sections = [
   },
 ];
 ---
-<Base title="Privacy — Tessera" description="Tessera collects nothing. Your 2FA secrets are encrypted on your device and never transmitted. This site counts page views with self-hosted Umami." current="/privacy">
+<Base title="Privacy · Tessera" description="Tessera collects nothing. Your 2FA secrets are encrypted on your device and never transmitted. This site counts page views with self-hosted Umami." current="/privacy">
   <PageHead kicker="Privacy" title="Nothing to collect.">
     Tessera has no accounts and no servers. Your data stays on your device, encrypted, and we have no way to see it.
-    <span class="block mt-3 text-sm faint">Last updated August 2026</span>
+    <span class="block mt-3 text-sm faint">Last updated November 2026</span>
     <AppShot slot="media" sizes="(min-width: 900px) 34vw, 80vw" />
   </PageHead>
 
@@ -43,7 +45,7 @@ const sections = [
     <section class="mt-10">
       <h2 class="h-small">Open source</h2>
       <p class="mt-2.5 soft">
-        Tessera is open source under Apache-2.0. You can read exactly what it does and build it yourself:
+        Tessera is open source under Apache-2.0. You can read exactly what it does and build it yourself:{" "}
         <a href={repo} rel="noopener">github.com/ibrahemid/tessera</a>. The security details are on <a href="/security">/security</a>.
       </p>
     </section>

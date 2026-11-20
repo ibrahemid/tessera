@@ -26,5 +26,19 @@
     <false/>
     <key>NSHumanReadableCopyright</key>
     <string>Open source, Apache-2.0.</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>$(PRODUCT_BUNDLE_IDENTIFIER).otpauth</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>otpauth</string>
+                <string>otpauth-migration</string>
+            </array>
+        </dict>
+    </array>
 </dict>
 </plist>

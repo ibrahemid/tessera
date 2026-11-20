@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -149,6 +150,110 @@ func TestResolvePrecedence(t *testing.T) {
 	}
 }
 
+// TestResolveExactID pins the id stage on every resolver entry point the
+// commands call: a full, case-exact id picks its account before a handle equal
+// to the same text, within the scope the entry point resolves in.
+func TestResolveExactID(t *testing.T) {
+	const (
+		liveID    = "49abdd291b36981883aafdd2e47ced39"
+		trashedID = "d8db694d88f80749163b421a5489f884"
+	)
+	accounts := func() *session {
+		return sess(
+			account.Account{ID: liveID, Handle: "gi", Issuer: "GitHub", Account: "dev"},
+			account.Account{ID: "b", Handle: liveID, Issuer: "Other", Account: "ops"},
+			account.Account{ID: trashedID, Handle: "st", Issuer: "Steam", Account: "me", DeletedAt: 5},
+			account.Account{ID: "d", Handle: trashedID, Issuer: "Old", Account: "x", DeletedAt: 6},
+		)
+	}
+	type resolver func(s *session, cmd *cobra.Command, q string) (int, error)
+	one := func(idxs []int, err error) (int, error) {
+		if err != nil {
+			return -1, err
+		}
+		if len(idxs) != 1 {
+			return -1, fmt.Errorf("%d matches", len(idxs))
+		}
+		return idxs[0], nil
+	}
+	live := map[string]resolver{
+		"resolveMatches": func(s *session, _ *cobra.Command, q string) (int, error) { return one(s.resolveMatches(q)) },
+		"resolveIn live": func(s *session, _ *cobra.Command, q string) (int, error) { return one(s.resolveIn(q, false)) },
+		"single":         func(s *session, c *cobra.Command, q string) (int, error) { return s.single(c, q) },
+		"singleIn live":  func(s *session, c *cobra.Command, q string) (int, error) { return s.singleIn(c, q, false) },
+		"singleScoped live": func(s *session, c *cobra.Command, q string) (int, error) {
+			return s.singleScoped(c, q, liveScope)
+		},
+		"singleScoped liveThenTrash": func(s *session, c *cobra.Command, q string) (int, error) {
+			return s.singleScoped(c, q, liveThenTrashScope)
+		},
+		"resolveEach live": func(s *session, c *cobra.Command, q string) (int, error) {
+			return one(s.resolveEach(c, []string{q}, liveScope))
+		},
+		"resolveEach liveThenTrash": func(s *session, c *cobra.Command, q string) (int, error) {
+			return one(s.resolveEach(c, []string{q}, liveThenTrashScope))
+		},
+	}
+	trash := map[string]resolver{
+		"resolveIn trash": func(s *session, _ *cobra.Command, q string) (int, error) { return one(s.resolveIn(q, true)) },
+		"singleIn trash":  func(s *session, c *cobra.Command, q string) (int, error) { return s.singleIn(c, q, true) },
+		"singleScoped trash": func(s *session, c *cobra.Command, q string) (int, error) {
+			return s.singleScoped(c, q, trashScope)
+		},
+		"resolveEach trash": func(s *session, c *cobra.Command, q string) (int, error) {
+			return one(s.resolveEach(c, []string{q}, trashScope))
+		},
+	}
+	cases := []struct {
+		name      string
+		resolvers map[string]resolver
+		query     string
+		wantID    string
+		wantErr   string
+	}{
+		{"live id beats an equal handle", live, liveID, liveID, ""},
+		{"live id is trimmed", live, "  " + liveID + "\t", liveID, ""},
+		{"partial id is not an id", live, liveID[:12], "b", ""},
+		{"id compares case-sensitively", live, strings.ToUpper(liveID), "b", ""},
+		{"trashed id beats an equal trashed handle", trash, trashedID, trashedID, ""},
+		{"trashed partial id is not an id", trash, trashedID[:12], "d", ""},
+		{"live scope ignores a trashed id", map[string]resolver{
+			"resolveMatches": live["resolveMatches"],
+			"single":         live["single"],
+			"resolveEach":    live["resolveEach live"],
+		}, trashedID, "", "in the Trash"},
+		{"trash scope ignores a live id", trash, liveID, "", "nothing in the Trash matches"},
+		{"liveThenTrash falls back to a trashed id", map[string]resolver{
+			"singleScoped": live["singleScoped liveThenTrash"],
+			"resolveEach":  live["resolveEach liveThenTrash"],
+		}, trashedID, trashedID, ""},
+	}
+	for _, tc := range cases {
+		for name, resolve := range tc.resolvers {
+			t.Run(tc.name+"/"+name, func(t *testing.T) {
+				stubTTY(t, false)
+				s := accounts()
+				cmd := &cobra.Command{}
+				cmd.SetOut(io.Discard)
+				cmd.SetErr(io.Discard)
+				idx, err := resolve(s, cmd, tc.query)
+				if tc.wantErr != "" {
+					if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+						t.Fatalf("err = %v, want one containing %q", err, tc.wantErr)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatalf("resolve %q: %v", tc.query, err)
+				}
+				if got := s.accounts[idx].ID; got != tc.wantID {
+					t.Errorf("resolve %q picked %q, want %q", tc.query, got, tc.wantID)
+				}
+			})
+		}
+	}
+}
+
 func TestMatchTableOutput(t *testing.T) {
 	s := sess(totp("1", "ACME", "alice", 1), totp("2", "ACME", "bob", 2))
 	account.AssignHandles(s.accounts)
@@ -157,7 +262,7 @@ func TestMatchTableOutput(t *testing.T) {
 	cmd.SetOut(&buf)
 	printMatchTable(cmd, s.accounts, []int{0, 1}, false)
 	got := buf.String()
-	for _, want := range []string{"handle", "issuer", "account", "ac", "ac2", "alice", "bob"} {
+	for _, want := range []string{"alias", "issuer", "account", "ac", "ac2", "alice", "bob"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("table missing %q:\n%s", want, got)
 		}
@@ -213,8 +318,9 @@ func TestCodeMultiMatch(t *testing.T) {
 	path := withVault(t)
 	sealVault(t, path, []account.Account{totp("a", "ACME", "one", 1), totp("b", "ACME", "two", 2)})
 
-	// Every match is listed with its code, and the command exits 0: the table
-	// answers the question, so there is nothing to disambiguate for.
+	// On a terminal every match is listed with its code, and the command exits
+	// 0: the table answers the question, so there is nothing to disambiguate for.
+	stubTTY(t, true)
 	c := newCodeCmd()
 	var buf bytes.Buffer
 	c.SetOut(&buf)

@@ -130,7 +130,7 @@ func TestMigrationQRRoundTrip(t *testing.T) {
 func TestMigrationNameSplitEdge(t *testing.T) {
 	a := account.Account{ID: "x", Type: account.TOTP, Account: "host:port",
 		Secret: mustSecret(t, "JBSWY3DPEHPK3PXP"), Algorithm: "SHA1", Digits: 6, Period: 30}
-	params, reason := encodeOtpParameters(a)
+	params, reason, _ := encodeOtpParameters(a)
 	if reason != "" {
 		t.Fatalf("account should be encodable, got %q", reason)
 	}

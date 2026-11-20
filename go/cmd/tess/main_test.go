@@ -142,9 +142,11 @@ func TestRootUnknownQueryReportsNoMatch(t *testing.T) {
 func TestRootGroupsEveryVisibleCommand(t *testing.T) {
 	root := newRootCmd()
 	want := map[string]string{
-		"code": "codes", "watch": "codes",
+		"code": "codes", "verify": "codes", "watch": "codes",
 		"add": "accounts", "list": "accounts", "show": "accounts", "rename": "accounts",
 		"alias": "accounts", "move": "accounts", "tag": "accounts", "rm": "accounts",
+		"note": "accounts", "pin": "accounts", "unpin": "accounts", "order": "accounts",
+		"edit": "accounts", "dedupe": "accounts", "trash": "accounts", "restore": "accounts",
 		"import": "transfer", "export": "transfer", "merge": "transfer",
 		"vault": "vault",
 	}

@@ -11,6 +11,31 @@ import (
 // ErrLocked reports that another process currently holds the vault lock.
 var ErrLocked = errors.New("store: vault lock is held")
 
+// LockFileError reports a lock sidecar that tess refuses to use: a symlink,
+// something other than a regular file, a file owned by another user, or a
+// mode other than 0600.
+type LockFileError struct {
+	Path   string
+	Reason string
+}
+
+func (e *LockFileError) Error() string {
+	return fmt.Sprintf("store: lock file %s %s; remove it and retry", e.Path, e.Reason)
+}
+
+func lockOpenError(lockPath string, err error) error {
+	info, lerr := os.Lstat(lockPath)
+	switch {
+	case lerr != nil:
+		return err
+	case info.Mode()&os.ModeSymlink != 0:
+		return &LockFileError{Path: lockPath, Reason: "is a symbolic link"}
+	case !info.Mode().IsRegular():
+		return &LockFileError{Path: lockPath, Reason: "is not a regular file"}
+	}
+	return err
+}
+
 // Lock timing: the holder may be running argon2id or waiting on the user, so
 // the wait is generous, but it is bounded: a wedged process must not block
 // every other invocation forever.
@@ -35,7 +60,7 @@ func LockPath(vaultPath string) string { return vaultPath + ".lock" }
 // It returns ErrLocked when another process holds it.
 func TryAcquire(vaultPath string) (*Lock, error) {
 	lp := LockPath(vaultPath)
-	if err := os.MkdirAll(filepath.Dir(lp), 0o700); err != nil {
+	if err := mkdirPrivate(filepath.Dir(lp)); err != nil {
 		return nil, fmt.Errorf("store: create vault dir: %w", err)
 	}
 	l, err := tryAcquire(lp)
@@ -44,6 +69,10 @@ func TryAcquire(vaultPath string) (*Lock, error) {
 	}
 	if errors.Is(err, ErrLocked) {
 		return nil, ErrLocked
+	}
+	var lfe *LockFileError
+	if errors.As(err, &lfe) {
+		return nil, err
 	}
 	return nil, fmt.Errorf("store: lock %s: %w", lp, err)
 }

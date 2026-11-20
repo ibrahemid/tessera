@@ -264,3 +264,46 @@ func TestParseErrorNeverEchoesTheURI(t *testing.T) {
 		t.Fatalf("the error echoes the URI: %v", err)
 	}
 }
+
+func TestParseStrictness(t *testing.T) {
+	const secret = "JBSWY3DPEHPK3PXP"
+	valid := map[string]string{
+		"upper-case scheme": "OTPAUTH://TOTP/Acme:me?secret=" + secret,
+		"counter at max":    "otpauth://hotp/Acme:me?secret=" + secret + "&counter=9223372036854775806",
+		"plus in issuer":    "otpauth://totp/Acme%20Corp:me?secret=" + secret + "&issuer=Acme+Corp",
+		"repeated key":      "otpauth://totp/Acme:me?secret=" + secret + "&issuer=Acme&issuer=Other",
+	}
+	for name, uri := range valid {
+		if _, err := Parse(uri); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	invalid := map[string]string{
+		"bad escape in label":       "otpauth://totp/Ac%ZZme:me?secret=" + secret,
+		"bad escape in query value": "otpauth://totp/Acme:me?secret=" + secret + "&issuer=Ac%ZZme",
+		"bad escape in query key":   "otpauth://totp/Acme:me?secret=" + secret + "&%ZZ=1",
+		"bad escape in ignored key": "otpauth://totp/Acme:me?secret=" + secret + "&image=%G1",
+		"counter above max":         "otpauth://hotp/Acme:me?secret=" + secret + "&counter=9223372036854775807",
+		"counter overflow":          "otpauth://hotp/Acme:me?secret=" + secret + "&counter=18446744073709551616",
+		"negative counter":          "otpauth://hotp/Acme:me?secret=" + secret + "&counter=-1",
+	}
+	for name, uri := range invalid {
+		if _, err := Parse(uri); err == nil {
+			t.Errorf("%s: expected rejection", name)
+		}
+	}
+	a, err := Parse("otpauth://hotp/Acme:me?secret=" + secret + "&counter=9223372036854775806")
+	if err != nil || a.Counter != account.MaxCounter {
+		t.Errorf("counter at max: %d %v", a.Counter, err)
+	}
+}
+
+func TestParseCleansText(t *testing.T) {
+	a, err := Parse("otpauth://totp/%E2%80%AEAc%07me%20:%EF%BB%BFme%E2%80%8F?secret=JBSWY3DPEHPK3PXP&issuer=Ac%C2%85me")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Issuer != "Acme" || a.Account != "me\u200f" {
+		t.Errorf("issuer/account = %q/%q", a.Issuer, a.Account)
+	}
+}

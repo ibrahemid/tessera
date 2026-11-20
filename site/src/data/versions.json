@@ -1,0 +1,20 @@
+{
+  "cli": {
+    "version": "1.1.0",
+    "date": "2026-09-05",
+    "platforms": ["macOS", "Linux"],
+    "files": [
+      { "label": "macOS, Apple silicon", "file": "tess_1.1.0_darwin_arm64.tar.gz", "sha256": "75df08b715dc31a326d25061a64171423bce245cf6f5943753577470a0275568" },
+      { "label": "macOS, Intel", "file": "tess_1.1.0_darwin_amd64.tar.gz", "sha256": "84cd31b461cc868cdb219b3da47c7885fff70f9a6b501a69258d1b5aea5399f7" },
+      { "label": "Linux, arm64", "file": "tess_1.1.0_linux_arm64.tar.gz", "sha256": "baf83665ca822a8f75882cc9e08178593d8ca65bbf8c6deb3d4158fbb4264346" },
+      { "label": "Linux, x86_64", "file": "tess_1.1.0_linux_amd64.tar.gz", "sha256": "94144967eddcc5635ce2f1087ea51644fc7195b8482a7c28c12622804b933387" }
+    ],
+    "packages": [],
+    "signature": null
+  },
+  "app": {
+    "version": "1.1.0",
+    "date": "2026-09-05",
+    "minimumMacOS": "14"
+  }
+}

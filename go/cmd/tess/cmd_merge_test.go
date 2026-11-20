@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
+	"github.com/ibrahemid/tessera/go/internal/merge"
 	"github.com/ibrahemid/tessera/go/internal/store"
 	"github.com/ibrahemid/tessera/go/internal/vault"
 )
@@ -251,7 +252,7 @@ func TestMergeTwoWaySecondRunIsANoOp(t *testing.T) {
 	runMergeTwoWay(t, src)
 	out := runMergeTwoWay(t, src)
 
-	if !strings.Contains(out, "+0 ~0 here, +0 ~0 there") {
+	if !strings.Contains(out, ": 2 unchanged here; 2 unchanged in the source") {
 		t.Fatalf("a converged second run should change nothing, got %q", out)
 	}
 	if len(openVaultFile(t, target, "testpass123")) != 2 || len(openVaultFile(t, src, "testpass123")) != 2 {
@@ -350,5 +351,45 @@ func TestMergeOneWayLeavesTheSourceAlone(t *testing.T) {
 	}
 	if !strings.Contains(out, "1 added") {
 		t.Errorf("one-way output changed: %q", out)
+	}
+}
+
+func TestMergeReportNamesOnlyTheNonZeroCounts(t *testing.T) {
+	cases := []struct {
+		counts merge.Counts
+		want   string
+	}{
+		{merge.Counts{}, ""},
+		{merge.Counts{Added: 2}, "2 added"},
+		{merge.Counts{Added: 1, Updated: 2, Trashed: 3, Unchanged: 4, Duplicate: 5, Invalid: 6},
+			"1 added, 2 updated, 3 moved to the Trash, 4 unchanged, 5 already present, 6 invalid"},
+	}
+	for _, c := range cases {
+		if got := countsPhrase(c.counts); got != c.want {
+			t.Errorf("countsPhrase(%+v) = %q, want %q", c.counts, got, c.want)
+		}
+	}
+	if got := mergeReport("v.json", ""); got != "Merged v.json: no accounts" {
+		t.Errorf("empty report = %q", got)
+	}
+}
+
+func TestMergeReportsAContentDuplicate(t *testing.T) {
+	dst := withVault(t)
+	sealVault(t, dst, []account.Account{totp("a", "Acme", "me", 1)})
+	src := filepath.Join(t.TempDir(), "other.json")
+	sealAt(t, src, "testpass123", []account.Account{totp("a2", "ACME", "ME", 2)})
+	if got := runMerge(t, src); got != "Merged "+src+": 1 already present\n" {
+		t.Errorf("report = %q", got)
+	}
+}
+
+func TestMergeTwoWayLeavesOutAnEmptySide(t *testing.T) {
+	target := withVault(t)
+	sealAt(t, target, "testpass123", nil)
+	src := filepath.Join(t.TempDir(), "src.json")
+	sealAt(t, src, "testpass123", []account.Account{totp("b", "Beta", "y", 2)})
+	if got := runMergeTwoWay(t, src); got != "Merged "+src+": 1 added here\n" {
+		t.Errorf("report = %q", got)
 	}
 }

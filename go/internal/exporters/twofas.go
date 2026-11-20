@@ -22,6 +22,7 @@ func (twofasExporter) Description() string { return "2FAS Auth backup JSON (no b
 type twofasExport struct {
 	SchemaVersion int             `json:"schemaVersion"`
 	Services      []twofasService `json:"services"`
+	Groups        []twofasGroup   `json:"groups"`
 }
 
 type twofasService struct {
@@ -30,6 +31,14 @@ type twofasService struct {
 	UpdatedAt int64       `json:"updatedAt"`
 	OTP       twofasOTP   `json:"otp"`
 	Order     twofasOrder `json:"order"`
+	GroupID   *string     `json:"groupId"`
+}
+
+type twofasGroup struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	IsExpanded bool   `json:"isExpanded"`
+	UpdatedAt  int64  `json:"updatedAt"`
 }
 
 type twofasOTP struct {
@@ -50,7 +59,10 @@ type twofasOrder struct {
 }
 
 func (twofasExporter) Render(accts []account.Account) ([]File, []Skipped, error) {
-	out := twofasExport{SchemaVersion: 4, Services: make([]twofasService, 0, len(accts))}
+	out := twofasExport{SchemaVersion: 4, Services: make([]twofasService, 0, len(accts)), Groups: []twofasGroup{}}
+	for _, f := range foldersOf(accts) {
+		out.Groups = append(out.Groups, twofasGroup{ID: f.id, Name: f.name, IsExpanded: true, UpdatedAt: f.lastUpdatedAt * 1000})
+	}
 	for i, a := range accts {
 		s := twofasService{
 			Name:      displayName(a),
@@ -66,7 +78,8 @@ func (twofasExporter) Render(accts []account.Account) ([]File, []Skipped, error)
 				TokenType: tokenType(a.Type),
 				Source:    "Link",
 			},
-			Order: twofasOrder{Position: i},
+			Order:   twofasOrder{Position: i},
+			GroupID: optionalFolderID(a),
 		}
 		if a.Type == account.HOTP {
 			s.OTP.Counter = int64Ptr(a.Counter)

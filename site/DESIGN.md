@@ -86,7 +86,7 @@ both; the multi-hue mosaic colors appear only inside live tiles and as small iss
 | `--surface-sunken` | `#F3F1EC` | wells, code blocks bg |
 | `--ink` | `#17181D` | primary text |
 | `--ink-soft` | `#595E6B` | secondary text |
-| `--ink-faint` | `#8A8F9C` | captions, meta |
+| `--ink-faint` | `#696E7A` | captions, meta |
 | `--line` | `rgba(23,24,29,0.09)` | hairlines, tile borders |
 
 ### Dark — "Tessellate" (ink + gold, Byzantine)
@@ -97,13 +97,13 @@ both; the multi-hue mosaic colors appear only inside live tiles and as small iss
 | `--surface-sunken` | `#0A0B0E` | wells, code blocks bg |
 | `--ink` | `#ECEDF1` | primary text |
 | `--ink-soft` | `#9398A6` | secondary text |
-| `--ink-faint` | `#6A6F7C` | captions, meta |
+| `--ink-faint` | `#7B818E` | captions, meta |
 | `--line` | `rgba(255,255,255,0.09)` | hairlines, tile borders |
 
 ### Gold (brand accent — both themes)
 | Token | Light | Dark | Use |
 |---|---|---|---|
-| `--gold` | `#B07D1A` | `#E3B23C` | accent text/links (AA on canvas) |
+| `--gold` | `#926410` | `#E3B23C` | accent text/links (AA on canvas) |
 | `--gold-solid` | `#C8901E` | `#E3B23C` | filled buttons / the gold tessera |
 | `--gold-bright` | `#E3B23C` | `#F0C45A` | highlights, ring leading edge |
 | `--on-gold` | `#1A1206` | `#1A1206` | text on a gold fill |

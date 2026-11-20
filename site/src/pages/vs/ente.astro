@@ -3,15 +3,25 @@ import Base from "../../layouts/Base.astro";
 import PageHead from "../../components/PageHead.astro";
 import AppShot from "../../components/AppShot.astro";
 
-const rows = [
-  ["Price", "Free", "Free"],
-  ["Source", "Open source", "Open source, Apache-2.0"],
-  ["Sync", "End-to-end encrypted sync through an Ente account", "None. The vault is a file you copy, back up, or merge with tess merge"],
-  ["Platforms", "iOS, Android, web, and a desktop app for macOS, Windows and Linux", "A native macOS app; the tess CLI on macOS and Linux"],
-  ["Mac App Store", "Not listed, checked 2026-08-22", "Listed, sandboxed, privacy label Data Not Collected"],
-  ["Command line", "None", "tess: codes, --json, watch, import, export, completions"],
-  ["Vault format", "Ente's own", "Documented spec with two independent implementations tested against shared vectors"],
-  ["Import", "otpauth links and QR codes, plus exports from other apps", "otpauth links, QR images, Google Authenticator exports, Aegis, 2FAS and Raivo files"],
+import { CLI_PLATFORMS as cliPlatforms } from "../../data/release";
+
+const repo = "https://github.com/ibrahemid/tessera";
+const enteAuth: [string, string] = ["https://ente.com/auth/", "ente.com/auth"];
+const enteHelp: [string, string] = ["https://ente.com/help/auth/", "Ente Auth help"];
+const enteImport: [string, string] = ["https://ente.com/help/auth/migration/import", "Ente Auth import guide"];
+
+type Row = { k: string; them: string; us: string; src: [string, string][] };
+const rows: Row[] = [
+  { k: "Price", them: "Free", us: "Free", src: [enteHelp] },
+  { k: "Source", them: "Open source", us: "Open source, Apache-2.0", src: [enteAuth] },
+  { k: "Sync", them: "End-to-end encrypted sync", us: "None. The vault is a file you copy, back up, or merge with tess merge", src: [enteAuth] },
+  { k: "Platforms", them: "iOS, Android, web, and a desktop app for macOS, Windows and Linux", us: `A native macOS app; the tess CLI on ${cliPlatforms}`, src: [enteAuth] },
+  {
+    k: "Import",
+    them: "A plain text file of otpauth links, its own encrypted exports, and exports from apps including 2FAS, Aegis, andOTP, Bitwarden, Google Authenticator, LastPass, Proton and Raivo",
+    us: "otpauth links, QR images, Google Authenticator exports, and unencrypted exports from Aegis, 2FAS, Raivo, andOTP, FreeOTP+, Stratum, Bitwarden, Proton Authenticator, Ente Auth, Apple Passwords and 1Password",
+    src: [enteImport],
+  },
 ];
 ---
 <Base
@@ -25,16 +35,22 @@ const rows = [
   </PageHead>
 
   <div class="measure cmp">
-    <table>
-      <thead>
-        <tr><th></th><th>Ente Auth</th><th>Tessera</th></tr>
-      </thead>
-      <tbody>
-        {rows.map(([k, a, b]) => (
-          <tr><th scope="row">{k}</th><td>{a}</td><td>{b}</td></tr>
-        ))}
-      </tbody>
-    </table>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th></th><th>Ente Auth</th><th>Tessera</th></tr>
+        </thead>
+        <tbody>
+          {rows.map(({ k, them, us, src }) => (
+            <tr>
+              <th scope="row">{k}</th>
+              <td>{them}<span class="src">{src.map(([href, label], i) => (<>{i > 0 && " · "}<a href={href} rel="noopener">{label}</a></>))}</span></td>
+              <td>{us}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
 
     <h2 class="h-sub mt-14">Pick Ente Auth if</h2>
     <ul class="mt-4 soft list">
@@ -51,19 +67,29 @@ const rows = [
 
     <h2 class="h-sub mt-12">Moving in either direction</h2>
     <p class="mt-4 soft">
-      Both read standard otpauth links and QR codes. For any service, the setup QR from its security page works in either app. Tessera also imports an Ente-style export only if it is a plain file of otpauth lines; encrypted exports need to be decrypted first.
+      Ente Auth imports a plain text file of otpauth links, and <span class="mono">tess export --uri</span> prints one link per account. Tessera imports Ente Auth's plain text export and rejects the encrypted one with an error that says how to export it unencrypted; the steps are in <a href={`${repo}/blob/main/docs/TRANSFER.md`} rel="noopener">docs/TRANSFER.md</a>.
     </p>
-    <p class="mt-4 soft">Facts about Ente Auth were checked on 2026-08-22 and may have changed; its site is <a href="https://ente.io/auth/" rel="noopener">ente.io/auth</a>.</p>
+    <p class="mt-4 soft">Facts about Ente Auth were checked on 2026-11-20 against <a href={enteAuth[0]} rel="noopener">ente.com/auth</a> and its help pages, and may have changed.</p>
   </div>
 </Base>
 
 <style>
   .cmp { padding-block: 1rem 6rem; }
+  .table-wrap { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
-  th, td { text-align: left; vertical-align: top; padding: 0.8rem 1rem 0.8rem 0; border-bottom: 1px solid var(--line); }
+  th, td { text-align: left; vertical-align: top; padding: 0.8rem 1rem 0.8rem 0; border-bottom: 1px solid var(--line); overflow-wrap: break-word; }
   thead th { font-family: var(--font-display); font-size: 1.05rem; }
-  tbody th { color: var(--ink); white-space: nowrap; }
+  tbody th { color: var(--ink); width: 7.5rem; }
   td { color: var(--ink-soft); }
+  .src { display: block; margin-top: 0.25rem; font-size: 0.85rem; }
+  .src a { display: inline-flex; align-items: center; min-height: 44px; }
+  @media (max-width: 639px) {
+    table { border-collapse: separate; border-spacing: 0; }
+    tr { display: grid; grid-template-columns: 1fr 1fr; column-gap: 1rem; border-bottom: 1px solid var(--line); }
+    th, td { border-bottom: 0; padding-right: 0; }
+    thead th:first-child { display: none; }
+    tbody th { grid-column: 1 / -1; width: auto; padding-bottom: 0; }
+  }
   .list li { padding-left: 1.1rem; position: relative; }
   .list li + li { margin-top: 0.5rem; }
   .list li::before { content: ""; position: absolute; left: 0; top: 0.72em; width: 0.4rem; height: 0.4rem; border-radius: 2px; background: var(--gold); }

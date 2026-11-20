@@ -9,7 +9,7 @@ Goal: install `tess` or get the app, in under one scroll.
 Tone: a security tool written by someone who ships. Facts, code links, no adjectives.
 Main objection: "why not Ente / Proton", and "is this safe". Answered by the recording (it works), the Mac App Store badge (reviewed, sandboxed) and the security rows (each one links to its file).
 Must remember: the `tess watch` table with live countdown bars, readable at 1440 without zoom.
-Constraints: Astro 5 static, Tailwind 4, zero JS beyond theme toggle, copy and play gating; light default with system dark; allowed claims per `marketer/apps/tessera/profile.md`; keep the badge, trust + brew lines, curl line, tarballs, smart banner meta, JSON-LD, sitemap, Umami, privacy disclosure.
+Constraints: Astro 7 static, Tailwind 4, zero JS beyond theme toggle, copy and play gating; light default with system dark; allowed claims per `marketer/apps/tessera/profile.md`; keep the badge, trust + brew lines, curl line, tarballs, smart banner meta, JSON-LD, sitemap, Umami, privacy disclosure.
 Path: visual exploration (three wireframes), then direct build.
 
 ## References
@@ -29,7 +29,7 @@ Borrow only: zed hairline columns + source-link proof; Things/CleanShot viewport
 Role rules: gold is the accent for links, the primary button and the wordmark tile only; never a background, never a band; terminal palette (the vhs theme) stays inside the terminal; green `$` prompt stays inside command blocks
 Media strategy: hero = vhs recording of the real binary, 1280x720 (16:9), poster = frame 0; app = real window captures light + dark (1440x1044 @2x) cut by the viewport edge; secondary = window crops from the 1.0.3 store frames (lock screen, import sheet) until the owed loops land; no CSS mocks, no placeholders
 Reject: centered hero; card grids; icon + three words; gradient blobs; a hero that bleeds past the header's edge; two maximum widths on one page; a mono kicker on every section; decorative serif or italic word swaps; dark-only page
-Token commitments: paper #fbfaf7 / ink #17181d (light), #0e0f13 / #ecedf1 (dark); band #0e0f13 in both themes; gold #b07d1a light, #e3b23c dark; hairline rgba(23,24,29,.09); radius 10 px on media, 0.6rem on buttons; Schibsted Grotesk 700 display, Hanken Grotesk 400 body, IBM Plex Mono 400
+Token commitments: paper #fbfaf7 / ink #17181d (light), #0e0f13 / #ecedf1 (dark); band #0e0f13 in both themes; gold #926410 light (text, links, focus ring; #c8901e fill), #e3b23c dark; ink-faint #696e7a light, #7b818e dark and in bands; every text pair at WCAG AA 4.5:1; hairline rgba(23,24,29,.09); radius 10 px on media, 0.6rem on buttons; Schibsted Grotesk 700 display, Hanken Grotesk 400 body, IBM Plex Mono 400
 ```
 
 ## Composition rules (from AUDIT.md findings 1, 3, 4, 7)
@@ -53,3 +53,11 @@ Token commitments: paper #fbfaf7 / ink #17181d (light), #0e0f13 / #ecedf1 (dark)
 | Security rows each link to a file | zed "Clone source"; profile tone rules | proof | "point at the repo, don't adjective" |
 | Compare table stacked at 390 | AUDIT 9 | layout | no horizontal scroller inside a vertical page |
 | Badge + brew line in the hero, full install below | standard §1.7 (CTA carries operational detail), critique item 4 | CTA | version, OS floor and licence under the button |
+| Light gold text #926410, fill stays #c8901e | WCAG 1.4.3, axe on every page in both themes | color | #b07d1a measured 3.21 to 3.62:1 on sunken, paper and surface |
+| ink-faint #696e7a light, #7b818e dark and band | WCAG 1.4.3, axe | color | #8a8f9c and #6a6f7c measured 2.87 to 3.99:1 on captions, sources and footer meta |
+| Green prompt #1e7a45 on light surfaces, #4cc27a in bands and dark | WCAG 1.4.3 | color | #2e9e5b measured 3.02 to 3.41:1; bands keep the terminal green |
+| Focus ring in `--gold` | WCAG 1.4.11 | state | `--gold-bright` measured 1.88:1 on paper |
+| Rendered-spec code uses Shiki `css-variables` mapped to ink, ink-soft, ink-faint | role rules; WCAG 1.4.3 | code | github-dark token colors sat on the light surface at 1.27 to 2.07:1; no accent or terminal palette in prose |
+| Inline-link style matches running text only: `:where(p, li, dd, td) a`, never `.btn` or links inside `nav` | descendant-selector check | links | `li a` painted the security and CLI tables of contents and the footer gold or underlined over their own colors |
+| Prose h2 and h3 sit on the sub and small steps | composition rule 5 | type | the spec page had 32 px and 19.2 px headings outside the scale |
+| Markdown renders through Sätteri with a hast plugin | Astro 7 default processor | build | the unified pipeline would need `@astrojs/markdown-remark`; one plugin drops the spec's own h1 |

@@ -38,10 +38,10 @@ function serveDir(root) {
     let path = resolve(join(root, url));
     if (!path.startsWith(resolve(root))) { res.writeHead(403).end(); return; }
     try { if (statSync(path).isDirectory()) path = join(path, "index.html"); } catch { if (existsSync(path + ".html")) path += ".html"; }
-    try {
-      res.writeHead(200, { "content-type": MIME[extname(path).toLowerCase()] || "application/octet-stream", "cache-control": "no-store" });
-      res.end(readFileSync(path));
-    } catch { res.writeHead(404).end(); }
+    let body;
+    try { body = readFileSync(path); } catch { res.writeHead(404).end(); return; }
+    res.writeHead(200, { "content-type": MIME[extname(path).toLowerCase()] || "application/octet-stream", "cache-control": "no-store" });
+    res.end(body);
   });
   return new Promise((ok) => server.listen(0, "127.0.0.1", () => ok({ server, port: server.address().port })));
 }
@@ -105,7 +105,12 @@ async function main() {
         const page = await browser.newPage({ viewport: v, deviceScaleFactor: v.width >= 1920 ? 1 : 2, colorScheme: dark ? "dark" : "light" });
         try {
           await page.goto(`http://127.0.0.1:${port}${p}`, { waitUntil: "networkidle", timeout: 30000 });
-          await page.evaluate(async () => { await document.fonts.ready; });
+          await page.evaluate(async () => {
+            await document.fonts.ready;
+            const imgs = [...document.images];
+            for (const img of imgs) img.loading = "eager";
+            await Promise.all(imgs.map((img) => img.decode().catch(() => {})));
+          });
           await page.waitForTimeout(300);
           const slug = p.replace(/^\/|\/$/g, "").replace(/[^\w.-]+/g, "-") || "index";
           await page.screenshot({ path: join(dir, `${slug}-${v.width}-full.png`), fullPage: true });

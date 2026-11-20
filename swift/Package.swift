@@ -11,7 +11,7 @@ let package = Package(
     dependencies: [
         // swift-crypto provides CryptoKit-compatible APIs for Linux CI; on macOS
         // the system CryptoKit is used via the canImport guard in the sources.
-        .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0"),
+        .package(url: "https://github.com/apple/swift-crypto.git", from: "5.0.0"),
     ],
     targets: [
         .target(

@@ -42,9 +42,11 @@ final class HandleTests: XCTestCase {
             let name = c["name"] as! String
             var accts = accounts(c["accounts"] as! [[String: Any]])
             Handles.assign(&accts)
-            let want = c["expected"] as! [String: String]
+            var want: [[UInt8]: String] = [:]
+            for (k, v) in c["expected"] as! NSDictionary { want[Array((k as! String).utf8)] = (v as! String) }
+            XCTAssertEqual(want.count, accts.count, "case \(name)")
             for a in accts {
-                XCTAssertEqual(a.handle, want[a.id], "case \(name): account \(a.id)")
+                XCTAssertEqual(a.handle, want[Array(a.id.utf8)], "case \(name): account \(Array(a.id.utf8))")
             }
         }
     }
@@ -81,6 +83,39 @@ final class HandleTests: XCTestCase {
         for bad in ["2fa", "Gi", "a-b", "", "abcdefghijklm", " gi", "1p"] {
             XCTAssertFalse(Handles.isValid(bad), bad)
         }
+    }
+
+    /// Ids that differ only in Unicode normalization are ordered by their
+    /// UTF-8 bytes, so the composed id sorts after the decomposed one.
+    func testAssignmentOrdersCanonicallyEquivalentIDsByBytes() {
+        var accts = [
+            Account(id: "\u{E9}", type: .totp, issuer: "ACME", account: "", secret: Data("x".utf8), createdAt: 1),
+            Account(id: "e\u{301}", type: .totp, issuer: "ACME", account: "", secret: Data("x".utf8), createdAt: 1),
+        ]
+        Handles.assign(&accts)
+        XCTAssertEqual(accts.map(\.handle), ["ac2", "ac"])
+    }
+
+    /// The base is cut at the first `@` byte, so a combining mark after it does
+    /// not merge into the `@` scalar.
+    func testBaseCutsAccountAtTheFirstAtByte() {
+        var accts = [Account(id: "h1", type: .totp, issuer: "", account: "x@\u{301}y.com", secret: Data("x".utf8))]
+        Handles.assign(&accts)
+        XCTAssertEqual(accts[0].handle, "x")
+    }
+
+    func testTwentyThousandSameNameAccountsAssignInUnderASecond() {
+        var accts = (0..<20_000).map { i in
+            Account(id: String(format: "id-%05d", i), type: .totp, issuer: "GitHub", account: "",
+                    secret: Data("x".utf8), createdAt: Int64(i))
+        }
+        let start = Date()
+        Handles.assign(&accts)
+        let elapsed = Date().timeIntervalSince(start)
+        XCTAssertLessThan(elapsed, 1.0)
+        XCTAssertEqual(accts[0].handle, "gi")
+        XCTAssertEqual(accts[19_999].handle, "gi20000")
+        XCTAssertEqual(Set(accts.map(\.handle)).count, 20_000)
     }
 
     func testUniquenessRejectsDuplicate() {

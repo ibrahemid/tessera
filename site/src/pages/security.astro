@@ -3,6 +3,8 @@ import Base from "../layouts/Base.astro";
 import PageHead from "../components/PageHead.astro";
 import Still from "../components/Still.astro";
 import statusStill from "../assets/still-vault-status.png";
+import { SECRET_STORES, versions } from "../data/release";
+import { joinList } from "../data/release-model";
 
 const repo = "https://github.com/ibrahemid/tessera";
 const blob = `${repo}/blob/main`;
@@ -24,9 +26,10 @@ const sections = [
     body: [
       "Passphrase: argon2id at 128 MiB, t=3, p=4 with a 16-byte salt derives the wrap key. Go uses golang.org/x/crypto; Swift uses the vendored PHC reference implementation (portable C, no SIMD), and a known-answer test keeps the two equal. Cost parameters read from a file are bounds-checked before the KDF runs.",
       "Secure Enclave, app only: a non-extractable P-256 key created with privateKeyUsage wraps the DEK through HKDF-SHA256 over a self key agreement. Require Touch ID adds biometryCurrentSet, so the wrap stops opening after a fingerprint change. Set a recovery passphrase in Settings and the same file gains an argon2id wrap, which is also how the CLI opens an app-created vault.",
-      "Keychain, CLI only and opt in: tess vault remember stores the passphrase in the macOS login keychain after verifying it against the vault; tess vault forget removes it. The entry is protected at the same level as an ssh key on disk. Scripts can set TESSERA_PASSPHRASE instead.",
+      `Secret store, CLI only and opt in: tess vault remember verifies the passphrase against the vault, then stores it in the system secret store: ${joinList(SECRET_STORES)}. tess vault forget removes it. Scripts can set TESSERA_PASSPHRASE instead.`,
+      "Locking: with Require Touch ID to open on, the app locks when the Mac sleeps. Lock Vault in the Tessera menu, or the lock button in the toolbar, locks it at any time. tess watch locks after 15 minutes without a key press, or the time in $TESSERA_WATCH_LOCK.",
     ],
-    links: [[`${blob}/swift/App/Sources/SecureEnclaveWrap.swift`, "swift/App/Sources/SecureEnclaveWrap.swift"], [`${blob}/swift/Sources/CArgon2`, "swift/Sources/CArgon2"], [`${blob}/go/internal/keychain`, "go/internal/keychain"]],
+    links: [[`${blob}/swift/App/Sources/SecureEnclaveWrap.swift`, "swift/App/Sources/SecureEnclaveWrap.swift"], [`${blob}/swift/Sources/CArgon2`, "swift/Sources/CArgon2"], [`${blob}/go/internal/secretstore`, "go/internal/secretstore"]],
   },
   {
     id: "app",
@@ -35,16 +38,17 @@ const sections = [
       "Three entitlements: App Sandbox, user-selected files for the open and save panels, and app-scoped bookmarks so a vault you opened once (for example the CLI's file) reopens without a prompt. There is no network entitlement. On-screen QR scanning uses ScreenCaptureKit and asks macOS for Screen Recording permission at the moment you scan. Auto-launch, when you turn it on, registers a login item.",
       "The privacy manifest declares the required-reason APIs the app uses. The Mac App Store privacy label reads Data Not Collected. The clipboard is marked concealed when the app copies a code, and the window is excluded from screen capture.",
     ],
-    links: [[`${blob}/swift/App/Resources/Tessera.entitlements`, "Tessera.entitlements"], [`${blob}/swift/App/Resources/PrivacyInfo.xcprivacy`, "PrivacyInfo.xcprivacy"], [appStore, "App Store listing"]],
+    links: [[`${repo}/blob/v${versions.app.version}/swift/App/Resources/Tessera.entitlements`, "Tessera.entitlements"], [`${blob}/swift/App/Resources/PrivacyInfo.xcprivacy`, "PrivacyInfo.xcprivacy"], [appStore, "App Store listing"]],
   },
   {
     id: "cli",
     h: "What the CLI touches",
     body: [
-      "tess reads and writes the vault at $TESSERA_VAULT or ~/.local/share/tessera/vault.json and holds a lock file next to it for the length of a command, so two tess processes cannot interleave writes. The Go module imports golang.org/x/crypto, cobra, the terminal and QR packages; it imports neither net nor net/http.",
+      "tess reads and writes the vault at --vault, $TESSERA_VAULT or the default path for the OS, and holds a lock file next to it for the length of a command, so two tess processes cannot interleave writes. Next to the vault it keeps vault.json.bak, the file before the last write; with $TESSERA_BACKUP_DIR set, every change also writes a dated backup there.",
+      "tess links no HTTP or TLS code and never opens a network connection; on Linux it talks to the Secret Service over the local D-Bus socket.",
       "Commands that print secrets are explicit and say so in their help: tess export --uri, --secret, --qr and tess show --secret, --uri. Colored output turns off when piped or when NO_COLOR is set.",
     ],
-    links: [[`${blob}/go/go.mod`, "go/go.mod"], [`${blob}/go/internal/store`, "go/internal/store"], ["/cli", "CLI reference"]],
+    links: [[`${blob}/scripts/gate.sh`, "scripts/gate.sh"], [`${blob}/go/internal/store`, "go/internal/store"], ["/cli#files", "CLI files"]],
   },
   {
     id: "interop",
@@ -65,7 +69,7 @@ const sections = [
 ];
 ---
 <Base
-  title="Security — Tessera"
+  title="Security · Tessera"
   description="How Tessera encrypts, unlocks and isolates your 2FA vault, with a link to the file behind each claim. Reporting instructions included."
   current="/security"
 >
@@ -85,9 +89,9 @@ const sections = [
     <section id={s.id} class="sec measure scroll-mt-20">
       <h2 class="h-sub">{s.h}</h2>
       {s.body.map((p) => <p class="mt-4 soft">{p}</p>)}
-      <p class="mt-4 mono text-[0.8rem] srcs">
+      <p class="mt-3 text-[0.8rem] srcs">
         {s.links.map(([href, label], i) => (
-          <>{i > 0 && <span class="faint"> · </span>}<a href={href} rel={href.startsWith("http") ? "noopener" : undefined}>{label}</a></>
+          <><span class="whitespace-nowrap"><a class={/[/.]/.test(label) ? "mono" : undefined} href={href} rel={href.startsWith("http") ? "noopener" : undefined}>{label}</a>{i < s.links.length - 1 && <span class="faint"> ·</span>}</span>{" "}</>
         ))}
       </p>
     </section>
@@ -97,7 +101,7 @@ const sections = [
     <div class="measure">
       <h2 class="h-sub">Reporting</h2>
       <p class="mt-4 soft">
-        Report privately through <a href={`${repo}/security/advisories/new`} rel="noopener">GitHub Security Advisories</a> or
+        Report privately through <a href={`${repo}/security/advisories/new`} rel="noopener">GitHub Security Advisories</a> or{" "}
         <a href="mailto:security@ibrahemid.com">security@ibrahemid.com</a>. You get an acknowledgment within 48 hours and a fix or a status update within 7 days, and credit in the release notes unless you prefer otherwise. Do not open a public issue for anything exploitable.
       </p>
     </div>
@@ -105,10 +109,11 @@ const sections = [
 </Base>
 
 <style>
-  .toc ul { display: flex; flex-wrap: wrap; gap: 0.4rem 1.4rem; font-size: 0.92rem; color: var(--ink-soft); }
+  .toc ul { display: flex; flex-wrap: wrap; gap: 0 1.4rem; font-size: 0.92rem; color: var(--ink-soft); }
+  .toc a { display: inline-flex; align-items: center; min-height: 44px; }
   .toc a:hover { color: var(--ink); }
   .sec { padding-top: 3.5rem; }
   .sec:last-of-type { padding-bottom: 1rem; }
-  .srcs a { color: var(--gold); }
+  .srcs a { display: inline-flex; align-items: center; min-height: 44px; color: var(--gold); }
   .report { margin-top: 5rem; padding-block: 4rem; }
 </style>

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
 	"github.com/ibrahemid/tessera/go/internal/base32x"
@@ -42,8 +43,8 @@ func buildAccountRaw(typ, issuer, acct string, secret []byte, algo string, digit
 	}
 	return account.Account{
 		Type:      t,
-		Issuer:    strings.TrimSpace(issuer),
-		Account:   strings.TrimSpace(acct),
+		Issuer:    account.CleanText(issuer),
+		Account:   account.CleanText(acct),
 		Secret:    secret,
 		Algorithm: algorithm,
 		Digits:    digits,
@@ -74,14 +75,14 @@ func parseOTPValue(v, issuerFallback, accountFallback string) (account.Account, 
 		if err != nil {
 			return account.Account{}, false, errors.New("unsupported Steam secret encoding")
 		}
-		acct := accountFallback
-		if strings.TrimSpace(acct) == "" {
-			acct = issuerFallback
+		acct := account.CleanText(accountFallback)
+		if acct == "" {
+			acct = account.CleanText(issuerFallback)
 		}
 		return account.Account{
 			Type:      account.Steam,
 			Issuer:    "Steam",
-			Account:   strings.TrimSpace(acct),
+			Account:   acct,
 			Secret:    secret,
 			Algorithm: "SHA1",
 			Digits:    5,
@@ -94,8 +95,8 @@ func parseOTPValue(v, issuerFallback, accountFallback string) (account.Account, 
 		}
 		return account.Account{
 			Type:      account.TOTP,
-			Issuer:    strings.TrimSpace(issuerFallback),
-			Account:   strings.TrimSpace(accountFallback),
+			Issuer:    account.CleanText(issuerFallback),
+			Account:   account.CleanText(accountFallback),
 			Secret:    secret,
 			Algorithm: "SHA1",
 			Digits:    6,
@@ -115,7 +116,7 @@ func mapType(s string) (account.Type, error) {
 	case "steam", "steam_totp", "steamtotp":
 		return account.Steam, nil
 	default:
-		return "", fmt.Errorf("unsupported account type %q", s)
+		return "", fmt.Errorf("unsupported account type %s", quoteBounded(s))
 	}
 }
 
@@ -128,7 +129,7 @@ func mapAlgo(s string) (string, error) {
 	case "SHA512":
 		return "SHA512", nil
 	default:
-		return "", fmt.Errorf("unsupported algorithm %q", s)
+		return "", fmt.Errorf("unsupported algorithm %s", quoteBounded(s))
 	}
 }
 
@@ -139,7 +140,20 @@ func atoiDefault(s string, def int) (int, error) {
 	}
 	n, err := strconv.Atoi(s)
 	if err != nil {
-		return 0, fmt.Errorf("not a number: %q", s)
+		return 0, fmt.Errorf("not a number: %s", quoteBounded(s))
 	}
 	return n, nil
+}
+
+const maxQuotedBytes = 16
+
+func quoteBounded(s string) string {
+	if len(s) <= maxQuotedBytes {
+		return strconv.Quote(s)
+	}
+	n := maxQuotedBytes
+	for i := 0; i < utf8.UTFMax-1 && n > 0 && !utf8.RuneStart(s[n]); i++ {
+		n--
+	}
+	return fmt.Sprintf("%s… (%d bytes)", strconv.Quote(s[:n]), len(s))
 }

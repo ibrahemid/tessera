@@ -9,12 +9,72 @@ enum AppTheme: String, CaseIterable, Identifiable {
     }
 }
 
+enum AppLaunch {
+    enum Mode: Equatable { case app, inertTestHost }
+
+    @MainActor fileprivate(set) static var current: Mode?
+
+    #if DEBUG
+    private static let testHostKeys = ["XCTestConfigurationFilePath", "XCTestBundlePath", "XCTestSessionIdentifier"]
+
+    static func isUnitTestHost(environment: [String: String] = ProcessInfo.processInfo.environment,
+                               arguments: [String] = CommandLine.arguments) -> Bool {
+        guard !arguments.contains("-uitest") else { return false }
+        return testHostKeys.contains { environment[$0] != nil }
+    }
+
+    static func mode(environment: [String: String] = ProcessInfo.processInfo.environment,
+                     arguments: [String] = CommandLine.arguments) -> Mode {
+        isUnitTestHost(environment: environment, arguments: arguments) ? .inertTestHost : .app
+    }
+    #else
+    static func mode() -> Mode { .app }
+    #endif
+}
+
 @main
+enum AppLauncher {
+    @MainActor static func main() {
+        let mode = AppLaunch.mode()
+        AppLaunch.current = mode
+        switch mode {
+        case .inertTestHost: InertTestHostApp.main()
+        case .app: TesseraApp.main()
+        }
+    }
+}
+
+struct InertTestHostApp: App {
+    var body: some Scene {
+        Settings { EmptyView() }
+    }
+}
+
 struct TesseraApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @StateObject private var model = AppModel()
+    @StateObject private var model: AppModel
     @AppStorage("tessera.theme") private var theme: AppTheme = .system
     @AppStorage("tessera.compact") private var compact = false
+    private let lockPolicy: LockPolicy?
+
+    init() {
+        let model = AppModel.makeForLaunch()
+        _model = StateObject(wrappedValue: model)
+        guard AppSession.isEnabled else {
+            lockPolicy = nil
+            return
+        }
+        lockPolicy = LockPolicy(
+            defaults: .standard,
+            idle: SystemIdleTimeSource(),
+            workspace: NSWorkspace.shared.notificationCenter,
+            distributed: DistributedNotificationCenter.default(),
+            appCenter: .default,
+            isVaultUnlocked: { [weak model] in model?.isLocked == false },
+            onLock: { [weak model] reason in model?.lock(reason: reason) }
+        )
+        AppSession.start(model: model)
+    }
 
     var body: some Scene {
         // Single Window scene (not WindowGroup): lists "Tessera" in the Window
@@ -24,19 +84,12 @@ struct TesseraApp: App {
                 .environmentObject(model)
                 .preferredColorScheme(theme.colorScheme)
                 .frame(minWidth: compact ? 380 : 720, minHeight: 470)
+                .background(MainWindowBridge())
         }
         .defaultSize(width: 920, height: 620)
-        .commands {
-            CommandGroup(replacing: .newItem) {}
-            CommandGroup(after: .appInfo) {
-                Button("Lock Vault") { model.lock() }
-                    .keyboardShortcut("l", modifiers: [.command, .shift])
-                    .disabled(model.isLocked || !model.vaultExists)
-            }
-        }
+        .commands { VaultCommands(model: model) }
 
-        // Menu-bar quick access returns post-v1 via a stable NSStatusItem; the
-        // SwiftUI MenuBarExtra(.window) + WindowGroup combo spins the CPU.
+        // MenuBarExtra(.window) with a window scene spun the CPU; the menu bar item is an NSStatusItem.
 
         Settings {
             SettingsView()

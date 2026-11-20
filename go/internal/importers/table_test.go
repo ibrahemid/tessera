@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -19,14 +20,18 @@ import (
 // expectedAccount is one row of testdata/expected.json, the fixture table both
 // cores run against.
 type expectedAccount struct {
-	Type      string `json:"type"`
-	Issuer    string `json:"issuer"`
-	Account   string `json:"account"`
-	SecretB32 string `json:"secret_b32"`
-	Algorithm string `json:"algorithm"`
-	Digits    int    `json:"digits"`
-	Period    int    `json:"period"`
-	Counter   int64  `json:"counter"`
+	Type      string   `json:"type"`
+	Issuer    string   `json:"issuer"`
+	Account   string   `json:"account"`
+	SecretB32 string   `json:"secret_b32"`
+	Algorithm string   `json:"algorithm"`
+	Digits    int      `json:"digits"`
+	Period    int      `json:"period"`
+	Counter   int64    `json:"counter"`
+	Note      string   `json:"note"`
+	Folder    string   `json:"folder"`
+	Tags      []string `json:"tags"`
+	Pinned    bool     `json:"pinned"`
 }
 
 type expectedEntry struct {
@@ -139,6 +144,18 @@ func assertAccounts(t *testing.T, got []account.Account, want []expectedAccount)
 		}
 		if a.Counter != w.Counter {
 			t.Errorf("account %d: counter = %d, want %d", i, a.Counter, w.Counter)
+		}
+		if a.Note != w.Note {
+			t.Errorf("account %d: note = %q, want %q", i, a.Note, w.Note)
+		}
+		if a.Folder != w.Folder {
+			t.Errorf("account %d: folder = %q, want %q", i, a.Folder, w.Folder)
+		}
+		if !slices.Equal(a.Tags, w.Tags) {
+			t.Errorf("account %d: tags = %q, want %q", i, a.Tags, w.Tags)
+		}
+		if a.Pinned != w.Pinned {
+			t.Errorf("account %d: pinned = %v, want %v", i, a.Pinned, w.Pinned)
 		}
 	}
 }

@@ -1,13 +1,24 @@
 # Release config for the `tess` CLI. The Go module lives here (./go); run
-# goreleaser from this directory. Releases are cut from the bare `vX.Y.Z` tag;
-# the CLI is the only artifact tagged in this repo (the macOS app ships via the
-# App Store). The same commit also needs a `go/vX.Y.Z` tag: the module path is
-# github.com/ibrahemid/tessera/go, so that is the tag `go install ...@latest`
-# resolves. Push `go/vX.Y.Z` after the goreleaser run, or pin the run with
-# GORELEASER_CURRENT_TAG=vX.Y.Z, so the `go/` prefix cannot end up in .Version
-# and in the archive names.
+# goreleaser from this directory. The CLI is the only artifact tagged in this
+# repo (the macOS app ships via the App Store).
+#
+# Pushing a bare `vX.Y.Z` tag runs .github/workflows/release.yml: it builds every
+# artifact, signs checksums.txt with keyless cosign, attests every file listed in
+# checksums.txt, and leaves a draft release. Paste the release notes into the
+# draft and publish it. Then push `go/vX.Y.Z` on the same commit (the module path
+# is github.com/ibrahemid/tessera/go, so that is the tag `go install ...@latest`
+# resolves) and update the Homebrew tap; both stay manual. The workflow pins
+# GORELEASER_CURRENT_TAG so the `go/` prefix cannot end up in .Version and in the
+# artifact names.
+#
+# Local dry run with package checks: scripts/release-check.sh.
 version: 2
 project_name: tess
+
+before:
+  hooks:
+    - rm -rf build
+    - env SOURCE_DATE_EPOCH={{ .CommitTimestamp }} go run -tags gendocs -ldflags "-X main.version={{ .Version }}" ./cmd/tess __gendocs --man build/man --completions build/completions
 
 builds:
   - id: tess
@@ -15,7 +26,7 @@ builds:
     binary: tess
     env:
       - CGO_ENABLED=0
-    goos: [darwin, linux]
+    goos: [darwin, linux, windows]
     goarch: [amd64, arm64]
     mod_timestamp: "{{ .CommitTimestamp }}"
     flags: [-trimpath]
@@ -24,15 +35,93 @@ builds:
 
 archives:
   - id: tess
+    ids: [tess]
     formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
     name_template: "tess_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    builds_info:
+      owner: root
+      group: root
+      mtime: "{{ .CommitDate }}"
+
+nfpms:
+  - id: tessera
+    package_name: tessera
+    ids: [tess]
+    formats: [deb, rpm, apk, archlinux]
+    vendor: Tessera
+    homepage: https://tessera.ibrahemid.com
+    maintainer: Tessera <security@ibrahemid.com>
+    description: Command-line TOTP and HOTP authenticator that keeps secrets in an encrypted local vault.
+    license: Apache-2.0
+    bindir: /usr/bin
+    section: utils
+    priority: optional
+    mtime: "{{ .CommitDate }}"
+    suggests: [wl-clipboard, xclip, xsel, grim, slurp]
+    contents:
+      - src: build/completions/tess.bash
+        dst: /usr/share/bash-completion/completions/tess
+        file_info: &data_file
+          mode: 0644
+          mtime: "{{ .CommitDate }}"
+      - src: build/completions/_tess
+        dst: /usr/share/zsh/vendor-completions/_tess
+        packager: deb
+        file_info: *data_file
+      - src: build/completions/_tess
+        dst: /usr/share/zsh/site-functions/_tess
+        packager: rpm
+        file_info: *data_file
+      - src: build/completions/_tess
+        dst: /usr/share/zsh/site-functions/_tess
+        packager: apk
+        file_info: *data_file
+      - src: build/completions/_tess
+        dst: /usr/share/zsh/site-functions/_tess
+        packager: archlinux
+        file_info: *data_file
+      - src: build/completions/tess.fish
+        dst: /usr/share/fish/vendor_completions.d/tess.fish
+        file_info: *data_file
+      - src: build/man/*.1.gz
+        dst: /usr/share/man/man1/
+        file_info: *data_file
+      - src: ../LICENSE
+        dst: /usr/share/doc/tessera/copyright
+        packager: deb
+        file_info: *data_file
+      - src: ../LICENSE
+        dst: /usr/share/licenses/tessera/LICENSE
+        packager: rpm
+        file_info: *data_file
+      - src: ../LICENSE
+        dst: /usr/share/licenses/tessera/LICENSE
+        packager: apk
+        file_info: *data_file
+      - src: ../LICENSE
+        dst: /usr/share/licenses/tessera/LICENSE
+        packager: archlinux
+        file_info: *data_file
+    rpm:
+      group: Applications/System
+      buildhost: tessera
+    archlinux:
+      packager: Tessera <security@ibrahemid.com>
 
 checksum:
   name_template: checksums.txt
 
-# Release notes are hand-written and passed at release time with
-# `goreleaser release --release-notes <file>`, so commit subjects never end up
-# in the public release body.
+signs:
+  - cmd: cosign
+    artifacts: checksum
+    signature: "${artifact}.sigstore.json"
+    args: [sign-blob, "--bundle=${signature}", "${artifact}", "--yes"]
+
+# Release notes are hand-written and pasted into the draft release, so commit
+# subjects never end up in the public release body.
 changelog:
   disable: true
 
@@ -40,3 +129,4 @@ release:
   github:
     owner: ibrahemid
     name: tessera
+  draft: true

@@ -4,14 +4,21 @@
   "db": {
     "version": 3,
     "entries": [
-      { "type": "totp", "uuid": "5f3a6e70-8f4a-4b8a-9c1e-1a2b3c4d5e6f", "name": "john@example.com", "issuer": "GitHub", "note": "", "favorite": false, "icon": null,
-        "info": { "secret": "JBSWY3DPEHPK3PXP", "algo": "SHA1", "digits": 6, "period": 30 }, "groups": [] },
-      { "type": "hotp", "uuid": "6f3a6e70-8f4a-4b8a-9c1e-1a2b3c4d5e70", "name": "ops", "issuer": "Bank", "note": "", "favorite": false, "icon": null,
-        "info": { "secret": "JBSWY3DPEHPK3PXP", "algo": "SHA256", "digits": 8, "counter": 5 }, "groups": [] },
+      { "type": "totp", "uuid": "5f3a6e70-8f4a-4b8a-9c1e-1a2b3c4d5e6f", "name": "john@example.com", "issuer": "GitHub", "note": "Recovery codes in the safe", "favorite": true, "icon": null,
+        "info": { "secret": "JBSWY3DPEHPK3PXP", "algo": "SHA1", "digits": 6, "period": 30 },
+        "groups": ["0b6f4c6e-1d2a-4f0e-9a51-6d1c2b3a4f01", "0b6f4c6e-1d2a-4f0e-9a51-6d1c2b3a4f02"] },
+      { "type": "hotp", "uuid": "6f3a6e70-8f4a-4b8a-9c1e-1a2b3c4d5e70", "name": "ops", "issuer": "Bank", "note": "Desk\u0007 12\r\nAsk for ops\u202e", "favorite": false, "icon": null,
+        "info": { "secret": "JBSWY3DPEHPK3PXP", "algo": "SHA256", "digits": 8, "counter": 5 },
+        "groups": ["0b6f4c6e-1d2a-4f0e-9a51-6d1c2b3a4f99", "0b6f4c6e-1d2a-4f0e-9a51-6d1c2b3a4f03", "0b6f4c6e-1d2a-4f0e-9a51-6d1c2b3a4f04"] },
       { "type": "steam", "uuid": "7f3a6e70-8f4a-4b8a-9c1e-1a2b3c4d5e71", "name": "gabe", "issuer": "Steam", "note": "", "favorite": false, "icon": null,
-        "info": { "secret": "JBSWY3DPEHPK3PXP", "algo": "SHA1", "digits": 5, "period": 30 }, "groups": [] }
+        "info": { "secret": "JBSWY3DPEHPK3PXP", "algo": "SHA1", "digits": 5, "period": 30 }, "group": "Games" }
     ],
-    "groups": [],
+    "groups": [
+      { "uuid": "0b6f4c6e-1d2a-4f0e-9a51-6d1c2b3a4f01", "name": "Work" },
+      { "uuid": "0b6f4c6e-1d2a-4f0e-9a51-6d1c2b3a4f02", "name": "Personal" },
+      { "uuid": "0b6f4c6e-1d2a-4f0e-9a51-6d1c2b3a4f03", "name": "" },
+      { "uuid": "0b6f4c6e-1d2a-4f0e-9a51-6d1c2b3a4f04", "name": "   " }
+    ],
     "icons_optimized": true
   }
 }

@@ -3,15 +3,20 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"runtime/debug"
 
+	"github.com/ibrahemid/tessera/go/internal/store"
+	"github.com/ibrahemid/tessera/go/internal/ui"
 	"github.com/spf13/cobra"
 )
 
 // vaultPath holds the value of the global --vault flag.
 var vaultPath string
+
+// extraCommands builds commands that only exist under a build tag; each is
+// added to the root command.
+var extraCommands []func() *cobra.Command
 
 // version is the CLI version, overridden at release time via -ldflags.
 var version = "dev"
@@ -30,11 +35,14 @@ func resolveVersion() string {
 }
 
 func main() {
-	root := newRootCmd()
-	if err := root.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
+	hardenProcess()
+	restoreConsole, _ := ui.EnableConsole()
+	code := 0
+	if err := newRootCmd().Execute(); err != nil {
+		code = reportError(os.Stderr, err)
 	}
+	restoreConsole()
+	os.Exit(code)
 }
 
 func newRootCmd() *cobra.Command {
@@ -60,7 +68,7 @@ func newRootCmd() *cobra.Command {
 			return runCode(cmd, args, opts)
 		},
 	}
-	root.PersistentFlags().StringVar(&vaultPath, "vault", "", "vault file path (default $TESSERA_VAULT or ~/.local/share/tessera/vault.json)")
+	root.PersistentFlags().StringVar(&vaultPath, "vault", "", "vault file path (default $TESSERA_VAULT or "+store.DefaultPathHint()+")")
 	bindCodeFlags(root, opts)
 
 	root.AddGroup(
@@ -73,10 +81,12 @@ func newRootCmd() *cobra.Command {
 		id   string
 		cmds []*cobra.Command
 	}{
-		{"codes", []*cobra.Command{newCodeCmd(), newWatchCmd()}},
+		{"codes", []*cobra.Command{newCodeCmd(), newVerifyCmd(), newWatchCmd()}},
 		{"accounts", []*cobra.Command{
 			newAddCmd(), newListCmd(), newShowCmd(), newRenameCmd(),
-			newAliasCmd(), newMoveCmd(), newTagCmd(), newRemoveCmd(),
+			newAliasCmd(), newMoveCmd(), newTagCmd(), newNoteCmd(),
+			newPinCmd(), newUnpinCmd(), newOrderCmd(), newEditCmd(),
+			newDedupeCmd(), newRemoveCmd(), newTrashCmd(), newRestoreCmd(),
 		}},
 		{"transfer", []*cobra.Command{newImportCmd(), newExportCmd(), newMergeCmd()}},
 		{"vault", []*cobra.Command{newVaultCmd()}},
@@ -88,5 +98,8 @@ func newRootCmd() *cobra.Command {
 		}
 	}
 	root.AddCommand(newClipClearCmd())
+	for _, newCmd := range extraCommands {
+		root.AddCommand(newCmd())
+	}
 	return root
 }

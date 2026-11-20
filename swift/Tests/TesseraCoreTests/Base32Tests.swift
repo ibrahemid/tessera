@@ -95,4 +95,47 @@ final class Base32Tests: XCTestCase {
                                  "decode(\(input)) must be an error: \(c["why"] as! String)")
         }
     }
+
+    func testEncodeVectors() throws {
+        let b = try vectors()["base32"] as! [String: Any]
+        let cases = b["encode"] as! [[String: Any]]
+        XCTAssertFalse(cases.isEmpty, "spec base32.encode is empty")
+        for c in cases {
+            let ascii = c["ascii"] as! String
+            let want = c["b32"] as! String
+            XCTAssertEqual(Base32.encode(Data(ascii.utf8)), want, ascii)
+            XCTAssertEqual(Base32.encodeNoPad(Data(ascii.utf8)),
+                           String(want.prefix { $0 != "=" }), ascii)
+        }
+    }
+
+    func testDecodeLenientVectors() throws {
+        let b = try vectors()["base32"] as! [String: Any]
+        let cases = b["decode_lenient"] as! [[String: Any]]
+        XCTAssertFalse(cases.isEmpty, "spec base32.decode_lenient is empty")
+        for c in cases {
+            let input = c["input"] as! String
+            XCTAssertEqual(try Base32.decode(input), Data((c["ascii"] as! String).utf8), input)
+        }
+    }
+
+    func testErrorTextMatchesGo() {
+        XCTAssertThrowsError(try Base32.decode("MZ")) { error in
+            XCTAssertEqual(Importers.message(error), "base32x: invalid base32 input")
+        }
+    }
+
+    /// Go upper-cases with `strings.ToUpper`, which maps U+017F and U+0131 onto
+    /// ASCII letters and leaves the other non-ASCII scalars outside the alphabet.
+    func testUnicodeCaseMappingMatchesGo() throws {
+        XCTAssertEqual(try Base32.decode("jb\u{17f}wy3dpehpk3pxp"), try Base32.decode("JBSWY3DPEHPK3PXP"))
+        XCTAssertEqual(try Base32.decode("JB\u{131}WY3DPEHPK3PXP"), try Base32.decode("JBIWY3DPEHPK3PXP"))
+        XCTAssertEqual(try Base32.decode("mzxw6ytb"), Data("fooba".utf8))
+        for input in ["\u{ff2a}BSWY3DPEHPK3PXP", "MZXW6YTB\u{a0}", "MZXW6YTB\u{3000}", "mzxw6ytb\u{b}",
+                      "\u{130}BSWY3DPEHPK3PXP"] {
+            XCTAssertThrowsError(try Base32.decode(input), input) { error in
+                XCTAssertEqual(Importers.message(error), "base32x: invalid base32 input", input)
+            }
+        }
+    }
 }

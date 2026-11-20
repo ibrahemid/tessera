@@ -14,13 +14,15 @@ type aegisFile struct {
 }
 
 type aegisDB struct {
-	Entries []aegisEntry `json:"entries"`
+	Entries []aegisEntry    `json:"entries"`
+	Groups  json.RawMessage `json:"groups"`
 }
 
 type aegisEntry struct {
 	Type   string `json:"type"`
 	Name   string `json:"name"`
 	Issuer string `json:"issuer"`
+	Note   string `json:"note"`
 	Info   struct {
 		Secret  string `json:"secret"`
 		Algo    string `json:"algo"`
@@ -28,6 +30,9 @@ type aegisEntry struct {
 		Period  int    `json:"period"`
 		Counter int64  `json:"counter"`
 	} `json:"info"`
+	Groups   json.RawMessage `json:"groups"`
+	Group    json.RawMessage `json:"group"`
+	Favorite json.RawMessage `json:"favorite"`
 }
 
 func parseAegis(data []byte) ([]account.Account, error) {
@@ -37,19 +42,28 @@ func parseAegis(data []byte) ([]account.Account, error) {
 	}
 	// In an encrypted export "db" is a base64 string, not an object.
 	if db := bytes.TrimSpace(f.DB); len(db) > 0 && db[0] == '"' {
+		//lint:ignore ST1005 the message starts with a product name
 		return nil, fmt.Errorf("Aegis export is encrypted; export with encryption off (Aegis: Settings > Import/Export > Export, untick encryption) and try again")
 	}
 	var db aegisDB
 	if err := json.Unmarshal(f.DB, &db); err != nil {
 		return nil, fmt.Errorf("aegis db: %w", err)
 	}
+	groups := indexGroups[uuidGroup](db.Groups)
 	out := make([]account.Account, 0, len(db.Entries))
 	for _, e := range db.Entries {
 		a, err := buildAccount(e.Type, e.Issuer, e.Name, e.Info.Secret,
 			e.Info.Algo, e.Info.Digits, e.Info.Period, e.Info.Counter)
 		if err != nil {
-			return nil, fmt.Errorf("aegis entry %q: %w", e.Name, err)
+			return nil, fmt.Errorf("aegis entry %s: %w", quoteBounded(e.Name), err)
 		}
+		a.Note = account.CleanNote(e.Note)
+		names := groupNames(nil, groups, e.Groups)
+		if legacy, ok := rawString(e.Group); ok {
+			names = append(names, legacy)
+		}
+		a.Folder, a.Tags = placeGroups(names)
+		a.Pinned = rawIsTrue(e.Favorite)
 		out = append(out, a)
 	}
 	return out, nil

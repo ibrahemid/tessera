@@ -1,0 +1,11 @@
+{
+  "id": "49abdd291b36981883aafdd2e47ced39",
+  "handle": "gi",
+  "issuer": "GitHub",
+  "account": "alice@example.com",
+  "type": "totp",
+  "code": "219515",
+  "next_code": "368929",
+  "expires_in": 18,
+  "period": 30
+}

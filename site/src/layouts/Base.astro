@@ -3,23 +3,29 @@ import "@fontsource-variable/schibsted-grotesk";
 import "@fontsource-variable/hanken-grotesk";
 import "@fontsource/ibm-plex-mono/400.css";
 import "../styles/global.css";
+import hankenWoff2 from "@fontsource-variable/hanken-grotesk/files/hanken-grotesk-latin-wght-normal.woff2?url";
+import schibstedWoff2 from "@fontsource-variable/schibsted-grotesk/files/schibsted-grotesk-latin-wght-normal.woff2?url";
 import Wordmark from "../components/Wordmark.astro";
+import { versions } from "../data/release";
 
 interface Props {
   title?: string;
   description?: string;
   current?: string;
   preloadImage?: string;
+  noindex?: boolean;
 }
 
 const {
-  title = "Tessera — 2FA in your terminal and your Mac",
+  title = "Tessera · 2FA in your terminal and your Mac",
   description = "A two-factor authenticator for macOS: a native app and the tess command line on one documented vault format. Offline, no account, open source.",
   current = "",
   preloadImage,
+  noindex = false,
 } = Astro.props;
-const year = 2026;
+const year = new Date().getUTCFullYear();
 const site = "https://tessera.ibrahemid.com";
+const pageUrl = new URL(Astro.url.pathname, site);
 const repo = "https://github.com/ibrahemid/tessera";
 const appStore = "https://apps.apple.com/app/tessera-2fa-authenticator/id6788814172";
 
@@ -72,17 +78,19 @@ const footer = [
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <meta name="theme-color" content="#fbfaf7" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#0e0f13" media="(prefers-color-scheme: dark)" />
-    <meta name="apple-itunes-app" content="app-id=6788814172" />
+    {noindex && <meta name="robots" content="noindex" />}
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
-    <meta property="og:url" content={new URL(Astro.url.pathname, site)} />
+    {!noindex && <meta property="og:url" content={pageUrl} />}
     <meta property="og:image" content={`${site}/og.png`} />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content={`${site}/og.png`} />
-    <link rel="canonical" href={new URL(Astro.url.pathname, site)} />
+    {!noindex && <link rel="canonical" href={pageUrl} />}
+    <link rel="preload" as="font" type="font/woff2" href={hankenWoff2} crossorigin />
+    <link rel="preload" as="font" type="font/woff2" href={schibstedWoff2} crossorigin />
     {preloadImage && <link rel="preload" as="image" href={preloadImage} fetchpriority="high" />}
     <script defer src="https://stats.ibrahemid.com/script.js" data-website-id="9b1c6322-ec64-4e26-9b0d-0ac47526cb0a" data-domains="tessera.ibrahemid.com"></script>
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
@@ -106,23 +114,23 @@ const footer = [
 
     <header class="site-header">
       <div class="shell h-16 flex items-center justify-between" data-grid-ref>
-        <a href="/" class="flex items-center gap-2.5" aria-label="Tessera home">
+        <a href="/" class="flex items-center gap-2.5 min-h-11" aria-label="Tessera home">
           <Wordmark />
         </a>
         <nav class="site-nav flex items-center gap-0.5 sm:gap-1" aria-label="Site">
           {nav.map(([href, label]) => (
             <a
               href={href}
-              class={href.startsWith("http") ? "" : "hidden sm:inline"}
+              class={href.startsWith("http") ? "inline-flex" : "hidden sm:inline-flex"}
               aria-current={current && href === current ? "page" : undefined}
               rel={href.startsWith("http") ? "noopener" : undefined}
             >{label}</a>
           ))}
-          <a href="/#install" class="btn btn-gold ml-2" style="height: 2.3rem; padding-inline: 0.9rem; font-size: 0.88rem">Get Tessera</a>
+          <a href="/#install" class="btn btn-gold ml-2" style="height: 2.75rem; padding-inline: 0.9rem; font-size: 0.88rem">Get Tessera</a>
           <button
             id="theme-toggle"
             type="button"
-            class="ml-1 grid place-items-center w-9 h-9 rounded-lg border border-line hover:border-[var(--gold)] transition-colors"
+            class="ml-1 grid place-items-center w-11 h-11 rounded-lg border border-line hover:border-[var(--gold)] transition-colors"
             aria-label="Toggle color theme"
           >
             <svg class="theme-sun w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
@@ -146,13 +154,13 @@ const footer = [
           <div>
             <Wordmark />
             <a href={appStore} rel="noopener" class="inline-block mt-5" aria-label="Download on the Mac App Store">
-              <img src="/mac-app-store-badge.svg" alt="" width="156" height="40" class="badge-store" style="height: 2.5rem" />
+              <img src="/mac-app-store-badge.svg" alt="" width="156" height="40" class="badge-store" style="height: 2.75rem" />
             </a>
           </div>
           {footer.map(([heading, links]) => (
             <nav aria-label={heading}>
               <p class="h-small" style="font-family: var(--font-display); font-weight: 700; font-size: 0.95rem">{heading}</p>
-              <ul class="mt-3 space-y-1.5 text-sm">
+              <ul class="mt-3 footer-links text-sm">
                 {links.map(([href, label]) => (
                   <li><a href={href} rel={href.startsWith("http") ? "noopener" : undefined}>{label}</a></li>
                 ))}
@@ -162,7 +170,7 @@ const footer = [
         </div>
         <div class="mt-12 pt-6 border-t flex flex-wrap items-center justify-between gap-3 text-xs faint" style="border-color: var(--band-line)">
           <span>© {year} Tessera · Apache-2.0</span>
-          <span class="mono">tess 1.1.0 · app 1.1.0 · macOS 14+</span>
+          <span class="tabular-nums">tess {versions.cli.version} · app {versions.app.version} · macOS {versions.app.minimumMacOS}+</span>
         </div>
       </div>
     </footer>
