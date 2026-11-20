@@ -397,27 +397,27 @@ func TestCopyNearTheBoundary(t *testing.T) {
 		t.Fatalf("status %q", h.status())
 	}
 
-	h.at(27)
+	h.at(26)
 	h.press("c")
-	if h.copied[1] != h.codeOf("a", base.Add(27*time.Second)) {
-		t.Fatal("3s left did not copy the current code")
+	if h.copied[1] != h.codeOf("a", base.Add(26*time.Second)) {
+		t.Fatal("4s left did not copy the current code")
 	}
 
-	h.at(28)
+	h.at(27)
 	h.press("enter")
 	next := h.codeOf("a", base.Add(30*time.Second))
 	if h.copied[2] != next || next == h.codeOf("a", h.now) {
-		t.Fatal("2s left did not copy the next code")
+		t.Fatal("3s left did not copy the next code")
 	}
-	if h.status() != "✓ Copied the next code for GitHub; the current one ends in 2s" {
+	if h.status() != "✓ Copied the next code for GitHub; the current one ends in 3s" {
 		t.Fatalf("status %q", h.status())
 	}
 
-	h.at(31)
-	if h.status() != "✓ Copied the next code for GitHub; the current one ends in 2s" {
+	h.at(30)
+	if h.status() != "✓ Copied the next code for GitHub; the current one ends in 3s" {
 		t.Fatal("status left before 4s")
 	}
-	h.at(32)
+	h.at(31)
 	if h.status() != "" {
 		t.Fatalf("status still %q after 4s", h.status())
 	}

@@ -120,9 +120,12 @@ const (
 	tickInterval = 250 * time.Millisecond
 	pollInterval = time.Second
 	statusFor    = 4 * time.Second
-	// freshFloor is the seconds left under which Enter copies the next code.
-	freshFloor = 3
 )
+
+// FreshnessFloor is the seconds left under which a code is too close to
+// rolling over to hand out: pasting it usually loses the race with the server.
+// Under it the watch view copies the next code and `tess code` waits.
+const FreshnessFloor = 4
 
 type mode int
 

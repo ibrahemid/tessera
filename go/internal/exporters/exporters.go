@@ -26,11 +26,34 @@ type File struct {
 }
 
 // Skipped names one account, or one field of it, that a format cannot carry,
-// with the reason. Label never contains a secret.
+// with the reason. Label never contains a secret. Kind identifies the reason
+// for code; Reason is the text a person reads.
 type Skipped struct {
 	Label  string
 	Reason string
+	Kind   SkipKind
 }
+
+// SkipKind is the stable identifier of why a format left an account, or one
+// field of it, out. It never changes with the reason's wording.
+type SkipKind string
+
+const (
+	// SkipUnsupportedType: the format has no entry for the account's type.
+	SkipUnsupportedType SkipKind = "unsupported_type"
+	// SkipUnsupportedAlgorithm: the format cannot store the account's algorithm.
+	SkipUnsupportedAlgorithm SkipKind = "unsupported_algorithm"
+	// SkipUnsupportedDigits: the format cannot store the account's digit count.
+	SkipUnsupportedDigits SkipKind = "unsupported_digits"
+	// SkipUnsupportedPeriod: the format cannot store the account's period.
+	SkipUnsupportedPeriod SkipKind = "unsupported_period"
+	// SkipFormulaName: the account's issuer or account name starts like a
+	// spreadsheet formula, so the whole account is left out.
+	SkipFormulaName SkipKind = "formula_name"
+	// SkipFormulaNote: the account's note starts like a spreadsheet formula, so
+	// the account is written without its note.
+	SkipFormulaNote SkipKind = "formula_note"
+)
 
 // Exporter renders accounts into one or more files.
 type Exporter interface {
@@ -61,7 +84,7 @@ func init() {
 	register(protonExporter{})
 	register(andOTPExporter{})
 	register(appleCSVExporter{})
-	register(migrationExporter{})
+	register(migrationExporter{batchID: randomBatchID})
 }
 
 // Lookup returns the exporter registered under name.

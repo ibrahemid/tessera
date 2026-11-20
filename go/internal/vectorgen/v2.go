@@ -173,6 +173,8 @@ func v2Blocks() []member {
 		{"display_order", displayOrderBlock()},
 		{"rotation", rotationBlock()},
 		{"rotation_extra_passphrase", rotationExtraPassphraseBlock()},
+		{"exports", exportsBlock()},
+		{"merge", mergeBlock()},
 	}
 }
 

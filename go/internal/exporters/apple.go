@@ -33,12 +33,12 @@ func (appleCSVExporter) Render(accts []account.Account) ([]File, []Skipped, erro
 	written := 0
 	for _, a := range accts {
 		if startsAsFormula(a.Issuer) || startsAsFormula(a.Account) {
-			skipped = append(skipped, Skipped{Label: label(a), Reason: appleFormulaReason})
+			skipped = append(skipped, Skipped{Label: label(a), Reason: appleFormulaReason, Kind: SkipFormulaName})
 			continue
 		}
 		note := a.Note
 		if startsAsFormula(note) {
-			skipped = append(skipped, Skipped{Label: "the note of " + label(a), Reason: appleNoteFormulaReason})
+			skipped = append(skipped, Skipped{Label: "the note of " + label(a), Reason: appleNoteFormulaReason, Kind: SkipFormulaNote})
 			note = ""
 		}
 		row := []string{a.Issuer, "", a.Account, "", note, otpauth.Format(a)}

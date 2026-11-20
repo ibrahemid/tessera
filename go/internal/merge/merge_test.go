@@ -1,0 +1,217 @@
+package merge
+
+import (
+	"testing"
+
+	"github.com/ibrahemid/tessera/go/internal/account"
+	"github.com/ibrahemid/tessera/go/internal/spectest"
+)
+
+func acct(id, issuer, name, handle string, updated int64) account.Account {
+	return account.Account{
+		ID: id, Type: account.TOTP, Issuer: issuer, Account: name,
+		Secret: []byte("secret-" + id), Algorithm: "SHA1", Digits: 6, Period: 30,
+		Handle: handle, CreatedAt: 1, UpdatedAt: updated,
+	}
+}
+
+func TestIntoNewerWinsAndCarriesDeletedAt(t *testing.T) {
+	newer := acct("a", "Mail", "me", "other", 20)
+	newer.DeletedAt = 20
+	got, c := Into([]account.Account{acct("a", "Mail", "me", "mail", 10)}, []account.Account{newer})
+	if c != (Counts{Updated: 1}) || len(got) != 1 {
+		t.Fatalf("counts %+v len %d, want one update", c, len(got))
+	}
+	if got[0].DeletedAt != 20 || got[0].UpdatedAt != 20 || got[0].Handle != "mail" {
+		t.Fatalf("got %+v, want the newer copy with the local handle", got[0])
+	}
+}
+
+func TestIntoKeepsTheIncomingHandleWhenTheLocalHasNone(t *testing.T) {
+	got, _ := Into([]account.Account{acct("a", "Mail", "me", "", 10)}, []account.Account{acct("a", "Mail", "me", "mail", 20)})
+	if got[0].Handle != "mail" {
+		t.Fatalf("handle = %q, want mail", got[0].Handle)
+	}
+}
+
+func TestIntoEqualOrOlderChangesNothing(t *testing.T) {
+	local := acct("a", "Mail", "me", "mail", 10)
+	for _, updated := range []int64{10, 5} {
+		incoming := acct("a", "Renamed", "me", "mail", updated)
+		got, c := Into([]account.Account{local}, []account.Account{incoming})
+		if c != (Counts{Skipped: 1}) || c.Changed() || got[0].Issuer != "Mail" {
+			t.Fatalf("updated_at %d: counts %+v issuer %q, want one skip and no change", updated, c, got[0].Issuer)
+		}
+	}
+}
+
+func TestIntoSkipsALiveContentDuplicate(t *testing.T) {
+	local := acct("a", "GitHub", "octocat", "gh", 10)
+	dup := local
+	dup.ID, dup.Issuer, dup.Account = "b", "github", "OCTOCAT"
+	trashedDup := local
+	trashedDup.ID, trashedDup.DeletedAt = "c", 30
+	got, c := Into([]account.Account{local}, []account.Account{dup, trashedDup})
+	if c != (Counts{Added: 1, Skipped: 1}) || len(got) != 2 || got[1].ID != "c" {
+		t.Fatalf("counts %+v got %v, want the trashed copy added and the live duplicate skipped", c, ids(got))
+	}
+}
+
+func TestIntoIgnoresATrashedLocalForTheDuplicateCheck(t *testing.T) {
+	local := acct("a", "GitHub", "octocat", "gh", 10)
+	local.DeletedAt = 10
+	dup := local
+	dup.ID, dup.DeletedAt = "b", 0
+	_, c := Into([]account.Account{local}, []account.Account{dup})
+	if c != (Counts{Added: 1}) {
+		t.Fatalf("counts %+v, want the live copy added", c)
+	}
+}
+
+func TestIntoSkipsAnInvalidNewAccount(t *testing.T) {
+	bad := acct("b", "Broken", "x", "", 10)
+	bad.Digits = 9
+	got, c := Into(nil, []account.Account{bad})
+	if c != (Counts{Skipped: 1}) || len(got) != 0 {
+		t.Fatalf("counts %+v len %d, want the invalid account skipped", c, len(got))
+	}
+}
+
+func TestIntoClearsACollidingIncomingHandle(t *testing.T) {
+	got, c := Into([]account.Account{acct("b", "GitHub", "work", "gi", 10)}, []account.Account{acct("a", "GitHub", "home", "gi", 10)})
+	if c != (Counts{Added: 1}) || got[0].Handle != "gi" || got[1].Handle != "" {
+		t.Fatalf("handles %q %q, want the existing one kept and the incoming one cleared", got[0].Handle, got[1].Handle)
+	}
+}
+
+func TestTwoWayFoldsThePreRunLocalIntoTheSource(t *testing.T) {
+	local := make([]account.Account, 1, 4)
+	local[0] = acct("a", "Mail", "me", "mail", 10)
+	source := []account.Account{acct("b", "Bank", "me", "bank", 10)}
+	localOut, sourceOut, here, there := TwoWay(local, source)
+	if here != (Counts{Added: 1}) || there != (Counts{Added: 1}) {
+		t.Fatalf("here %+v there %+v, want one add each way and no skip", here, there)
+	}
+	if len(localOut) != 2 || len(sourceOut) != 2 {
+		t.Fatalf("local %v source %v, want both to hold both accounts", ids(localOut), ids(sourceOut))
+	}
+}
+
+func TestDedupeHandlesKeepsTheFirst(t *testing.T) {
+	accts := []account.Account{{Handle: "a"}, {Handle: "b"}, {Handle: "a"}, {}, {Handle: "b"}}
+	DedupeHandles(accts)
+	want := []string{"a", "b", "", "", ""}
+	for i, a := range accts {
+		if a.Handle != want[i] {
+			t.Fatalf("handle %d = %q, want %q", i, a.Handle, want[i])
+		}
+	}
+}
+
+func TestContentKeyIgnoresCaseOfNamesButNotOfTheSecret(t *testing.T) {
+	a := acct("a", "GitHub", "Octocat", "", 1)
+	b := acct("b", "github", "octocat", "", 1)
+	b.Secret = a.Secret
+	if ContentKey(a) != ContentKey(b) {
+		t.Fatal("issuer and account case changed the content key")
+	}
+	b.Secret = []byte("another secret")
+	if ContentKey(a) == ContentKey(b) {
+		t.Fatal("a different secret gave the same content key")
+	}
+	b.Secret, b.Type = a.Secret, account.HOTP
+	if ContentKey(a) == ContentKey(b) {
+		t.Fatal("a different type gave the same content key")
+	}
+}
+
+func ids(accts []account.Account) []string {
+	out := make([]string, len(accts))
+	for i, a := range accts {
+		out[i] = a.ID
+	}
+	return out
+}
+
+type mergeVectors struct {
+	Merge struct {
+		Cases []struct {
+			Name          string `json:"name"`
+			Local         string `json:"local"`
+			Source        string `json:"source"`
+			LocalAfter    string `json:"local_after"`
+			SourceAfter   string `json:"source_after"`
+			LocalWritten  bool   `json:"local_written"`
+			SourceWritten bool   `json:"source_written"`
+			LocalCounts   counts `json:"local_counts"`
+			SourceCounts  counts `json:"source_counts"`
+		} `json:"cases"`
+	} `json:"merge"`
+}
+
+type counts struct {
+	Added   int `json:"added"`
+	Updated int `json:"updated"`
+	Skipped int `json:"skipped"`
+}
+
+func TestMergeVectors(t *testing.T) {
+	var v mergeVectors
+	spectest.Load(t, &v)
+	if len(v.Merge.Cases) == 0 {
+		t.Fatal("merge vectors are empty")
+	}
+	for _, c := range v.Merge.Cases {
+		t.Run(c.Name, func(t *testing.T) {
+			local := parse(t, c.Local)
+			source := parse(t, c.Source)
+			if account.AssignHandles(local) {
+				t.Fatal("a local input account has no handle")
+			}
+			localOut, sourceOut, here, there := TwoWay(local, source)
+			if got := counts(here); got != c.LocalCounts {
+				t.Errorf("local counts %+v, want %+v", got, c.LocalCounts)
+			}
+			if got := counts(there); got != c.SourceCounts {
+				t.Errorf("source counts %+v, want %+v", got, c.SourceCounts)
+			}
+			if here.Changed() != c.LocalWritten || there.Changed() != c.SourceWritten {
+				t.Fatalf("written %v/%v, want %v/%v", here.Changed(), there.Changed(), c.LocalWritten, c.SourceWritten)
+			}
+			if got := written(t, localOut, here.Changed(), c.Local); got != c.LocalAfter {
+				t.Errorf("local after\n%s\nwant\n%s", got, c.LocalAfter)
+			}
+			if got := written(t, sourceOut, there.Changed(), c.Source); got != c.SourceAfter {
+				t.Errorf("source after\n%s\nwant\n%s", got, c.SourceAfter)
+			}
+		})
+	}
+}
+
+func parse(t *testing.T, s string) []account.Account {
+	t.Helper()
+	accts, err := account.ParseCanonicalJSON([]byte(s))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	return accts
+}
+
+// written is the file a side holds after the run: unchanged when nothing was
+// written, otherwise the merged list after the handle pass every save runs.
+func written(t *testing.T, accts []account.Account, changed bool, input string) string {
+	t.Helper()
+	if !changed {
+		return input
+	}
+	DedupeHandles(accts)
+	account.AssignHandles(accts)
+	if err := account.CheckHandleUniqueness(accts); err != nil {
+		t.Fatal(err)
+	}
+	out, err := account.CanonicalJSON(accts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
+}

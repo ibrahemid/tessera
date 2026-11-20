@@ -189,7 +189,7 @@ func (m Model) copySelected(next bool) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	rem := code.Remaining(a, m.now)
-	if !next && rem >= freshFloor {
+	if !next && rem >= FreshnessFloor {
 		c, err := code.For(a, m.now)
 		if err != nil {
 			m.fail("No code: " + ui.Sanitize(err.Error()))

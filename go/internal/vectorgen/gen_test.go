@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -31,6 +32,18 @@ func TestVectorsFileMatchesGenerator(t *testing.T) {
 	for i, c := range out.Bytes() {
 		if c > 0x7e || (c < 0x20 && c != '\n') {
 			t.Fatalf("byte %d is 0x%02x; the vectors file must stay printable ASCII", i, c)
+		}
+	}
+}
+
+func TestVectorsFileCarriesExportsAndMerge(t *testing.T) {
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(readSpecFile(t, "testvectors.json"), &top); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"exports", "merge"} {
+		if _, ok := top[key]; !ok {
+			t.Errorf("spec/testvectors.json has no %q set", key)
 		}
 	}
 }

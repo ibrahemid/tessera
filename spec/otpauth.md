@@ -250,8 +250,8 @@ Canonical classification cases. Both suites port these; `kind` is one of `migrat
 | bytes `AUTHENTICATORPRO...` | export-binary | Stratum encrypted -> rejected naming Stratum |
 | `otpauth://totp/Example:alice@example.com?algorithm=SHA1&digits=6&issuer=Example&period=30&secret=JBSWY3DPEHPK3PXP`<br>`otpauth://steam/Steam:gabe?...`<br>`otpauth://hotp/Bank:ops?...&codeDisplay=%7B...%7D` | otpauth x3 | Ente Auth plain-text export: ordinary per-line otpauth; `codeDisplay` ignored as an unknown param |
 
-## Export formats (CLI only)
-The CLI writes other apps' import formats. The app ships no exporters. These are third-party files: the canonical-JSON rules in `vault-format.md` do NOT apply, JSON is indented two spaces with a trailing newline, and account order is vault order.
+## Export formats
+The CLI writes other apps' import formats. The CLI and the app write identical bytes for each format, except the QR image encoding of otpauth-migration, whose payload URI is identical. These are third-party files: the canonical-JSON rules in `vault-format.md` do NOT apply, JSON is indented two spaces with a trailing newline, and account order is vault order.
 
 - **otpauth-migration** — payload per § otpauth-migration://. Eligible accounts only: type `totp` or `hotp`, algorithm SHA1/SHA256/SHA512, digits 6 or 8, and period 30 for `totp`. Steam accounts, 7-digit accounts and non-30s periods have no representation in `OtpParameters` and are reported as skipped, never downgraded. `OtpParameters` fields are emitted in ascending field number: `secret` raw bytes always; `name` as `issuer:account` when the issuer is non-empty, else the account alone, omitted when both are empty; `issuer` omitted when empty; `algorithm`, `digits` and `type` always; `counter` only for hotp. The payload carries every `otp_parameters` submessage first, then `version = 1`, `batch_size`, `batch_index` (0-based) and `batch_id`, one signed int32 shared by every batch of a single export. Batches hold at most 10 accounts and at most 800 payload bytes, filled greedily in vault order. The URI is `otpauth-migration://offline?data=` + percent-encoded standard base64.
 - **Aegis** — `version 1`, `header {"slots":null,"params":null}`, `db.version 3`; entries carry `type`/`uuid`/`name`/`issuer`/`note`/`favorite`/`icon`/`info`/`groups`; `info.secret` unpadded base32; `info.period` for totp and steam only; `info.counter` for hotp only.
@@ -263,4 +263,4 @@ The CLI writes other apps' import formats. The app ships no exporters. These are
 
 Notes: Aegis `note`, Bitwarden `notes` (`null` when empty), Proton `note` and Apple `Notes` carry the account note; the other formats have no field for it. Trashed accounts are left out of every format here; the encrypted vault copy (`export --file`) is a vault and keeps its Trash.
 
-Ids and uuids are derived from the account id (its 32 hex characters formatted as a dashed UUID) so re-exporting an unchanged vault is byte-identical.
+Ids and uuids (Aegis `uuid`, Bitwarden `id`, Proton `id`) are the first 16 bytes of SHA-256(`tessera-export-id:` + account id) as lowercase hex, dashed 8-4-4-4-12, with no UUID version or variant bits set, so re-exporting an unchanged vault is byte-identical.

@@ -225,6 +225,24 @@ Every writer, on every write:
 
 **Backup generation.** `<vault>.bak` is the vault as it was before the last write. An implementation that cannot parse or authenticate the vault names the backup in its error and offers to open it; it never swaps it in silently. A DEK rotation deletes the backup after the new vault is durable, since the backup is sealed under the old DEK.
 
+## Merging vaults
+
+A merge folds the accounts of a source vault into a destination list. Account identity is the `id`. Each source account, in source order:
+
+1. **Same `id`, strictly newer `updated_at`:** the source copy replaces the destination copy, `deleted_at` included, so a trash or a restore carries over. The destination handle is kept; the incoming handle is used only when the destination copy has none. Counted as updated.
+2. **Same `id`, equal or older `updated_at`:** nothing changes. Counted as skipped.
+3. **New `id`, live, and a live destination account has the same content** (type, issuer and account name compared case-insensitively, and the secret bytes): skipped. A trashed account is never a duplicate and never makes one. Accounts added or replaced earlier in the same merge count as destination accounts.
+4. **New `id` that fails account validation:** skipped.
+5. **Otherwise:** appended. Counted as added.
+
+An account purged on one side is a new `id` to that side, so it returns from the other.
+
+After the pass, handles are deduplicated (the first account in list order keeps a shared handle and later ones lose it), missing handles are assigned as in *Handle assignment*, and uniqueness is checked before the write. A side is written only when something on it was added or updated.
+
+**One-way** (`tess merge <source>`) writes the local vault only. **Two-way** (`--two-way`) merges the source into the local list, and merges the local list as it was before the run into the source list. It holds both vault locks, writes the local vault first and then the source, so a failed local write leaves the source untouched. A symlinked source resolves like the vault path. A two-way merge refuses a source that is the same file as the vault.
+
+The `merge` set in `testvectors.json` pins these rules: per case, both input lists, each side's canonical JSON after the run, whether each side is written, and each side's added, updated and skipped counts.
+
 ## DEK rotation
 
 Rotation generates a new random DEK, reseals the payload under it, and rebuilds the wraps.

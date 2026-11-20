@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
+	"github.com/ibrahemid/tessera/go/internal/merge"
 	"github.com/ibrahemid/tessera/go/internal/store"
 	"github.com/ibrahemid/tessera/go/internal/ui"
 	"github.com/ibrahemid/tessera/go/internal/vault"
@@ -61,7 +62,11 @@ func mergeFromSource(cmd *cobra.Command, srcPath string, twoWay bool) error {
 		return err
 	}
 	defer s.close()
+	shownPath := srcPath
 	if twoWay {
+		if srcPath, err = resolveMergeSource(srcPath); err != nil {
+			return err
+		}
 		if err := checkTwoWaySource(s.path, srcPath); err != nil {
 			return err
 		}
@@ -80,15 +85,15 @@ func mergeFromSource(cmd *cobra.Command, srcPath string, twoWay bool) error {
 		}
 		defer zeroBytes(dek)
 		if twoWay {
-			report, err = mergeTwoWay(fresh, srcPath, srcAccts, env, dek)
+			report, err = mergeTwoWay(fresh, srcPath, shownPath, srcAccts, env, dek)
 			if err != nil {
 				return err
 			}
 			return errNothingToWrite
 		}
-		added, updated, skipped := mergeVault(fresh, srcAccts)
-		report = fmt.Sprintf("Merged %s: %d added, %d updated, %d unchanged", ui.Sanitize(srcPath), added, updated, skipped)
-		if added == 0 && updated == 0 {
+		c := mergeVault(fresh, srcAccts)
+		report = fmt.Sprintf("Merged %s: %d added, %d updated, %d unchanged", ui.Sanitize(srcPath), c.Added, c.Updated, c.Skipped)
+		if !c.Changed() {
 			return errNothingToWrite
 		}
 		return nil
@@ -103,6 +108,22 @@ func mergeFromSource(cmd *cobra.Command, srcPath string, twoWay bool) error {
 	}
 	out(cmd, "%s", report)
 	return nil
+}
+
+// resolveMergeSource resolves a two-way source the way the vault path is
+// resolved: a symbolic link names the file it points at, so the source's lock,
+// temporary file, backup and rename land next to the real file and the link
+// survives the write.
+func resolveMergeSource(path string) (string, error) {
+	if path == "" {
+		return "", fmt.Errorf("no vault at %s", path)
+	}
+	resolved, err := store.Resolve(path)
+	var ipe *store.InvalidPathError
+	if errors.As(err, &ipe) {
+		return "", &store.InvalidPathError{Path: ipe.Path, Source: "the merge source argument"}
+	}
+	return resolved, err
 }
 
 // checkTwoWaySource rejects a two-way source that is the destination itself or
@@ -125,28 +146,22 @@ func checkTwoWaySource(dstPath, srcPath string) error {
 // caller holds both vault locks. The local vault is written first: if that
 // save fails the source is left untouched, so a run either advances both files
 // or neither.
-func mergeTwoWay(s *session, srcPath string, srcAccts []account.Account, env *vault.Envelope, dek []byte) (string, error) {
-	local := make([]account.Account, len(s.accounts))
-	copy(local, s.accounts)
-
-	merged, hereAdded, hereUpdated, skipped := mergeInto(s.accounts, srcAccts)
+func mergeTwoWay(s *session, srcPath, shownPath string, srcAccts []account.Account, env *vault.Envelope, dek []byte) (string, error) {
+	merged, srcMerged, here, there := merge.TwoWay(s.accounts, srcAccts)
 	s.accounts = merged
-	// The reverse direction folds the vault as it was before this run, so the
-	// two directions see the same starting point.
-	srcMerged, thereAdded, thereUpdated, _ := mergeInto(srcAccts, local)
 
-	if hereAdded > 0 || hereUpdated > 0 {
+	if here.Changed() {
 		if err := s.save(); err != nil {
 			return "", err
 		}
 	}
-	if thereAdded > 0 || thereUpdated > 0 {
+	if there.Changed() {
 		if err := saveMergeSource(srcPath, env, dek, srcMerged); err != nil {
 			return "", err
 		}
 	}
 	return fmt.Sprintf("Merged %s: +%d ~%d here, +%d ~%d there, %d unchanged",
-		ui.Sanitize(srcPath), hereAdded, hereUpdated, thereAdded, thereUpdated, skipped), nil
+		ui.Sanitize(shownPath), here.Added, here.Updated, there.Added, there.Updated, here.Skipped), nil
 }
 
 // saveMergeSource re-seals the source vault with the merged accounts, using the
@@ -155,7 +170,7 @@ func saveMergeSource(path string, env *vault.Envelope, dek []byte, accts []accou
 	// The source is its own handle namespace: a handle carried over from the
 	// local vault may collide there, so collisions are cleared and reassigned
 	// against this list before the uniqueness check.
-	dedupeHandles(accts)
+	merge.DedupeHandles(accts)
 	account.AssignHandles(accts)
 	if err := account.CheckHandleUniqueness(accts); err != nil {
 		return err
@@ -306,89 +321,8 @@ func openMergeSource(path string, key mergeSourceKey) ([]account.Account, *vault
 }
 
 // mergeVault unions src into the session's accounts under the merge rule.
-func mergeVault(s *session, src []account.Account) (added, updated, skipped int) {
-	merged, added, updated, skipped := mergeInto(s.accounts, src)
+func mergeVault(s *session, src []account.Account) merge.Counts {
+	merged, c := merge.Into(s.accounts, src)
 	s.accounts = merged
-	return added, updated, skipped
-}
-
-// mergeInto folds src into dst under the vault merge rule and returns the new
-// slice plus counts. Identity is the account id; a live account matching a
-// live one by content (dedupeKey) under a different id counts as already
-// present, while trashed accounts take no part in that check. On an id
-// collision the copy with the STRICTLY newer UpdatedAt wins and carries its
-// DeletedAt, so an equal timestamp writes nothing on either side and repeated
-// merges cannot ping-pong. Handles that would collide after the merge are
-// cleared so save reassigns unique ones.
-//
-// It is pure: no session, no I/O, so one rule governs both directions of a
-// two-way merge.
-func mergeInto(dst, src []account.Account) (out []account.Account, added, updated, skipped int) {
-	out = dst
-	byID := map[string]int{}
-	live := map[string]int{}
-	for i, a := range out {
-		byID[a.ID] = i
-		if !a.Trashed() {
-			live[dedupeKey(a)]++
-		}
-	}
-	for _, a := range src {
-		if idx, ok := byID[a.ID]; ok {
-			if a.UpdatedAt > out[idx].UpdatedAt {
-				if !out[idx].Trashed() {
-					live[dedupeKey(out[idx])]--
-				}
-				if !a.Trashed() {
-					live[dedupeKey(a)]++
-				}
-				// The handle is how the user refers to this account in this
-				// vault; the other side is a different vault's namespace, so
-				// the local one is kept rather than silently renamed.
-				local := out[idx].Handle
-				out[idx] = a
-				if local != "" {
-					out[idx].Handle = local
-				}
-				updated++
-			} else {
-				skipped++
-			}
-			continue
-		}
-		if !a.Trashed() && live[dedupeKey(a)] > 0 {
-			skipped++
-			continue
-		}
-		if err := a.Validate(); err != nil {
-			skipped++
-			continue
-		}
-		byID[a.ID] = len(out)
-		if !a.Trashed() {
-			live[dedupeKey(a)]++
-		}
-		out = append(out, a)
-		added++
-	}
-	dedupeHandles(out)
-	return out, added, updated, skipped
-}
-
-// dedupeHandles clears any handle that repeats one already seen earlier in the
-// slice, keeping the first occurrence. Cleared handles are regenerated uniquely
-// by account.AssignHandles during save.
-func dedupeHandles(accts []account.Account) {
-	seen := map[string]bool{}
-	for i := range accts {
-		h := accts[i].Handle
-		if h == "" {
-			continue
-		}
-		if seen[h] {
-			accts[i].Handle = ""
-			continue
-		}
-		seen[h] = true
-	}
+	return c
 }

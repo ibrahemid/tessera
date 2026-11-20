@@ -13,6 +13,7 @@ import (
 	"github.com/ibrahemid/tessera/go/internal/account"
 	"github.com/ibrahemid/tessera/go/internal/clipboard"
 	"github.com/ibrahemid/tessera/go/internal/code"
+	"github.com/ibrahemid/tessera/go/internal/tui"
 	"github.com/ibrahemid/tessera/go/internal/ui"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -47,10 +48,6 @@ var stdoutIsTTY = func() bool { return term.IsTerminal(int(os.Stdout.Fd())) }
 // sleepFn is the clock wait used by the freshness guard and the clipboard
 // clear, replaceable in tests.
 var sleepFn = time.Sleep
-
-// freshnessFloor is the seconds-remaining threshold under which a code is too
-// close to rolling over: pasting it usually loses the race with the server.
-const freshnessFloor = 4
 
 // codeOptions holds the flags shared by `tess code` and the bare `tess <query>`
 // shortcut, which run the same code path.
@@ -383,7 +380,7 @@ func waitForFreshCode(cmd *cobra.Command, a account.Account, t time.Time) time.T
 		return t
 	}
 	rem := code.Remaining(a, t)
-	if rem >= freshnessFloor {
+	if rem >= tui.FreshnessFloor {
 		return t
 	}
 	errOut(cmd, "waiting %ds for a fresh code", rem)
