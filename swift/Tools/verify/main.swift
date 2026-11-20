@@ -523,6 +523,8 @@ if let testdataDir {
     }
 }
 
+runOTPChecks(V, check)
+
 print("")
 if failures == 0 { print("ALL SWIFT INTEROP CHECKS PASSED") } else { print("\(failures) CHECK(S) FAILED") }
 exit(failures == 0 ? 0 : 1)
@@ -611,5 +613,7 @@ func assertImportedAccounts(_ got: [Account], _ want: [[String: Any]]) throws {
         if a.period != wantPeriod { throw fail("period", a.period, wantPeriod) }
         let wantCounter = (w["counter"] as! NSNumber).int64Value
         if a.counter != wantCounter { throw fail("counter", a.counter, wantCounter) }
+        let wantNote = w["note"] as? String ?? ""
+        if Array(a.note.utf8) != Array(wantNote.utf8) { throw fail("note", a.note.debugDescription, wantNote.debugDescription) }
     }
 }

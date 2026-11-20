@@ -1,81 +1,83 @@
 import Foundation
 
-/// Parses and emits otpauth:// URIs into the canonical account model.
+/// Parses and emits otpauth:// URIs into the canonical account model. Accepts,
+/// rejects and normalises exactly what Go `otpauth.Parse` and `otpauth.Format`
+/// do (spec/otpauth.md), including their error text.
 public enum OTPAuth {
 
+    /// The largest HOTP counter a vault may hold (spec/vault-format.md).
+    static let maxCounter: Int64 = Int64.max - 1
+
     public static func parse(_ uri: String) throws -> Account {
-        guard let comps = URLComponents(string: uri.trimmingCharacters(in: .whitespacesAndNewlines)),
-              comps.scheme == "otpauth" else {
-            throw AccountError.invalid("not an otpauth uri")
+        let u: GoURL
+        do { u = try GoURL.parse(GoText.trimSpace(uri)) } catch {
+            throw AccountError.invalid("otpauth: invalid URI")
         }
-        let host = (comps.host ?? "").lowercased()
+        guard u.scheme == "otpauth" else {
+            throw AccountError.invalid("otpauth: not an otpauth uri (scheme \(GoText.quote(u.scheme)))")
+        }
+        let host = GoText.string(u.host)
         var type: OTPType
-        switch host {
+        switch GoText.toLower(host) {
         case "totp": type = .totp
         case "hotp": type = .hotp
         case "steam": type = .steam
-        default: throw AccountError.invalid("unsupported type \(host)")
+        default: throw AccountError.invalid("otpauth: unsupported type \(GoText.quote(host))")
         }
 
-        // spec/otpauth.md § label encoding: split the ENCODED label on its first
-        // literal ':', then percent-decode each side once. Decoding first would
-        // make a '%3A' inside an issuer or account look like the separator.
-        var label = comps.percentEncodedPath
-        if label.hasPrefix("/") { label.removeFirst() }
-        var rawIssuer = "", rawAccount = label
-        if let r = label.range(of: ":") {
-            rawIssuer = String(label[..<r.lowerBound])
-            rawAccount = String(label[r.upperBound...])
-        }
-        var issuer = (rawIssuer.removingPercentEncoding ?? rawIssuer).trimmingCharacters(in: .whitespaces)
-        let account = (rawAccount.removingPercentEncoding ?? rawAccount).trimmingCharacters(in: .whitespaces)
+        let (labelIssuer, account) = try splitLabel(u.escapedPath)
+        var issuer = labelIssuer
+        let q = try parseQuery(u.rawQuery)
 
-        // spec/otpauth.md § query encoding: decode the still-encoded query items
-        // ourselves so a '+' is read as a space. URLComponents.queryItems leaves
-        // '+' literal, which would break every URI emitted in the legacy form
-        // (Go url.Values.Encode, Aegis, and others).
-        let items = (comps.percentEncodedQueryItems ?? []).map {
-            URLQueryItem(name: decodeQueryComponent($0.name), value: $0.value.map(decodeQueryComponent))
+        let secretParam = q["secret"] ?? ""
+        if secretParam.isEmpty { throw AccountError.invalid("otpauth: missing secret") }
+        let secret: Data
+        do { secret = try Base32.decode(secretParam) } catch let AccountError.invalid(m) {
+            throw AccountError.invalid("otpauth: bad secret: \(m)")
         }
-        func q(_ name: String) -> String? { items.first { $0.name == name }?.value }
 
-        guard let secretParam = q("secret"), !secretParam.isEmpty else {
-            throw AccountError.invalid("missing secret")
-        }
-        let secret = try Base32.decode(secretParam)
-
-        if let iss = q("issuer"), !iss.isEmpty {
+        let iss = TextClean.text(q["issuer"] ?? "")
+        if !iss.isEmpty {
             if !issuer.isEmpty && issuer != iss {
-                throw AccountError.invalid("issuer mismatch")
+                throw AccountError.invalid(
+                    "otpauth: issuer mismatch (label \(GoText.quote(issuer)), param \(GoText.quote(iss)))")
             }
             issuer = iss
         }
 
-        // Steam heuristic: issuer "Steam" with a TOTP type is treated as Steam.
-        if type == .totp && issuer.lowercased() == "steam" {
-            type = .steam
-        }
+        if type == .totp && GoText.equalFold(issuer, ascii: "Steam") { type = .steam }
 
         var algorithm = "SHA1"
-        if let alg = q("algorithm"), !alg.isEmpty {
-            algorithm = try OTP.Algorithm.parse(alg).rawValue
+        if let alg = q["algorithm"], !alg.isEmpty {
+            let upper = GoText.toUpper(alg)
+            guard ["SHA1", "SHA256", "SHA512"].contains(upper) else {
+                throw AccountError.invalid("otpauth: unsupported algorithm \(GoText.quote(alg))")
+            }
+            algorithm = upper
         }
+
         var digits = type == .steam ? 5 : 6
-        if let d = q("digits"), !d.isEmpty {
-            let n = Int(d)
-            let bad = type == .steam ? (n != 5) : (n == nil || n! < 6 || n! > 8)
-            if bad { throw AccountError.invalid("invalid digits") }
+        if let d = q["digits"], !d.isEmpty {
+            let n = GoText.atoi(d)
+            let bad = type == .steam ? n != 5 : (n.map { $0 < 6 || $0 > 8 } ?? true)
+            if bad { throw AccountError.invalid("otpauth: invalid digits \(GoText.quote(d))") }
             digits = n!
         }
+
         var period = 30
-        if let p = q("period"), !p.isEmpty {
-            guard let n = Int(p), n > 0 else { throw AccountError.invalid("invalid period") }
+        if let p = q["period"], !p.isEmpty {
+            guard let n = GoText.atoi(p), n > 0 else {
+                throw AccountError.invalid("otpauth: invalid period \(GoText.quote(p))")
+            }
             period = n
         }
+
         var counter: Int64 = 0
         if type == .hotp {
-            guard let c = q("counter"), let n = Int64(c), n >= 0 else {
-                throw AccountError.invalid("hotp requires a valid counter")
+            let c = q["counter"] ?? ""
+            if c.isEmpty { throw AccountError.invalid("otpauth: hotp requires counter") }
+            guard let n = GoText.parseInt64(c), n >= 0, n <= maxCounter else {
+                throw AccountError.invalid("otpauth: invalid counter \(GoText.quote(c))")
             }
             counter = n
         }
@@ -89,60 +91,75 @@ public enum OTPAuth {
         switch a.type {
         case .hotp: typ = "hotp"
         case .steam: typ = "steam"
-        default: typ = "totp"
+        case .totp: typ = "totp"
         }
-        // Each component is escaped on its own so the only bare ':' in the label
-        // is the separator (spec/otpauth.md § label encoding).
-        let escapedAccount = escapeLabelPart(a.account)
-        let label = a.issuer.isEmpty ? escapedAccount : "\(escapeLabelPart(a.issuer)):\(escapedAccount)"
-        var comps = URLComponents()
-        comps.scheme = "otpauth"
-        comps.host = typ
-        comps.percentEncodedPath = "/" + label
-        var items: [URLQueryItem] = [URLQueryItem(name: "secret", value: Base32.encodeNoPad(a.secret))]
-        if !a.issuer.isEmpty { items.append(URLQueryItem(name: "issuer", value: a.issuer)) }
-        if a.algorithm != "SHA1" { items.append(URLQueryItem(name: "algorithm", value: a.algorithm)) }
+        var label = escapeLabelPart(a.account)
+        if !a.issuer.isEmpty { label = escapeLabelPart(a.issuer) + ":" + label }
+
+        var v: [String: String] = ["secret": Base32.encodeNoPad(a.secret)]
+        if !a.issuer.isEmpty { v["issuer"] = a.issuer }
+        if !a.algorithm.isEmpty && a.algorithm != "SHA1" { v["algorithm"] = a.algorithm }
         if a.type == .steam {
-            items.append(URLQueryItem(name: "digits", value: "5"))
-        } else if a.digits != 6 {
-            items.append(URLQueryItem(name: "digits", value: String(a.digits)))
+            v["digits"] = "5"
+        } else if a.digits != 0 && a.digits != 6 {
+            v["digits"] = String(a.digits)
         }
-        if a.type != .hotp && a.period != 30 { items.append(URLQueryItem(name: "period", value: String(a.period))) }
-        if a.type == .hotp { items.append(URLQueryItem(name: "counter", value: String(a.counter))) }
-        comps.percentEncodedQueryItems = items.map {
-            URLQueryItem(name: encodeQueryComponent($0.name), value: $0.value.map(encodeQueryComponent))
-        }
-        return comps.string ?? ""
+        if a.type != .hotp && a.period != 0 && a.period != 30 { v["period"] = String(a.period) }
+        if a.type == .hotp { v["counter"] = String(a.counter) }
+        return "otpauth://\(typ)/\(label)?\(encodeQuery(v))"
     }
 
-    /// Percent-decodes one query component the way Go's `url.Query` does: '+'
-    /// is a space, and it is substituted BEFORE percent-decoding so that a
-    /// literal plus written as `%2B` survives as a plus.
-    private static func decodeQueryComponent(_ s: String) -> String {
-        let plusAsSpace = s.replacingOccurrences(of: "+", with: " ")
-        return plusAsSpace.removingPercentEncoding ?? plusAsSpace
+    /// Go `url.Values.Encode` with every `+` then written as `%20`: keys sorted,
+    /// keys and values query-escaped.
+    static func encodeQuery(_ v: [String: String]) -> String {
+        v.keys.sorted { Array($0.utf8).lexicographicallyPrecedes(Array($1.utf8)) }
+            .map { GoURL.escape($0, .queryComponent) + "=" + GoURL.escape(v[$0]!, .queryComponent) }
+            .joined(separator: "&")
+            .replacingOccurrences(of: "+", with: "%20")
     }
 
-    /// Percent-encodes one query component (spec/otpauth.md § query encoding):
-    /// everything outside the RFC 3986 unreserved set is escaped, so a space is
-    /// `%20` and a literal plus is `%2B`. URLComponents' own query escaping
-    /// leaves '+' alone, which a parser that reads '+' as a space would turn
-    /// into whitespace.
-    private static func encodeQueryComponent(_ s: String) -> String {
-        s.addingPercentEncoding(withAllowedCharacters: queryComponentAllowed) ?? s
-    }
-
-    /// RFC 3986 unreserved characters, ASCII only. `CharacterSet.alphanumerics`
-    /// would let non-ASCII letters through unescaped; Go escapes every byte
-    /// outside this set, and both cores must emit the same query.
-    private static let queryComponentAllowed = CharacterSet(
-        charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
-
-    /// Percent-encodes one label component. ':' and '/' are always escaped: the
-    /// first is the issuer/account separator and the second ends the label.
     private static func escapeLabelPart(_ s: String) -> String {
-        var allowed = CharacterSet.urlPathAllowed
-        allowed.remove(charactersIn: ":/")
-        return s.addingPercentEncoding(withAllowedCharacters: allowed) ?? s
+        GoURL.escape(s, .pathSegment).replacingOccurrences(of: ":", with: "%3A")
+    }
+
+    /// Splits the still-escaped label on its first ':' and unescapes each side
+    /// once, so a `%3A` inside a component stays data (spec/otpauth.md).
+    private static func splitLabel(_ escapedPath: [UInt8]) throws -> (String, String) {
+        var label = escapedPath[...]
+        if label.first == UInt8(ascii: "/") { label = label.dropFirst() }
+        var (rawIssuer, rawAccount, hasIssuer) = GoURL.cut(Array(label), UInt8(ascii: ":"))
+        if !hasIssuer { (rawIssuer, rawAccount) = ([], Array(label)) }
+        let issuer: [UInt8], account: [UInt8]
+        do { issuer = try GoURL.unescape(rawIssuer, .pathSegment) } catch {
+            throw AccountError.invalid("otpauth: bad label issuer: \(error)")
+        }
+        do { account = try GoURL.unescape(rawAccount, .pathSegment) } catch {
+            throw AccountError.invalid("otpauth: bad label account: \(error)")
+        }
+        return (TextClean.text(GoText.string(issuer)), TextClean.text(GoText.string(account)))
+    }
+
+    /// The query as Go `otpauth.parseQuery` reads it: pairs split on '&', empty
+    /// pairs skipped, every key and value query-unescaped (one bad escape
+    /// anywhere rejects the link), and the first occurrence of a key wins.
+    private static func parseQuery(_ rawQuery: [UInt8]) throws -> [String: String] {
+        var q: [String: String] = [:]
+        var rest = rawQuery
+        while !rest.isEmpty {
+            let (pair, after, _) = GoURL.cut(rest, UInt8(ascii: "&"))
+            rest = after
+            if pair.isEmpty { continue }
+            let (rawKey, rawValue, _) = GoURL.cut(pair, UInt8(ascii: "="))
+            let key: [UInt8], value: [UInt8]
+            do {
+                key = try GoURL.unescape(rawKey, .queryComponent)
+                value = try GoURL.unescape(rawValue, .queryComponent)
+            } catch {
+                throw AccountError.invalid("otpauth: invalid percent-encoding in query")
+            }
+            let k = GoText.string(key)
+            if q[k] == nil { q[k] = GoText.string(value) }
+        }
+        return q
     }
 }

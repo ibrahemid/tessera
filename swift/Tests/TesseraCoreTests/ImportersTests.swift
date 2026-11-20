@@ -254,6 +254,89 @@ final class ImportersTests: XCTestCase {
             XCTAssertEqual(a.digits, (w["digits"] as! NSNumber).intValue, "\(at): digits")
             XCTAssertEqual(a.period, (w["period"] as! NSNumber).intValue, "\(at): period")
             XCTAssertEqual(a.counter, (w["counter"] as! NSNumber).int64Value, "\(at): counter")
+            XCTAssertEqual(Array(a.note.utf8), Array((w["note"] as? String ?? "").utf8), "\(at): note")
+        }
+    }
+
+    // MARK: - text cleaning and notes
+
+    func testImportersCleanText() throws {
+        let cases: [(String, String, String, String)] = [
+            ("aegis",
+             #"{"version":1,"header":{},"db":{"version":3,"entries":[{"type":"totp","name":"\ufeffjohn\u200d\u0007","issuer":" \u202eGit\u0085Hub\u2069 ","info":{"secret":"JBSWY3DPEHPK3PXP","algo":"SHA1","digits":6,"period":30}}]}}"#,
+             "GitHub", "john\u{200d}"),
+            ("bitwarden setup key",
+             #"{"folders":[],"items":[{"name":"\u202eBank\u0000","login":{"username":" ops\u001b","totp":"JBSWY3DPEHPK3PXP"}}]}"#,
+             "Bank", "ops"),
+            ("bitwarden steam fallback",
+             #"{"folders":[],"items":[{"name":"Valve\u2066","login":{"username":"\ufeff ","totp":"steam://JBSWY3DPEHPK3PXP"}}]}"#,
+             "Steam", "Valve"),
+            ("apple csv",
+             "Title,URL,Username,Password,Notes,OTPAuth\n\"\u{202e}Example\",https://e.com,\"alice\u{7}\",pw,,JBSWY3DPEHPK3PXP\n",
+             "Example", "alice"),
+        ]
+        for (name, data, issuer, account) in cases {
+            let found = try XCTUnwrap(try parse(data), name)
+            XCTAssertEqual(found.accounts.map { Array($0.issuer.utf8) }, [Array(issuer.utf8)], name)
+            XCTAssertEqual(found.accounts.map { Array($0.account.utf8) }, [Array(account.utf8)], name)
+        }
+    }
+
+    func testImportersMapNote() throws {
+        let raw = "line1\r\nline2\rline3\u{1b}[0m\tend\u{202e} "
+        let want = "line1\nline2\nline3[0m\tend"
+        let jsonRaw = #"line1\r\nline2\rline3\u001b[0m\tend\u202e "#
+        let cases: [(String, String)] = [
+            ("aegis",
+             #"{"version":1,"header":{},"db":{"version":3,"entries":[{"type":"totp","name":"a","issuer":"b","note":"@@N@@","info":{"secret":"JBSWY3DPEHPK3PXP"}},{"type":"totp","name":"c","issuer":"d","info":{"secret":"JBSWY3DPEHPK3PXP"}}]}}"#),
+            ("bitwarden",
+             #"{"folders":[],"items":[{"name":"a","notes":"@@N@@","login":{"totp":"JBSWY3DPEHPK3PXP"}},{"name":"b","notes":null,"login":{"totp":"JBSWY3DPEHPK3PXP"}}]}"#),
+            ("proton",
+             #"{"version":1,"entries":[{"note":"@@N@@","content":{"uri":"otpauth://totp/a:b?secret=JBSWY3DPEHPK3PXP","entry_type":"Totp","name":"a"}},{"note":null,"content":{"uri":"otpauth://totp/c:d?secret=JBSWY3DPEHPK3PXP","entry_type":"Totp","name":"c"}}]}"#),
+            ("apple csv",
+             "Title,URL,Username,Password,Notes,OTPAuth\na,,b,,\"" + raw + "\",JBSWY3DPEHPK3PXP\nc,,d,,,JBSWY3DPEHPK3PXP\n"),
+            ("1password csv",
+             "Title,Url,Username,Password,OTPAuth,Favorite,Archived,Tags,Notes\na,,b,,JBSWY3DPEHPK3PXP,false,false,,\"" + raw + "\"\nc,,d,,JBSWY3DPEHPK3PXP,false,false,\n"),
+            ("1pux export.data",
+             #"{"accounts":[{"vaults":[{"items":[{"details":{"notesPlain":"@@N@@","sections":[{"fields":[{"value":{"totp":"JBSWY3DPEHPK3PXP"}}]}]},"overview":{"title":"a"}},{"details":{"sections":[{"fields":[{"value":{"totp":"JBSWY3DPEHPK3PXP"}}]}]},"overview":{"title":"b"}}]}]}]}"#),
+        ]
+        for (name, template) in cases {
+            let data = template.replacingOccurrences(of: "@@N@@", with: jsonRaw)
+            let found = try XCTUnwrap(try parse(data), name)
+            XCTAssertEqual(found.accounts.map { Array($0.note.utf8) }, [Array(want.utf8), []], name)
+        }
+    }
+
+    // MARK: - input bounds
+
+    func testParseRejectsOversizedInput() {
+        var data = Data(count: Importers.maxInputBytes + 1)
+        data[0] = UInt8(ascii: "{")
+        XCTAssertThrowsError(try Importers.parse(data)) { error in
+            guard case Importers.ImporterError.malformed(let m) = error else {
+                XCTFail("\(error) is not ImporterError.malformed")
+                return
+            }
+            XCTAssertEqual(m, "input is larger than 64 MiB")
+        }
+    }
+
+    func testJSONNestingLimitMatchesGo() {
+        func nested(_ depth: Int) -> [UInt8] {
+            Array(repeating: UInt8(ascii: "["), count: depth) + Array(repeating: UInt8(ascii: "]"), count: depth)
+        }
+        XCTAssertNotNil(GoJSON(nested(GoJSON.maxDepth)))
+        XCTAssertNil(GoJSON(nested(GoJSON.maxDepth + 1)))
+        XCTAssertNil(GoJSON(Array(#"{"a":1}x"#.utf8)))
+        XCTAssertNotNil(GoJSON(Array(#" {"a":1,"a":2} "#.utf8)))
+    }
+
+    /// A bad entry fails the whole export and names the entry, with the text
+    /// Go `importers.Parse` gives.
+    func testBadEntryFailsTheExport() {
+        let data = #"{"version":1,"header":{},"db":{"version":3,"entries":[{"type":"totp","name":"a","issuer":"b","info":{"secret":"JBSWY3DPEHPK3PXP"}},{"type":"totp","name":"c","issuer":"d","info":{"secret":"!!"}}]}}"#
+        XCTAssertThrowsError(try parse(data)) { error in
+            XCTAssertEqual("\(error)", #"aegis entry "c": decode secret: base32x: invalid base32 input"#)
         }
     }
 }

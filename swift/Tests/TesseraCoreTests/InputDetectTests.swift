@@ -141,7 +141,8 @@ final class InputDetectTests: XCTestCase {
         XCTAssertEqual(accounts.count, 2)
         XCTAssertEqual(errors.count, 1)
         XCTAssertEqual(errors[0].line, 2)
-        XCTAssertEqual(errors[0].reason, "Not recognized")
+        XCTAssertEqual(errors[0].reason, "unrecognized input")
+        XCTAssertEqual(errors[0].display, "invalid hell…")
     }
 
     /// Spec row: leading/trailing whitespace is trimmed before every rule, on
@@ -178,9 +179,59 @@ final class InputDetectTests: XCTestCase {
     }
 
     func testParseTextEmpty() {
-        let (accounts, errors) = InputDetect.parseText("")
+        for input in ["", " \n\t\r\n "] {
+            let (accounts, errors) = InputDetect.parseText(input)
+            XCTAssertTrue(accounts.isEmpty)
+            XCTAssertTrue(errors.isEmpty)
+        }
+    }
+
+    func testParseTextRejectsOversizedInput() {
+        let big = String(repeating: "a", count: Importers.maxInputBytes + 1)
+        let (accounts, errors) = InputDetect.parseText(big)
         XCTAssertTrue(accounts.isEmpty)
-        XCTAssertTrue(errors.isEmpty)
+        XCTAssertEqual(errors, [InputDetect.ItemError(line: 1, display: "", reason: "input is larger than 64 MiB")])
+    }
+
+    func testParseTextExportBlobReportsSource() {
+        let encrypted = #"{ "version": 1, "header": { "slots": [], "params": {} }, "db": "c2VhbGVk" }"#
+        let (accounts, errors) = InputDetect.parseText(encrypted)
+        XCTAssertTrue(accounts.isEmpty)
+        XCTAssertEqual(errors.count, 1)
+        XCTAssertEqual(errors.first?.line, 1)
+        XCTAssertEqual(errors.first?.display, "export-json Aegi…")
+
+        let unknown = #"{ "hello": "world" }"#
+        let (a2, e2) = InputDetect.parseText(unknown)
+        XCTAssertTrue(a2.isEmpty)
+        XCTAssertEqual(e2, [InputDetect.ItemError(line: 1, display: "invalid { \"h…", reason: "unrecognized export")])
+    }
+
+    func testParseTextReportsEachBadLineAndKeepsTheRest() {
+        let input = [
+            "otpauth://totp/A?secret=JBSWY3DPEHPK3PXP",
+            "otpauth://hotp/B?secret=JBSWY3DPEHPK3PXP",
+            "otpauth://totp/C?secret=JBSWY3DPEHPK3PXP",
+        ].joined(separator: "\n")
+        let (accounts, errors) = InputDetect.parseText(input)
+        XCTAssertEqual(accounts.map(\.account), ["A", "C"])
+        XCTAssertEqual(errors.count, 1)
+        XCTAssertEqual(errors.first?.line, 2)
+        XCTAssertEqual(errors.first?.display, "otpauth otpa…")
+        XCTAssertEqual(errors.first?.reason.hasPrefix("otpauth:"), true)
+    }
+
+    func testRedactKeepsFourScalars() {
+        XCTAssertEqual(InputDetect.redact(.setupKey, "  ab  "), "setup-key ab")
+        XCTAssertEqual(InputDetect.redact(.invalid, "abcd"), "invalid abcd")
+        XCTAssertEqual(InputDetect.redact(.invalid, "abcde"), "invalid abcd…")
+        XCTAssertEqual(InputDetect.redact(.otpauth, "e\u{301}\u{301}xyz"), "otpauth e\u{301}\u{301}x…")
+        XCTAssertEqual(InputDetect.redact(.migration, " \t"), "migration")
+    }
+
+    func testClassifyByteOrderMarkIsInvalid() {
+        XCTAssertEqual(InputDetect.classify("\u{feff}otpauth://totp/A?secret=JBSWY3DPEHPK3PXP"), .invalid)
+        XCTAssertEqual(InputDetect.classify("\u{feff}[]"), .invalid)
     }
 
     func testParseTextSkipsBlankLines() {

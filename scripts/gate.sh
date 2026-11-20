@@ -29,7 +29,7 @@ check_gofmt() {
 
 check_swift_verify() {
   bin="$LOG_DIR/tessera_verify"
-  swiftc -O "$ROOT"/swift/Sources/TesseraCore/*.swift "$ROOT/swift/Tools/verify/main.swift" -o "$bin" &&
+  swiftc -O "$ROOT"/swift/Sources/TesseraCore/*.swift "$ROOT"/swift/Tools/verify/*.swift -o "$bin" &&
     "$bin" "$ROOT/spec" "$ROOT/go/internal/importers/testdata"
 }
 

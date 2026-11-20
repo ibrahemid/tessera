@@ -2,8 +2,9 @@ import Foundation
 
 /// Classifies a text payload and turns it into accounts. Mirrors the Go
 /// `internal/detect` package and the precedence in `spec/otpauth.md` ("Input
-/// detection") byte-for-byte, so a given input yields the same `InputKind` in
-/// both cores. Used for pasted text, decoded QR payloads, and text/JSON files.
+/// detection") byte-for-byte, so a given input yields the same `InputKind`,
+/// accounts and per-item errors in both cores. Used for pasted text, decoded
+/// QR payloads, and text/JSON files.
 public enum InputDetect {
 
     /// The classification of a single-payload (single-line) input.
@@ -20,6 +21,21 @@ public enum InputDetect {
         case exportBinary
         case setupKey
         case invalid
+
+        /// The spec-canonical name of the kind.
+        var name: String {
+            switch self {
+            case .migration: return "migration"
+            case .otpauth: return "otpauth"
+            case .exportJSON: return "export-json"
+            case .exportCSV: return "export-csv"
+            case .exportBinary: return "export-binary"
+            case .setupKey: return "setup-key"
+            case .invalid: return "invalid"
+            }
+        }
+
+        var isExport: Bool { self == .exportJSON || self == .exportCSV || self == .exportBinary }
     }
 
     /// One item that failed to parse in a batch. Carries the line index, a
@@ -28,7 +44,8 @@ public enum InputDetect {
     public struct ItemError: Error, Equatable, Sendable {
         /// 1-based line number within the input.
         public let line: Int
-        /// Redacted, safe-to-show preview of the input.
+        /// Redacted, safe-to-show preview of the input: its kind and at most
+        /// its first four characters.
         public let display: String
         /// Factual reason the item was not imported.
         public let reason: String
@@ -40,15 +57,17 @@ public enum InputDetect {
         }
     }
 
+    private static let minSetupKeyLen = 16
+
     /// Classify a single payload by the first matching rule (see spec).
     public static func classify(_ input: String) -> InputKind {
-        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty { return .invalid }
-        let lower = trimmed.lowercased()
-        if lower.hasPrefix("otpauth-migration://") { return .migration }
-        if lower.hasPrefix("otpauth://") { return .otpauth }
-        if let first = trimmed.first, first == "[" || first == "{" { return .exportJSON }
-        let bytes = Data(trimmed.utf8)
+        let trimmed = GoText.trimSpace(input)
+        guard let first = trimmed.utf8.first else { return .invalid }
+        let lower = GoText.toLower(trimmed)
+        if GoText.hasPrefix(lower, "otpauth-migration://") { return .migration }
+        if GoText.hasPrefix(lower, "otpauth://") { return .otpauth }
+        if first == UInt8(ascii: "[") || first == UInt8(ascii: "{") { return .exportJSON }
+        let bytes = Array(trimmed.utf8)
         if Importers.matchCSVHeader(bytes) != nil { return .exportCSV }
         // The binary magics must be checked before the setup-key guardrail: both
         // spellings of the Stratum header are 16 letters that decode as base32.
@@ -59,47 +78,38 @@ public enum InputDetect {
 
     /// The base32 setup-key guardrail (spec rule 4). After stripping ASCII
     /// spaces and `-`, the input qualifies only if it is a single token matching
-    /// `^[A-Za-z2-7]+$` (case-insensitive), length >= 16, that decodes cleanly
-    /// under the lenient base32 rules.
+    /// `^[A-Za-z2-7]+$` (case-insensitive), at least 16 bytes, that decodes
+    /// cleanly under the lenient base32 rules.
     public static func isLikelyBase32Secret(_ input: String) -> Bool {
-        var stripped = ""
-        stripped.reserveCapacity(input.count)
-        for ch in input {
-            if ch == " " || ch == "-" { continue }
-            stripped.append(ch)
-        }
-        if stripped.count < 16 { return false }
-        for ch in stripped {
-            let isBase32 = (ch >= "A" && ch <= "Z") || (ch >= "a" && ch <= "z")
-                || (ch >= "2" && ch <= "7")
+        let clean = stripSpacesDashes(input)
+        if clean.utf8.count < minSetupKeyLen { return false }
+        for v in clean.unicodeScalars.map(\.value) {
+            let isBase32 = (v >= 0x41 && v <= 0x5A) || (v >= 0x61 && v <= 0x7A) || (v >= 0x32 && v <= 0x37)
             if !isBase32 { return false }
         }
-        guard let decoded = try? Base32.decode(stripped), !decoded.isEmpty else { return false }
-        return true
+        return (try? Base32.decode(clean)) != nil
     }
 
     /// Parse a (possibly multiline) text payload into accounts, recording a
-    /// per-line `ItemError` for anything that does not parse. Never throws;
-    /// never aborts the batch. Each non-empty line is classified independently
-    /// by the same precedence as `classify`.
+    /// per-item `ItemError` for anything that does not parse. Never throws;
+    /// never aborts the batch. A blob that classifies as a whole-blob export
+    /// is parsed as one export; otherwise each non-empty line is classified
+    /// independently by the same precedence as `classify`.
     public static func parseText(_ input: String) -> (accounts: [Account], errors: [ItemError]) {
-        var accounts: [Account] = []
-        var errors: [ItemError] = []
-
-        // A blob that classifies as a whole-blob export (JSON, CSV or binary) is
-        // parsed as one export — app exports are legitimately multiline — not as
-        // per-line input. Matches Go detect.ParseText so a pretty-printed
-        // Aegis/2FAS/Raivo paste imports here exactly as it does in the CLI.
-        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        if input.utf8.count > Importers.maxInputBytes {
+            return ([], [ItemError(line: 1, display: "", reason: Importers.inputTooLarge)])
+        }
+        let trimmed = GoText.trimSpace(input)
+        if trimmed.isEmpty { return ([], []) }
         let blobKind = classify(trimmed)
-        if blobKind == .exportJSON || blobKind == .exportCSV || blobKind == .exportBinary {
-            do {
-                if let result = try Importers.parse(Data(input.utf8)) {
-                    return (result.accounts, [])
-                }
-                return ([], [ItemError(line: 1, display: jsonPreview(trimmed), reason: "Not recognized")])
-            } catch {
-                return ([], [ItemError(line: 1, display: jsonPreview(trimmed), reason: reason(error))])
+        if blobKind.isExport {
+            switch Importers.detect(Array(input.utf8)) {
+            case .success(let found)?:
+                return (found.accounts, [])
+            case .failure(let source, let error)?:
+                return ([], [ItemError(line: 1, display: redact(blobKind, source), reason: error.description)])
+            case nil:
+                return ([], [ItemError(line: 1, display: redact(.invalid, trimmed), reason: "unrecognized export")])
             }
         }
 
@@ -108,112 +118,91 @@ public enum InputDetect {
         // breaks is one URI, not a batch. Applies only when the whole input
         // holds exactly one scheme and the first line alone is a true fragment
         // (fails to parse); a complete first line means the input is a batch.
-        // Matches Go detect.ParseText.
-        if trimmed.contains(where: \.isNewline) {
-            let kind = classify(trimmed)
-            if kind == .otpauth || kind == .migration,
-               trimmed.lowercased().components(separatedBy: "otpauth").count == 2 {
-                let firstLine = trimmed.split(whereSeparator: \.isNewline)
-                    .first.map { String($0).trimmingCharacters(in: .whitespaces) } ?? ""
-                let joined = String(String.UnicodeScalarView(
-                    trimmed.unicodeScalars.filter { !CharacterSet.whitespacesAndNewlines.contains($0) }))
-                if kind == .migration, (try? Migration.parse(firstLine)) == nil,
-                   let parsed = try? Migration.parse(joined) {
-                    return (parsed, [])
-                }
-                if kind == .otpauth, (try? OTPAuth.parse(firstLine)) == nil,
-                   let parsed = try? OTPAuth.parse(joined) {
-                    return ([parsed], [])
-                }
+        if trimmed.unicodeScalars.contains(where: { $0 == "\n" || $0 == "\r" }),
+           blobKind == .otpauth || blobKind == .migration,
+           countOccurrences(Array(GoText.toLower(trimmed).utf8), of: Array("otpauth".utf8)) == 1 {
+            let scalars = trimmed.unicodeScalars
+            let end = scalars.firstIndex { $0 == "\n" || $0 == "\r" } ?? scalars.endIndex
+            let firstLine = GoText.trimSpace(String(scalars[..<end]))
+            let joined = String(String.UnicodeScalarView(scalars.filter { !GoText.isSpace($0.value) }))
+            if blobKind == .migration, (try? Migration.parse(firstLine)) == nil,
+               let parsed = try? Migration.parse(joined) {
+                return (parsed, [])
+            }
+            if blobKind == .otpauth, (try? OTPAuth.parse(firstLine)) == nil,
+               let parsed = try? OTPAuth.parse(joined) {
+                return ([parsed], [])
             }
         }
 
-        let lines = input.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)
+        var accounts: [Account] = []
+        var errors: [ItemError] = []
+        let lines = Array(input.utf8).split(separator: 0x0A, omittingEmptySubsequences: false)
         for (i, raw) in lines.enumerated() {
-            let line = String(raw).trimmingCharacters(in: .whitespacesAndNewlines)
+            let line = GoText.trimSpace(GoText.string(raw))
             if line.isEmpty { continue }
             let lineNo = i + 1
-            switch classify(line) {
+            let kind = classify(line)
+            switch kind {
             case .migration:
                 do { accounts.append(contentsOf: try Migration.parse(line)) }
-                catch { errors.append(item(lineNo, line, error)) }
+                catch { errors.append(ItemError(line: lineNo, display: redact(kind, line), reason: Importers.message(error))) }
             case .otpauth:
                 do { accounts.append(try OTPAuth.parse(line)) }
-                catch { errors.append(item(lineNo, line, error)) }
+                catch { errors.append(ItemError(line: lineNo, display: redact(kind, line), reason: Importers.message(error))) }
             case .exportJSON, .exportCSV, .exportBinary:
-                do {
-                    if let result = try Importers.parse(Data(line.utf8)) {
-                        accounts.append(contentsOf: result.accounts)
-                    } else {
-                        errors.append(ItemError(line: lineNo, display: redact(line), reason: "Not recognized"))
-                    }
-                } catch { errors.append(item(lineNo, line, error)) }
+                switch Importers.detect(Array(line.utf8)) {
+                case .success(let found)?:
+                    accounts.append(contentsOf: found.accounts)
+                case .failure(let source, let error)?:
+                    errors.append(ItemError(line: lineNo, display: redact(kind, source), reason: error.description))
+                case nil:
+                    errors.append(ItemError(line: lineNo, display: redact(.invalid, line), reason: "unrecognized export"))
+                }
             case .setupKey:
-                do {
-                    let secret = try Base32.decode(line)
-                    accounts.append(Account(id: "", type: .totp, issuer: "", account: "",
-                                            secret: secret, algorithm: "SHA1", digits: 6, period: 30))
-                } catch { errors.append(item(lineNo, line, error)) }
+                accounts.append(setupKeyAccount(line))
             case .invalid:
-                errors.append(ItemError(line: lineNo, display: redact(line), reason: "Not recognized"))
+                errors.append(ItemError(line: lineNo, display: redact(.invalid, line), reason: "unrecognized input"))
             }
         }
         return (accounts, errors)
     }
 
-    // MARK: - Redaction
+    // MARK: - Helpers
 
-    private static func item(_ line: Int, _ text: String, _ error: Error) -> ItemError {
-        ItemError(line: line, display: redact(text), reason: reason(error))
+    /// A safe display form for a payload: its kind and its first four
+    /// characters, so an error can name the item without exposing the secret.
+    static func redact(_ kind: InputKind, _ raw: String) -> String {
+        let scalars = Array(GoText.trimSpace(raw).unicodeScalars)
+        var prefix = String(String.UnicodeScalarView(scalars.prefix(4)))
+        if scalars.count > 4 { prefix += "…" }
+        return prefix.isEmpty ? kind.name : kind.name + " " + prefix
     }
 
-    /// A short, secret-safe preview of a JSON export blob for an error line. A
-    /// recognized-but-malformed export can hold real secrets deeper in the JSON,
-    /// so only a short leading prefix is shown.
-    private static func jsonPreview(_ trimmed: String) -> String {
-        trimmed.count > 24 ? String(trimmed.prefix(24)) + "…" : trimmed
+    /// A TOTP account from a bare base32 setup key with the spec defaults. The
+    /// key already passed `isLikelyBase32Secret`, so the decode cannot fail.
+    private static func setupKeyAccount(_ key: String) -> Account {
+        let secret = (try? Base32.decode(stripSpacesDashes(key))) ?? Data()
+        return Account(id: "", type: .totp, issuer: "", account: "",
+                       secret: secret, algorithm: "SHA1", digits: 6, period: 30)
     }
 
-    private static func reason(_ error: Error) -> String {
-        if let e = error as? Importers.ImporterError { return e.description }
-        if let e = error as? AccountError { return e.description }
-        return "\(error)"
+    private static func stripSpacesDashes(_ s: String) -> String {
+        String(String.UnicodeScalarView(s.unicodeScalars.filter { $0 != " " && $0 != "-" }))
     }
 
-    /// Produce a preview of an input line that never exposes a full secret:
-    /// otpauth `secret=`/migration `data=` values are masked, bare base32/base64
-    /// tokens are truncated to a short prefix, and the whole preview is capped.
-    static func redact(_ line: String) -> String {
-        var s = line.trimmingCharacters(in: .whitespacesAndNewlines)
-        s = maskParam(s, "secret")
-        s = maskParam(s, "data")
-        let masked = s.split(separator: " ", omittingEmptySubsequences: false)
-            .map { looksLikeSecret($0) ? String($0.prefix(2)) + "…" : String($0) }
-            .joined(separator: " ")
-        if masked.count > 60 { return String(masked.prefix(60)) + "…" }
-        return masked
-    }
-
-    /// Mask the value of a URI query parameter (`name=value`) up to the next
-    /// `&` or end of string.
-    private static func maskParam(_ s: String, _ name: String) -> String {
-        guard let range = s.range(of: "\(name)=", options: .caseInsensitive) else { return s }
-        var end = range.upperBound
-        while end < s.endIndex, s[end] != "&" { end = s.index(after: end) }
-        if end == range.upperBound { return s }
-        return s.replacingCharacters(in: range.upperBound..<end, with: "…")
-    }
-
-    /// A bare token that could be a typed secret: made only of base32/base64 key
-    /// characters (no URI punctuation). The length floor is deliberately low —
-    /// a truncated or mistyped secret is short, and a preview is never worth
-    /// leaking one.
-    private static func looksLikeSecret(_ token: Substring) -> Bool {
-        if token.count < 6 { return false }
-        for ch in token {
-            let ok = ch.isLetter || ch.isNumber || ch == "=" || ch == "+" || ch == "/" || ch == "_"
-            if !ok { return false }
+    /// Go `strings.Count`: non-overlapping occurrences of a non-empty needle.
+    private static func countOccurrences(_ hay: [UInt8], of needle: [UInt8]) -> Int {
+        var count = 0
+        var i = 0
+        while i + needle.count <= hay.count {
+            if hay[i..<(i + needle.count)].elementsEqual(needle) {
+                count += 1
+                i += needle.count
+            } else {
+                i += 1
+            }
         }
-        return true
+        return count
     }
 }

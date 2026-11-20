@@ -2,33 +2,80 @@ import Foundation
 
 extension Importers {
 
-    static func parseAegis(_ probe: [String: Any]) throws -> [Account] {
+    struct AegisInfo {
+        var secret = ""
+        var algo = ""
+        var digits = 0
+        var period = 0
+        var counter: Int64 = 0
+    }
+
+    struct AegisEntry {
+        var type = ""
+        var name = ""
+        var issuer = ""
+        var note = ""
+        var info = AegisInfo()
+    }
+
+    private static let aegisInfoType = #"struct { Secret string "json:\"secret\""; Algo string "json:\"algo\""; Digits int "json:\"digits\""; Period int "json:\"period\""; Counter int64 "json:\"counter\"" }"#
+
+    static func parseAegis(_ doc: GoJSON) throws -> [Account] {
+        var version = 0
+        var db: Int?
+        try wrapping("aegis: ") {
+            let d = GoJSONDecoder(doc, root: "aegisFile")
+            try d.object(doc.root, type: "importers.aegisFile", fields: ["version", "db"]) { f, v in
+                if f == 0 { try d.int(v, &version) } else { db = v }
+            }
+        }
+        guard let dbNode = db else {
+            throw ImporterError.malformed("aegis db: unexpected end of JSON input")
+        }
         // In an encrypted export "db" is a base64 string, not an object.
-        if probe["db"] is String {
+        if doc.kind(dbNode) == .string {
             throw ImporterError.encrypted("Aegis export is encrypted; export with encryption off (Aegis: Settings > Import/Export > Export, untick encryption) and try again")
         }
-        guard let db = probe["db"] as? [String: Any] else {
-            throw ImporterError.malformed("aegis db: not an object")
+        var entries = GoSlice<AegisEntry>()
+        try wrapping("aegis db: ") {
+            let d = GoJSONDecoder(doc, root: "aegisDB")
+            try d.object(dbNode, type: "importers.aegisDB", fields: ["entries"]) { _, v in
+                try d.slice(v, &entries, type: "[]importers.aegisEntry", zero: AegisEntry()) { e, x in
+                    try d.object(e, type: "importers.aegisEntry", fields: ["type", "name", "issuer", "note", "info"]) { f, v in
+                        switch f {
+                        case 0: try d.string(v, &x.type)
+                        case 1: try d.string(v, &x.name)
+                        case 2: try d.string(v, &x.issuer)
+                        case 3: try d.string(v, &x.note)
+                        default:
+                            try d.object(v, type: aegisInfoType,
+                                         fields: ["secret", "algo", "digits", "period", "counter"]) { f, v in
+                                switch f {
+                                case 0: try d.string(v, &x.info.secret)
+                                case 1: try d.string(v, &x.info.algo)
+                                case 2: try d.int(v, &x.info.digits)
+                                case 3: try d.int(v, &x.info.period)
+                                default: try d.int64(v, &x.info.counter)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
-        let entries = db["entries"] as? [[String: Any]] ?? []
         var out: [Account] = []
         out.reserveCapacity(entries.count)
-        for e in entries {
-            let name = str(e["name"])
-            let info = e["info"] as? [String: Any] ?? [:]
+        for e in entries.items {
+            var a: Account
             do {
-                out.append(try buildAccount(
-                    type: str(e["type"]),
-                    issuer: str(e["issuer"]),
-                    acct: name,
-                    secretB32: str(info["secret"]),
-                    algo: str(info["algo"]),
-                    digits: intVal(info["digits"]),
-                    period: intVal(info["period"]),
-                    counter: int64Val(info["counter"])))
+                a = try buildAccount(
+                    type: e.type, issuer: e.issuer, acct: e.name, secretB32: e.info.secret,
+                    algo: e.info.algo, digits: e.info.digits, period: e.info.period, counter: e.info.counter)
             } catch {
-                throw ImporterError.malformed("aegis entry \"\(name)\": \(message(error))")
+                throw ImporterError.malformed("aegis entry \(GoText.quote(e.name)): \(message(error))")
             }
+            a.note = TextClean.note(e.note)
+            out.append(a)
         }
         return out
     }
