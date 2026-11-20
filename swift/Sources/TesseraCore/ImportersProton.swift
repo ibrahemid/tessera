@@ -39,7 +39,7 @@ extension Importers {
         for e in entries.items {
             // Every parameter lives in the uri; entry_type only sanity-checks that
             // an entry marked Steam really carries a Steam secret.
-            let name = GoText.quote(e.content.name)
+            let name = quoteBounded(e.content.name)
             let parsed: Account?
             do { parsed = try parseOTPValue(e.content.uri, "", e.content.name) }
             catch { throw entryError("proton entry \(name): ", error) }

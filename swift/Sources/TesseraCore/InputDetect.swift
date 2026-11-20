@@ -45,8 +45,9 @@ public enum InputDetect {
     public struct ItemError: Error, Equatable, Sendable {
         /// 1-based line number within the input.
         public let line: Int
-        /// Redacted, safe-to-show preview of the input: its kind and at most
-        /// its first four characters.
+        /// Redacted, safe-to-show preview of the input: its kind and length for
+        /// a link or anything shaped like a setup key, else its kind and at
+        /// most its first four characters.
         public let display: String
         /// Factual reason the item was not imported.
         public let reason: String
@@ -62,6 +63,8 @@ public enum InputDetect {
 
         /// Why an item was not imported.
         public enum Kind: Sendable, Equatable {
+            /// The input is empty or only whitespace.
+            case noInput
             /// The input is larger than `Importers.maxInputBytes`.
             case tooLarge
             /// A recognized app export that is encrypted.
@@ -129,7 +132,7 @@ public enum InputDetect {
             return ([], [ItemError(line: 1, display: "", reason: Importers.inputTooLarge, kind: .tooLarge)])
         }
         let trimmed = GoText.trimSpace(input)
-        if trimmed.isEmpty { return ([], []) }
+        if trimmed.isEmpty { return ([], [ItemError(line: 1, display: "", reason: "no input", kind: .noInput)]) }
         let blobKind = classify(trimmed)
         if blobKind.isExport {
             switch Importers.detect(Array(input.utf8)) {
@@ -210,13 +213,44 @@ public enum InputDetect {
 
     // MARK: - Helpers
 
-    /// A safe display form for a payload: its kind and its first four
-    /// characters, so an error can name the item without exposing the secret.
+    /// A safe display form for a payload, so an error can name the item
+    /// without exposing the secret. A link, or unrecognized text holding a link
+    /// or made only of ASCII letters and digits grouped by spaces, tabs, `-` or
+    /// `=`, shows its kind and length in characters; anything else shows its
+    /// kind and first four characters.
     static func redact(_ kind: InputKind, _ raw: String) -> String {
-        let scalars = Array(GoText.trimSpace(raw).unicodeScalars)
+        let trimmed = GoText.trimSpace(raw)
+        let scalars = Array(trimmed.unicodeScalars)
+        if scalars.isEmpty { return kind.name }
+        if kind == .migration || kind == .otpauth || kind == .setupKey || (kind == .invalid && looksSecret(trimmed)) {
+            return "\(kind.name) (\(scalars.count) \(scalars.count == 1 ? "character" : "characters"))"
+        }
         var prefix = String(String.UnicodeScalarView(scalars.prefix(4)))
         if scalars.count > 4 { prefix += "…" }
-        return prefix.isEmpty ? kind.name : kind.name + " " + prefix
+        return kind.name + " " + prefix
+    }
+
+    private static func looksSecret(_ text: String) -> Bool {
+        let bytes = Array(text.utf8)
+        if bytes.count >= 3 {
+            for i in 0...(bytes.count - 3)
+            where bytes[i] == UInt8(ascii: ":") && bytes[i + 1] == UInt8(ascii: "/") && bytes[i + 2] == UInt8(ascii: "/") {
+                return true
+            }
+        }
+        var hasAlnum = false
+        for c in bytes {
+            switch c {
+            case UInt8(ascii: "A")...UInt8(ascii: "Z"), UInt8(ascii: "a")...UInt8(ascii: "z"),
+                 UInt8(ascii: "0")...UInt8(ascii: "9"):
+                hasAlnum = true
+            case UInt8(ascii: " "), UInt8(ascii: "\t"), UInt8(ascii: "-"), UInt8(ascii: "="):
+                continue
+            default:
+                return false
+            }
+        }
+        return hasAlnum
     }
 
     /// A TOTP account from a bare base32 setup key with the spec defaults. The

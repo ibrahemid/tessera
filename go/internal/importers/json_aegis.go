@@ -14,7 +14,8 @@ type aegisFile struct {
 }
 
 type aegisDB struct {
-	Entries []aegisEntry `json:"entries"`
+	Entries []aegisEntry    `json:"entries"`
+	Groups  json.RawMessage `json:"groups"`
 }
 
 type aegisEntry struct {
@@ -29,6 +30,9 @@ type aegisEntry struct {
 		Period  int    `json:"period"`
 		Counter int64  `json:"counter"`
 	} `json:"info"`
+	Groups   json.RawMessage `json:"groups"`
+	Group    json.RawMessage `json:"group"`
+	Favorite json.RawMessage `json:"favorite"`
 }
 
 func parseAegis(data []byte) ([]account.Account, error) {
@@ -45,14 +49,21 @@ func parseAegis(data []byte) ([]account.Account, error) {
 	if err := json.Unmarshal(f.DB, &db); err != nil {
 		return nil, fmt.Errorf("aegis db: %w", err)
 	}
+	groups := indexGroups[uuidGroup](db.Groups)
 	out := make([]account.Account, 0, len(db.Entries))
 	for _, e := range db.Entries {
 		a, err := buildAccount(e.Type, e.Issuer, e.Name, e.Info.Secret,
 			e.Info.Algo, e.Info.Digits, e.Info.Period, e.Info.Counter)
 		if err != nil {
-			return nil, fmt.Errorf("aegis entry %q: %w", e.Name, err)
+			return nil, fmt.Errorf("aegis entry %s: %w", quoteBounded(e.Name), err)
 		}
 		a.Note = account.CleanNote(e.Note)
+		names := groupNames(nil, groups, e.Groups)
+		if legacy, ok := rawString(e.Group); ok {
+			names = append(names, legacy)
+		}
+		a.Folder, a.Tags = placeGroups(names)
+		a.Pinned = rawIsTrue(e.Favorite)
 		out = append(out, a)
 	}
 	return out, nil

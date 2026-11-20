@@ -72,7 +72,7 @@ extension Importers {
         case "", "totp": return .totp
         case "hotp": return .hotp
         case "steam", "steam_totp", "steamtotp": return .steam
-        default: throw ImporterError.malformed(.unsupportedType, "unsupported account type \(GoText.quote(s))")
+        default: throw ImporterError.malformed(.unsupportedType, "unsupported account type \(quoteBounded(s))")
         }
     }
 
@@ -81,7 +81,7 @@ extension Importers {
         case "", "SHA1": return "SHA1"
         case "SHA256": return "SHA256"
         case "SHA512": return "SHA512"
-        default: throw ImporterError.malformed(.unsupportedAlgorithm, "unsupported algorithm \(GoText.quote(s))")
+        default: throw ImporterError.malformed(.unsupportedAlgorithm, "unsupported algorithm \(quoteBounded(s))")
         }
     }
 
@@ -89,9 +89,25 @@ extension Importers {
         let t = GoText.trimSpace(s)
         if t.isEmpty { return def }
         guard let n = GoText.atoi(t) else {
-            throw ImporterError.malformed(.invalidNumber, "not a number: \(GoText.quote(t))")
+            throw ImporterError.malformed(.invalidNumber, "not a number: \(quoteBounded(t))")
         }
         return n
+    }
+
+    static let maxQuotedBytes = 16
+
+    static func quoteBounded(_ s: String) -> String {
+        let count = s.utf8.count
+        if count <= maxQuotedBytes { return GoText.quote(s) }
+        var prefix = String.UnicodeScalarView()
+        var used = 0
+        for scalar in s.unicodeScalars {
+            let width = UTF8.width(scalar)
+            if used + width > maxQuotedBytes { break }
+            used += width
+            prefix.append(scalar)
+        }
+        return GoText.quote(String(prefix)) + "… (\(count) bytes)"
     }
 
     /// Runs one format's decode and per-item walk, prefixing a failure the

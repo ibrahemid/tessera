@@ -62,7 +62,7 @@ extension Importers {
             if GoText.equalFold(issuer, ascii: "Steam") && GoText.equalFold(typ, ascii: "TOTP") {
                 typ = "steam"
             }
-            out.append(try wrapping("freeotp+ token \(GoText.quote(issuer)): ") {
+            out.append(try wrapping("freeotp+ token \(quoteBounded(issuer)): ") {
                 let secret = try javaSignedBytes(Array(tk.secret.items))
                 var counter = tk.counter
                 // FreeOTP+ persists counter-1 and adds one back when it rebuilds

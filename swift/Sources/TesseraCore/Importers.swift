@@ -50,9 +50,10 @@ public enum Importers {
 
     /// Why a recognized export could not be imported.
     public enum MalformedKind: Sendable, Equatable, CaseIterable {
-        /// The input is larger than `maxInputBytes`.
+        /// The input is larger than `maxInputBytes`, or a `.1pux` archive's
+        /// export.data is larger than 64 MiB.
         case tooLarge
-        /// A 1Password `.1pux` archive, which only the tess CLI unpacks.
+        /// A 1Password `.1pux` archive is damaged or holds no export.data.
         case archive
         /// The export parsed but holds no item with a one-time password.
         case noEntries
@@ -125,10 +126,7 @@ public enum Importers {
             return recognized(format.name) { try parseCSV(data, format) }
         }
         if isZip(data) {
-            // Foundation has no zip reader and TesseraCore takes no new
-            // dependencies. The shared interop contract is the inner
-            // export.data document, which both cores parse.
-            return .failure(source: "1Password", .malformed(.archive, "1Password .1pux archives are read by the tess CLI; in the app, unzip it and import export.data"))
+            return recognized("1Password") { try parse1PUX(data) }
         }
         if isStratumEncrypted(data) {
             return .failure(source: "Stratum", .encrypted(.stratum, "Stratum backup is encrypted; in Stratum choose Settings > Backup > Export unencrypted and try again"))

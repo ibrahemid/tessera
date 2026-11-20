@@ -1,10 +1,21 @@
 {
   "Authenticators": [
     { "Type": 2, "Icon": "Default", "Issuer": "GitHub", "Username": "john@example.com", "Secret": "JBSWY3DPEHPK3PXP", "Pin": null, "Algorithm": 0, "Digits": 6, "Period": 30, "Counter": 0, "CopyCount": 0, "Ranking": 0 },
-    { "Type": 1, "Icon": "Default", "Issuer": "Bank", "Username": "ops", "Secret": "JBSWY3DPEHPK3PXP", "Pin": null, "Algorithm": 1, "Digits": 8, "Period": 30, "Counter": 5, "CopyCount": 0, "Ranking": 1 },
-    { "Type": 4, "Icon": "Steam", "Issuer": "Steam", "Username": "gabe", "Secret": "JBSWY3DPEHPK3PXP", "Pin": null, "Algorithm": 0, "Digits": 5, "Period": 30, "Counter": 0, "CopyCount": 0, "Ranking": 2 }
+    { "Type": 1, "Icon": "Default", "Issuer": "Bank", "Username": "ops", "Secret": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ", "Pin": null, "Algorithm": 1, "Digits": 8, "Period": 30, "Counter": 5, "CopyCount": 0, "Ranking": 1 },
+    { "Type": 4, "Icon": "Steam", "Issuer": "Steam", "Username": "gabe", "Secret": "MFRGGZDFMZTWQ2LK", "Pin": null, "Algorithm": 0, "Digits": 5, "Period": 30, "Counter": 0, "CopyCount": 0, "Ranking": 2 }
   ],
-  "Categories": [],
-  "AuthenticatorCategories": [],
+  "Categories": [
+    { "Id": "5d0e8b1a-2c3f-4a6b-9e7d-1f2a3b4c5d01", "Name": "Work", "Ranking": 0 },
+    { "Id": "5d0e8b1a-2c3f-4a6b-9e7d-1f2a3b4c5d02", "Name": "Personal", "Ranking": 1 },
+    { "Id": "5d0e8b1a-2c3f-4a6b-9e7d-1f2a3b4c5d03", "Name": "", "Ranking": 2 },
+    { "Id": "5d0e8b1a-2c3f-4a6b-9e7d-1f2a3b4c5d04", "Name": " \t ", "Ranking": 3 }
+  ],
+  "AuthenticatorCategories": [
+    { "CategoryId": "5d0e8b1a-2c3f-4a6b-9e7d-1f2a3b4c5d01", "AuthenticatorSecret": "JBSWY3DPEHPK3PXP", "Ranking": 0 },
+    { "CategoryId": "5d0e8b1a-2c3f-4a6b-9e7d-1f2a3b4c5d02", "AuthenticatorSecret": "JBSWY3DPEHPK3PXP", "Ranking": 0 },
+    { "CategoryId": "5d0e8b1a-2c3f-4a6b-9e7d-1f2a3b4c5d03", "AuthenticatorSecret": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ", "Ranking": 0 },
+    { "CategoryId": "5d0e8b1a-2c3f-4a6b-9e7d-1f2a3b4c5d04", "AuthenticatorSecret": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ", "Ranking": 1 },
+    { "CategoryId": "5d0e8b1a-2c3f-4a6b-9e7d-1f2a3b4c5d99", "AuthenticatorSecret": "MFRGGZDFMZTWQ2LK", "Ranking": 0 }
+  ],
   "CustomIcons": []
 }

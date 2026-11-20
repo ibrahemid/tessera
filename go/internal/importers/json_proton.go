@@ -32,13 +32,13 @@ func parseProton(data []byte) ([]account.Account, error) {
 		// an entry marked Steam really carries a Steam secret.
 		a, ok, err := parseOTPValue(e.Content.URI, "", e.Content.Name)
 		if err != nil {
-			return nil, fmt.Errorf("proton entry %q: %w", e.Content.Name, err)
+			return nil, fmt.Errorf("proton entry %s: %w", quoteBounded(e.Content.Name), err)
 		}
 		if !ok {
 			continue
 		}
 		if strings.EqualFold(e.Content.EntryType, "Steam") && a.Type != account.Steam {
-			return nil, fmt.Errorf("proton entry %q: marked Steam but its uri is not a Steam secret", e.Content.Name)
+			return nil, fmt.Errorf("proton entry %s: marked Steam but its uri is not a Steam secret", quoteBounded(e.Content.Name))
 		}
 		a.Note = account.CleanNote(e.Note)
 		out = append(out, a)

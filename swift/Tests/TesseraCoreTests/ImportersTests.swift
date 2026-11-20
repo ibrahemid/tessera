@@ -178,8 +178,7 @@ final class ImportersTests: XCTestCase {
     // MARK: - shared fixture table
 
     /// Runs go/internal/importers/testdata/expected.json, the same table the Go
-    /// TestTestdataTable runs. Rows whose "cores" omit "swift" are skipped: the
-    /// .1pux zip container is a CLI-only transport.
+    /// TestTestdataTable runs. Rows whose "cores" omit "swift" are skipped.
     func testTestdataTable() throws {
         let entries = try importerFixtures()
         XCTAssertFalse(entries.isEmpty, "expected.json is empty")
@@ -265,6 +264,9 @@ final class ImportersTests: XCTestCase {
             XCTAssertEqual(a.period, (w["period"] as! NSNumber).intValue, "\(at): period")
             XCTAssertEqual(a.counter, (w["counter"] as! NSNumber).int64Value, "\(at): counter")
             XCTAssertEqual(Array(a.note.utf8), Array((w["note"] as? String ?? "").utf8), "\(at): note")
+            XCTAssertEqual(Array(a.folder.utf8), Array((w["folder"] as? String ?? "").utf8), "\(at): folder")
+            XCTAssertEqual(a.tags.map { Array($0.utf8) }, (w["tags"] as? [String] ?? []).map { Array($0.utf8) }, "\(at): tags")
+            XCTAssertEqual(a.pinned, w["pinned"] as? Bool ?? false, "\(at): pinned")
         }
     }
 

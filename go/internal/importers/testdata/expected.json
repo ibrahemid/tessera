@@ -3,9 +3,9 @@
     "file": "aegis.json",
     "source": "Aegis",
     "accounts": [
-      { "type": "totp", "issuer": "GitHub", "account": "john@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0 },
-      { "type": "hotp", "issuer": "Bank", "account": "ops", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA256", "digits": 8, "period": 0, "counter": 5 },
-      { "type": "steam", "issuer": "Steam", "account": "gabe", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 5, "period": 30, "counter": 0 }
+      { "type": "totp", "issuer": "GitHub", "account": "john@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0, "note": "Recovery codes in the safe", "folder": "Work", "tags": ["Personal"], "pinned": true },
+      { "type": "hotp", "issuer": "Bank", "account": "ops", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA256", "digits": 8, "period": 0, "counter": 5, "note": "Desk 12\nAsk for ops" },
+      { "type": "steam", "issuer": "Steam", "account": "gabe", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 5, "period": 30, "counter": 0, "folder": "Games" }
     ]
   },
   {
@@ -18,9 +18,9 @@
     "file": "2fas.json",
     "source": "2FAS",
     "accounts": [
-      { "type": "totp", "issuer": "GitHub", "account": "john@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0 },
+      { "type": "totp", "issuer": "GitHub", "account": "john@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0, "folder": "Work" },
       { "type": "hotp", "issuer": "Bank", "account": "ops", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA256", "digits": 8, "period": 30, "counter": 5 },
-      { "type": "steam", "issuer": "Steam", "account": "gabe", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 5, "period": 30, "counter": 0 }
+      { "type": "steam", "issuer": "Steam", "account": "gabe", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 5, "period": 30, "counter": 0, "folder": "Infrastructure Infrastructure Infrastructure Infrastructure Infrastructure Infrastructure Infrastructure Infrastructure Infrastructure Infrastructure Infrastructure Infrastructure Infrastructure Infrastructure Infrastructure Infrastructure Infrastructure Infrastructure Infrastructure Infrastructure" }
     ]
   },
   {
@@ -33,7 +33,7 @@
     "file": "raivo.json",
     "source": "Raivo",
     "accounts": [
-      { "type": "totp", "issuer": "GitHub", "account": "john@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0 },
+      { "type": "totp", "issuer": "GitHub", "account": "john@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0, "pinned": true },
       { "type": "hotp", "issuer": "Bank", "account": "ops", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA256", "digits": 8, "period": 0, "counter": 5 }
     ]
   },
@@ -41,8 +41,8 @@
     "file": "andotp.json",
     "source": "andOTP",
     "accounts": [
-      { "type": "totp", "issuer": "GitHub", "account": "john@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0 },
-      { "type": "hotp", "issuer": "Bank", "account": "ops", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA256", "digits": 8, "period": 0, "counter": 5 },
+      { "type": "totp", "issuer": "GitHub", "account": "john@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0, "tags": ["Work", "Personal"] },
+      { "type": "hotp", "issuer": "Bank", "account": "ops", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA256", "digits": 8, "period": 0, "counter": 5, "tags": ["Finance"] },
       { "type": "steam", "issuer": "Steam", "account": "gabe", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 5, "period": 30, "counter": 0 }
     ]
   },
@@ -59,9 +59,9 @@
     "file": "stratum.json",
     "source": "Stratum",
     "accounts": [
-      { "type": "totp", "issuer": "GitHub", "account": "john@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0 },
-      { "type": "hotp", "issuer": "Bank", "account": "ops", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA256", "digits": 8, "period": 30, "counter": 5 },
-      { "type": "steam", "issuer": "Steam", "account": "gabe", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 5, "period": 30, "counter": 0 }
+      { "type": "totp", "issuer": "GitHub", "account": "john@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0, "folder": "Work", "tags": ["Personal"] },
+      { "type": "hotp", "issuer": "Bank", "account": "ops", "secret_b32": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ", "algorithm": "SHA256", "digits": 8, "period": 30, "counter": 5 },
+      { "type": "steam", "issuer": "Steam", "account": "gabe", "secret_b32": "MFRGGZDFMZTWQ2LK", "algorithm": "SHA1", "digits": 5, "period": 30, "counter": 0 }
     ]
   },
   {
@@ -74,7 +74,7 @@
     "file": "bitwarden-authenticator.json",
     "source": "Bitwarden Authenticator",
     "accounts": [
-      { "type": "totp", "issuer": "Example", "account": "alice@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0 },
+      { "type": "totp", "issuer": "Example", "account": "alice@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0, "pinned": true },
       { "type": "steam", "issuer": "Steam", "account": "gabe", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 5, "period": 30, "counter": 0 },
       { "type": "totp", "issuer": "Bank", "account": "", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0 }
     ]
@@ -83,7 +83,7 @@
     "file": "bitwarden-password-manager.json",
     "source": "Bitwarden",
     "accounts": [
-      { "type": "totp", "issuer": "Example", "account": "alice@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0 },
+      { "type": "totp", "issuer": "Example", "account": "alice@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0, "note": "Shared with the team", "folder": "Work", "tags": ["Ops"], "pinned": true },
       { "type": "hotp", "issuer": "Bank", "account": "ops", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA256", "digits": 8, "period": 30, "counter": 5 }
     ]
   },
@@ -141,25 +141,62 @@
     "file": "1password.csv",
     "source": "1Password",
     "accounts": [
-      { "type": "totp", "issuer": "Example", "account": "alice@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0 },
-      { "type": "totp", "issuer": "Seed Only", "account": "carol@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0 }
+      { "type": "totp", "issuer": "Example", "account": "alice@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0, "note": "Recovery codes in the safe", "tags": ["Work", "Personal"], "pinned": true },
+      { "type": "totp", "issuer": "Seed Only", "account": "carol@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0, "tags": ["Finance"] }
     ]
   },
   {
     "file": "1password-export.data.json",
     "source": "1Password",
     "accounts": [
-      { "type": "totp", "issuer": "Example", "account": "alice@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0 },
-      { "type": "hotp", "issuer": "Bank", "account": "ops", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA256", "digits": 8, "period": 30, "counter": 5 }
+      { "type": "totp", "issuer": "Example", "account": "alice@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0, "note": "Recovery codes in the safe", "folder": "Private", "tags": ["Work", "Personal"], "pinned": true },
+      { "type": "hotp", "issuer": "Bank", "account": "ops", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA256", "digits": 8, "period": 30, "counter": 5, "folder": "Shared" }
     ]
   },
   {
     "file": "1password.1pux",
     "source": "1Password",
-    "cores": ["go"],
     "accounts": [
-      { "type": "totp", "issuer": "Example", "account": "alice@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0 },
-      { "type": "hotp", "issuer": "Bank", "account": "ops", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA256", "digits": 8, "period": 30, "counter": 5 }
+      { "type": "totp", "issuer": "Example", "account": "alice@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0, "note": "Recovery codes in the safe", "folder": "Private", "tags": ["Work", "Personal"], "pinned": true },
+      { "type": "hotp", "issuer": "Bank", "account": "ops", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA256", "digits": 8, "period": 30, "counter": 5, "folder": "Shared" }
     ]
+  },
+  {
+    "file": "1password-stored.1pux",
+    "source": "1Password",
+    "accounts": [
+      { "type": "totp", "issuer": "Example", "account": "alice@example.com", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30, "counter": 0, "note": "Recovery codes in the safe", "folder": "Private", "tags": ["Work", "Personal"], "pinned": true },
+      { "type": "hotp", "issuer": "Bank", "account": "ops", "secret_b32": "JBSWY3DPEHPK3PXP", "algorithm": "SHA256", "digits": 8, "period": 30, "counter": 5, "folder": "Shared" }
+    ]
+  },
+  {
+    "file": "1password-damaged.1pux",
+    "source": "1Password",
+    "reject": "damaged",
+    "message_contains": "1password: read export.data: zip: checksum error"
+  },
+  {
+    "file": "1password-truncated.1pux",
+    "source": "1Password",
+    "reject": "damaged",
+    "message_contains": "1password: open archive: zip: not a valid zip file"
+  },
+  {
+    "file": "1password-bomb.1pux",
+    "source": "1Password",
+    "reject": "damaged",
+    "message_contains": "1password: read export.data: zip: not a valid zip file"
+  },
+  {
+    "file": "1password-oversized.1pux",
+    "source": "1Password",
+    "reject": "too-large",
+    "message_contains": "1password: export.data in the archive is larger than 64 MiB"
+  },
+  {
+    "file": "1password-traversal.1pux",
+    "source": "1Password",
+    "reject": "no-export-data",
+    "message_contains": "archive holds no export.data; a 1Password .1pux export does"
   }
 ]

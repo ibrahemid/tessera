@@ -142,7 +142,7 @@ final class InputDetectTests: XCTestCase {
         XCTAssertEqual(errors.count, 1)
         XCTAssertEqual(errors[0].line, 2)
         XCTAssertEqual(errors[0].reason, "unrecognized input")
-        XCTAssertEqual(errors[0].display, "invalid hell…")
+        XCTAssertEqual(errors[0].display, "invalid (11 characters)")
     }
 
     /// Spec row: leading/trailing whitespace is trimmed before every rule, on
@@ -182,7 +182,7 @@ final class InputDetectTests: XCTestCase {
         for input in ["", " \n\t\r\n "] {
             let (accounts, errors) = InputDetect.parseText(input)
             XCTAssertTrue(accounts.isEmpty)
-            XCTAssertTrue(errors.isEmpty)
+            XCTAssertEqual(errors, [InputDetect.ItemError(line: 1, display: "", reason: "no input", kind: .noInput)])
         }
     }
 
@@ -220,7 +220,7 @@ final class InputDetectTests: XCTestCase {
         XCTAssertEqual(accounts.map(\.account), ["A", "C"])
         XCTAssertEqual(errors.count, 1)
         XCTAssertEqual(errors.first?.line, 2)
-        XCTAssertEqual(errors.first?.display, "otpauth otpa…")
+        XCTAssertEqual(errors.first?.display, "otpauth (40 characters)")
         XCTAssertEqual(errors.first?.reason.hasPrefix("otpauth:"), true)
         XCTAssertEqual(errors.first?.kind, .invalidLink)
     }
@@ -245,12 +245,33 @@ final class InputDetectTests: XCTestCase {
         ])
     }
 
-    func testRedactKeepsFourScalars() {
-        XCTAssertEqual(InputDetect.redact(.setupKey, "  ab  "), "setup-key ab")
-        XCTAssertEqual(InputDetect.redact(.invalid, "abcd"), "invalid abcd")
-        XCTAssertEqual(InputDetect.redact(.invalid, "abcde"), "invalid abcd…")
-        XCTAssertEqual(InputDetect.redact(.otpauth, "e\u{301}\u{301}xyz"), "otpauth e\u{301}\u{301}x…")
-        XCTAssertEqual(InputDetect.redact(.migration, " \t"), "migration")
+    func testRedactShowsKindAndLengthForSecretShapes() {
+        let cases: [(InputDetect.InputKind, String, String)] = [
+            (.setupKey, "  ab  ", "setup-key (2 characters)"),
+            (.otpauth, "otpauth://totp/A?secret=JBSWY3DPEHPK3PXP&digits=99", "otpauth (50 characters)"),
+            (.migration, "otpauth-migration://offline?data=%%%", "migration (36 characters)"),
+            (.migration, " \t", "migration"),
+            (.invalid, "ZB573K4APD63E6R", "invalid (15 characters)"),
+            (.invalid, "ZB57 3K4A-PD63=E6R1", "invalid (19 characters)"),
+            (.invalid, "x", "invalid (1 character)"),
+            (.invalid, "see https://example.com", "invalid (23 characters)"),
+            (.invalid, "\u{feff}otpauth://totp/A?secret=JBSWY3DPEHPK3PXP", "invalid (41 characters)"),
+            (.invalid, "my key: abcd", "invalid my k…"),
+            (.invalid, "--==", "invalid --=="),
+            (.invalid, "e\u{301}\u{301}xyz", "invalid e\u{301}\u{301}x…"),
+            (.exportJSON, "Aegis", "export-json Aegi…"),
+        ]
+        for (kind, raw, want) in cases {
+            XCTAssertEqual(Array(InputDetect.redact(kind, raw).unicodeScalars), Array(want.unicodeScalars), raw)
+        }
+    }
+
+    func testParseTextNeverShowsTheStartOfAMistypedKey() {
+        for line in ["ZB573K4APD63E6R", "ZB573K4APD63E6R1", "zb57 3k4a pd63 e6r8", "ZB573K4APD63E6RL="] {
+            let (_, errors) = InputDetect.parseText(line)
+            XCTAssertEqual(errors.count, 1, line)
+            XCTAssertFalse(errors.contains { $0.display.contains("ZB57") || $0.display.contains("zb57") }, line)
+        }
     }
 
     func testClassifyByteOrderMarkIsInvalid() {
@@ -341,7 +362,7 @@ final class InputDetectTests: XCTestCase {
                 XCTFail("expected .malformed, got \(error)")
                 return
             }
-            XCTAssertEqual(m, "1Password .1pux archives are read by the tess CLI; in the app, unzip it and import export.data")
+            XCTAssertEqual(m, "1password: open archive: zip: not a valid zip file")
         }
     }
 }

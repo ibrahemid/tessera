@@ -9,6 +9,7 @@ import (
 
 type twofasFile struct {
 	Services []twofasService `json:"services"`
+	Groups   json.RawMessage `json:"groups"`
 }
 
 type twofasService struct {
@@ -23,6 +24,7 @@ type twofasService struct {
 		TokenType string `json:"tokenType"`
 		Counter   int64  `json:"counter"`
 	} `json:"otp"`
+	GroupID json.RawMessage `json:"groupId"`
 }
 
 func parse2FAS(data []byte) ([]account.Account, error) {
@@ -30,6 +32,7 @@ func parse2FAS(data []byte) ([]account.Account, error) {
 	if err := json.Unmarshal(data, &f); err != nil {
 		return nil, fmt.Errorf("2fas: %w", err)
 	}
+	groups := indexGroups[idGroup](f.Groups)
 	out := make([]account.Account, 0, len(f.Services))
 	for _, s := range f.Services {
 		issuer := s.OTP.Issuer
@@ -39,8 +42,9 @@ func parse2FAS(data []byte) ([]account.Account, error) {
 		a, err := buildAccount(s.OTP.TokenType, issuer, s.OTP.Account, s.Secret,
 			s.OTP.Algorithm, s.OTP.Digits, s.OTP.Period, s.OTP.Counter)
 		if err != nil {
-			return nil, fmt.Errorf("2fas service %q: %w", s.Name, err)
+			return nil, fmt.Errorf("2fas service %s: %w", quoteBounded(s.Name), err)
 		}
+		a.Folder, a.Tags = placeGroups(groupName(nil, groups, s.GroupID))
 		out = append(out, a)
 	}
 	return out, nil

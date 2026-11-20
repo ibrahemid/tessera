@@ -124,7 +124,7 @@ func newCodeCmd() *cobra.Command {
 
   tess code acme            # print and copy
   tess code acme --no-copy  # print only
-  tess code acme --json     # machine-readable, never copies
+  tess code acme --json     # machine-readable, copies only with -c
   tess code --all           # every account's code; same as tess code
   tess code acme --at 2026-01-02T15:04:05Z
                             # the code at another time, never copies
@@ -153,7 +153,7 @@ func bindCodeFlags(cmd *cobra.Command, opts *codeOptions) {
 	f.BoolVar(&opts.next, "next", false,
 		"for TOTP and Steam, the code of the following time step; for HOTP, advance and persist the counter")
 	f.BoolVar(&opts.noCopy, "no-copy", false, "print the code without touching the clipboard")
-	f.BoolVar(&opts.asJSON, "json", false, "output JSON (never copies)")
+	f.BoolVar(&opts.asJSON, "json", false, "output JSON; copies only with -c")
 	f.BoolVar(&opts.nowOnly, "now", false, "print the current code instead of waiting for the next one")
 	f.BoolVar(&opts.all, "all", false, "print the code of every account; never copies or advances a counter")
 	f.StringVar(&opts.at, "at", "",

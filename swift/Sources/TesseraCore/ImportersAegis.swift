@@ -16,6 +16,9 @@ extension Importers {
         var issuer = ""
         var note = ""
         var info = AegisInfo()
+        var groups: Int?
+        var group: Int?
+        var favorite: Int?
     }
 
     private static let aegisInfoType = #"struct { Secret string "json:\"secret\""; Algo string "json:\"algo\""; Digits int "json:\"digits\""; Period int "json:\"period\""; Counter int64 "json:\"counter\"" }"#
@@ -37,16 +40,22 @@ extension Importers {
             throw ImporterError.encrypted(.aegis, "Aegis export is encrypted; export with encryption off (Aegis: Settings > Import/Export > Export, untick encryption) and try again")
         }
         var entries = GoSlice<AegisEntry>()
+        var groupList: Int?
         try wrapping("aegis db: ") {
             let d = GoJSONDecoder(doc, root: "aegisDB")
-            try d.object(dbNode, type: "importers.aegisDB", fields: ["entries"]) { _, v in
+            try d.object(dbNode, type: "importers.aegisDB", fields: ["entries", "groups"]) { f, v in
+                if f == 1 { groupList = v; return }
                 try d.slice(v, &entries, type: "[]importers.aegisEntry", zero: AegisEntry()) { e, x in
-                    try d.object(e, type: "importers.aegisEntry", fields: ["type", "name", "issuer", "note", "info"]) { f, v in
+                    try d.object(e, type: "importers.aegisEntry",
+                                 fields: ["type", "name", "issuer", "note", "info", "groups", "group", "favorite"]) { f, v in
                         switch f {
                         case 0: try d.string(v, &x.type)
                         case 1: try d.string(v, &x.name)
                         case 2: try d.string(v, &x.issuer)
                         case 3: try d.string(v, &x.note)
+                        case 5: x.groups = v
+                        case 6: x.group = v
+                        case 7: x.favorite = v
                         default:
                             try d.object(v, type: aegisInfoType,
                                          fields: ["secret", "algo", "digits", "period", "counter"]) { f, v in
@@ -63,6 +72,7 @@ extension Importers {
                 }
             }
         }
+        let groups = indexGroups(doc, groupList, idKey: "uuid")
         var out: [Account] = []
         out.reserveCapacity(entries.count)
         for e in entries.items {
@@ -72,9 +82,14 @@ extension Importers {
                     type: e.type, issuer: e.issuer, acct: e.name, secretB32: e.info.secret,
                     algo: e.info.algo, digits: e.info.digits, period: e.info.period, counter: e.info.counter)
             } catch {
-                throw entryError("aegis entry \(GoText.quote(e.name)): ", error)
+                throw entryError("aegis entry \(quoteBounded(e.name)): ", error)
             }
             a.note = TextClean.note(e.note)
+            var names: [String] = []
+            groupNames(&names, groups, doc, e.groups)
+            if let legacy = rawString(doc, e.group) { names.append(legacy) }
+            (a.folder, a.tags) = placeGroups(names)
+            a.pinned = rawIsTrue(doc, e.favorite)
             out.append(a)
         }
         return out

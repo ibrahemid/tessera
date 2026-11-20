@@ -36,20 +36,19 @@ func newAddCmd() *cobra.Command {
 		Use:   "add [input]",
 		Short: "Add accounts from an otpauth/migration URI, a setup key, a QR image, an export file, the screen, or manual flags",
 		Args:  cobra.MaximumNArgs(1),
-		Long: `Add one or more accounts. The positional argument auto-detects:
+		Long: `Add one or more accounts. The argument can be:
 
   tess add "otpauth://totp/GitHub:me?secret=..."   # otpauth URI
   tess add ZB573K4APD63E6RLD3WAHI3QFZ35RLEP        # bare base32 setup key -> TOTP
   tess add code.png                                # QR image (all codes decoded)
-  tess add export.json                             # Aegis/2FAS/Raivo export, or migration/otpauth lines
+  tess add export.json                             # another app's export, or migration/otpauth lines
   tess add --screen                                # select a QR code on screen (macOS, Linux)
   cat export.json | tess add -                     # read the input from stdin
   tess add                                         # type the URI or setup key without echo
   tess add --secret - --issuer GitHub              # read the setup key from stdin
 
 For a setup key, --issuer/--account/--digits/--period/--algorithm override the
-TOTP defaults; --issuer also replaces the issuer of an otpauth URI. --qr and
---secret keep working as before.
+TOTP defaults; --issuer also replaces the issuer of an otpauth URI.
 
 ` + argumentNote,
 		RunE: func(cmd *cobra.Command, args []string) error {

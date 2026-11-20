@@ -10,7 +10,8 @@ import (
 type onePUXFile struct {
 	Accounts []struct {
 		Vaults []struct {
-			Items []onePUXItem `json:"items"`
+			Attrs json.RawMessage `json:"attrs"`
+			Items []onePUXItem    `json:"items"`
 		} `json:"vaults"`
 	} `json:"accounts"`
 }
@@ -29,12 +30,18 @@ type onePUXItem struct {
 		} `json:"sections"`
 	} `json:"details"`
 	Overview struct {
-		Title string `json:"title"`
+		Title string          `json:"title"`
+		Tags  json.RawMessage `json:"tags"`
 	} `json:"overview"`
+	FavIndex json.RawMessage `json:"favIndex"`
+}
+
+type onePUXVaultAttrs struct {
+	Name json.RawMessage `json:"name"`
 }
 
 // parse1PUXData reads the export.data document at the heart of a 1Password
-// 1PUX archive. Both cores parse this document; only the CLI opens the zip.
+// 1PUX archive.
 func parse1PUXData(data []byte) ([]account.Account, error) {
 	var f onePUXFile
 	if err := json.Unmarshal(data, &f); err != nil {
@@ -43,6 +50,9 @@ func parse1PUXData(data []byte) ([]account.Account, error) {
 	var out []account.Account
 	for _, acct := range f.Accounts {
 		for _, vault := range acct.Vaults {
+			var attrs onePUXVaultAttrs
+			rawObject(vault.Attrs, &attrs)
+			vaultName, _ := rawString(attrs.Name)
 			for _, item := range vault.Items {
 				username := ""
 				for _, lf := range item.Details.LoginFields {
@@ -61,12 +71,15 @@ func parse1PUXData(data []byte) ([]account.Account, error) {
 						}
 						a, ok, err := parseOTPValue(v.TOTP, item.Overview.Title, username)
 						if err != nil {
-							return nil, fmt.Errorf("1password item %q: %w", item.Overview.Title, err)
+							return nil, fmt.Errorf("1password item %s: %w", quoteBounded(item.Overview.Title), err)
 						}
 						if !ok {
 							continue
 						}
 						a.Note = account.CleanNote(item.Details.NotesPlain)
+						a.Folder = account.CleanText(vaultName)
+						a.Tags = cleanTags(rawStrings(item.Overview.Tags))
+						a.Pinned = rawIsPositive(item.FavIndex)
 						out = append(out, a)
 					}
 				}

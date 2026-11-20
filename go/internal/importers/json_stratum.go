@@ -8,7 +8,14 @@ import (
 )
 
 type stratumFile struct {
-	Authenticators []stratumEntry `json:"Authenticators"`
+	Authenticators          []stratumEntry  `json:"Authenticators"`
+	Categories              json.RawMessage `json:"Categories"`
+	AuthenticatorCategories json.RawMessage `json:"AuthenticatorCategories"`
+}
+
+type stratumMembership struct {
+	CategoryID          json.RawMessage `json:"CategoryId"`
+	AuthenticatorSecret json.RawMessage `json:"AuthenticatorSecret"`
 }
 
 type stratumEntry struct {
@@ -27,21 +34,37 @@ func parseStratum(data []byte) ([]account.Account, error) {
 	if err := json.Unmarshal(data, &f); err != nil {
 		return nil, fmt.Errorf("stratum: %w", err)
 	}
+	categories := indexGroups[idGroup](f.Categories)
+	memberships := map[string][]json.RawMessage{}
+	for _, raw := range rawElements(f.AuthenticatorCategories) {
+		var m stratumMembership
+		if !rawObject(raw, &m) {
+			continue
+		}
+		if secret, ok := rawString(m.AuthenticatorSecret); ok {
+			memberships[secret] = append(memberships[secret], m.CategoryID)
+		}
+	}
 	out := make([]account.Account, 0, len(f.Authenticators))
 	for _, e := range f.Authenticators {
 		typ, err := stratumType(e.Type)
 		if err != nil {
-			return nil, fmt.Errorf("stratum entry %q: %w", e.Issuer, err)
+			return nil, fmt.Errorf("stratum entry %s: %w", quoteBounded(e.Issuer), err)
 		}
 		algo, err := stratumAlgorithm(e.Algorithm)
 		if err != nil {
-			return nil, fmt.Errorf("stratum entry %q: %w", e.Issuer, err)
+			return nil, fmt.Errorf("stratum entry %s: %w", quoteBounded(e.Issuer), err)
 		}
 		a, err := buildAccount(typ, e.Issuer, e.Username, e.Secret,
 			algo, e.Digits, e.Period, e.Counter)
 		if err != nil {
-			return nil, fmt.Errorf("stratum entry %q: %w", e.Issuer, err)
+			return nil, fmt.Errorf("stratum entry %s: %w", quoteBounded(e.Issuer), err)
 		}
+		var names []string
+		for _, id := range memberships[e.Secret] {
+			names = groupName(names, categories, id)
+		}
+		a.Folder, a.Tags = placeGroups(names)
 		out = append(out, a)
 	}
 	return out, nil

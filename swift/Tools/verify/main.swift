@@ -566,7 +566,7 @@ do {
 
 // 11. Shared importer fixture table (go/internal/importers/testdata/expected.json).
 // Same fixtures, same expectations as the Go TestTestdataTable; rows whose
-// "cores" omit "swift" are skipped (the .1pux zip container is CLI-only).
+// "cores" omit "swift" are skipped.
 if let testdataDir {
     let dir = URL(fileURLWithPath: testdataDir)
     let table = try JSONSerialization.jsonObject(
@@ -684,5 +684,15 @@ func assertImportedAccounts(_ got: [Account], _ want: [[String: Any]]) throws {
         if a.counter != wantCounter { throw fail("counter", a.counter, wantCounter) }
         let wantNote = w["note"] as? String ?? ""
         if Array(a.note.utf8) != Array(wantNote.utf8) { throw fail("note", a.note.debugDescription, wantNote.debugDescription) }
+        let wantFolder = w["folder"] as? String ?? ""
+        if Array(a.folder.utf8) != Array(wantFolder.utf8) {
+            throw fail("folder", a.folder.debugDescription, wantFolder.debugDescription)
+        }
+        let wantTags = w["tags"] as? [String] ?? []
+        if a.tags.map({ Array($0.utf8) }) != wantTags.map({ Array($0.utf8) }) {
+            throw fail("tags", a.tags.debugDescription, wantTags.debugDescription)
+        }
+        let wantPinned = w["pinned"] as? Bool ?? false
+        if a.pinned != wantPinned { throw fail("pinned", a.pinned, wantPinned) }
     }
 }

@@ -30,9 +30,8 @@ func IsStratumEncrypted(data []byte) bool {
 		bytes.HasPrefix(data, []byte("AuthenticatorPro"))
 }
 
-// parse1PUX reads export.data out of a 1Password 1PUX archive. The zip
-// container is a CLI-only transport; the shared interop contract is the inner
-// document, which both cores parse.
+// parse1PUX reads export.data out of a 1Password 1PUX archive. Only an entry
+// named exactly export.data counts; names with a directory part are ignored.
 func parse1PUX(data []byte) ([]account.Account, error) {
 	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
@@ -49,13 +48,16 @@ func parse1PUX(data []byte) ([]account.Account, error) {
 		if err != nil {
 			return nil, fmt.Errorf("1password: open export.data: %w", err)
 		}
-		inner, err := io.ReadAll(io.LimitReader(rc, max1PUXDataBytes))
+		inner, err := io.ReadAll(io.LimitReader(rc, max1PUXDataBytes+1))
 		closeErr := rc.Close()
 		if err != nil {
 			return nil, fmt.Errorf("1password: read export.data: %w", err)
 		}
 		if closeErr != nil {
 			return nil, fmt.Errorf("1password: read export.data: %w", closeErr)
+		}
+		if len(inner) > max1PUXDataBytes {
+			return nil, fmt.Errorf("1password: %w", ErrExportDataTooLarge)
 		}
 		return parse1PUXData(inner)
 	}

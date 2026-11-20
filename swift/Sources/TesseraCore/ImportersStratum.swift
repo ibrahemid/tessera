@@ -15,9 +15,14 @@ extension Importers {
 
     static func parseStratum(_ doc: GoJSON) throws -> [Account] {
         var entries = GoSlice<StratumEntry>()
+        var categoryList: Int?
+        var membershipList: Int?
         try wrapping("stratum: ") {
             let d = GoJSONDecoder(doc, root: "stratumFile")
-            try d.object(doc.root, type: "importers.stratumFile", fields: ["Authenticators"]) { _, v in
+            try d.object(doc.root, type: "importers.stratumFile",
+                         fields: ["Authenticators", "Categories", "AuthenticatorCategories"]) { f, v in
+                if f == 1 { categoryList = v; return }
+                if f == 2 { membershipList = v; return }
                 try d.slice(v, &entries, type: "[]importers.stratumEntry", zero: StratumEntry()) { e, x in
                     try d.object(e, type: "importers.stratumEntry",
                                  fields: ["Type", "Issuer", "Username", "Secret", "Algorithm", "Digits", "Period", "Counter"]) { f, v in
@@ -35,15 +40,28 @@ extension Importers {
                 }
             }
         }
+        let categories = indexGroups(doc, categoryList, idKey: "Id")
+        var memberships: [[UInt8]: [Int?]] = [:]
+        for raw in rawElements(doc, membershipList) {
+            guard let m = rawObject(doc, raw, fields: ["CategoryId", "AuthenticatorSecret"]),
+                  let secret = rawString(doc, m[1]) else { continue }
+            memberships[Array(secret.utf8), default: []].append(m[0])
+        }
         var out: [Account] = []
         out.reserveCapacity(entries.count)
         for e in entries.items {
-            out.append(try wrapping("stratum entry \(GoText.quote(e.issuer)): ") {
+            var a = try wrapping("stratum entry \(quoteBounded(e.issuer)): ") {
                 let typ = try stratumType(e.type)
                 let algo = try stratumAlgorithm(e.algorithm)
                 return try buildAccount(type: typ, issuer: e.issuer, acct: e.username, secretB32: e.secret,
                                         algo: algo, digits: e.digits, period: e.period, counter: e.counter)
-            })
+            }
+            var names: [String] = []
+            for id in memberships[Array(e.secret.utf8)] ?? [] {
+                groupName(&names, categories, doc, id)
+            }
+            (a.folder, a.tags) = placeGroups(names)
+            out.append(a)
         }
         return out
     }

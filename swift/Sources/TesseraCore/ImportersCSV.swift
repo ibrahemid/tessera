@@ -10,6 +10,8 @@ extension Importers {
         let userCol: Int
         let otpCol: Int
         let noteCol: Int
+        var pinCol: Int?
+        var tagsCol: Int?
     }
 
     /// Maps an exact header line to its format. Apple publishes no schema for
@@ -20,7 +22,7 @@ extension Importers {
         (Array("Title,URL,Username,Password,Notes,OTPAuth".utf8),
          CSVFormat(name: "Apple Passwords", titleCol: 0, userCol: 2, otpCol: 5, noteCol: 4)),
         (Array("Title,Url,Username,Password,OTPAuth,Favorite,Archived,Tags,Notes".utf8),
-         CSVFormat(name: "1Password", titleCol: 0, userCol: 2, otpCol: 4, noteCol: 8)),
+         CSVFormat(name: "1Password", titleCol: 0, userCol: 2, otpCol: 4, noteCol: 8, pinCol: 5, tagsCol: 7)),
     ]
 
     private static let utf8BOM: [UInt8] = [0xEF, 0xBB, 0xBF]
@@ -55,6 +57,13 @@ extension Importers {
             catch { throw entryError("\(format.name) row \(i + 1): ", error) }
             guard var a = parsed else { continue }
             if format.noteCol < row.count { a.note = TextClean.note(row[format.noteCol]) }
+            if let c = format.pinCol, c < row.count {
+                a.pinned = GoText.equalFold(GoText.trimSpace(row[c]), ascii: "true")
+            }
+            if let c = format.tagsCol, c < row.count {
+                let parts = row[c].utf8.split(separator: 0x3B, omittingEmptySubsequences: false)
+                a.tags = cleanTags(parts.map { String(decoding: $0, as: UTF8.self) })
+            }
             out.append(a)
         }
         return out

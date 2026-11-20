@@ -143,7 +143,8 @@ func stripSpacesDashes(s string) string {
 }
 
 // ItemError records one item in a batch that failed to parse. Input is a
-// redacted display form (kind plus a short prefix), never a full secret.
+// redacted display form, never a full secret: the kind and length for a link
+// or anything shaped like a setup key, else the kind and a short prefix.
 type ItemError struct {
 	Line  int
 	Input string
@@ -157,19 +158,46 @@ func (e ItemError) Error() string {
 	return e.Err.Error()
 }
 
-// redact returns a safe display form for a payload: its kind and the first four
-// characters, so an error can name the item without exposing the secret.
+// redact returns a safe display form for a payload, so an error can name the
+// item without exposing the secret. A link, or unrecognized text holding a link
+// or made only of ASCII letters and digits grouped by spaces, tabs, '-' or '=',
+// shows its kind and length in characters; anything else shows its kind and
+// first four characters.
 func redact(kind Kind, raw string) string {
 	t := strings.TrimSpace(raw)
+	if t == "" {
+		return kind.String()
+	}
 	r := []rune(t)
+	if kind == Migration || kind == OTPAuth || kind == SetupKey || (kind == Invalid && looksSecret(t)) {
+		unit := "characters"
+		if len(r) == 1 {
+			unit = "character"
+		}
+		return fmt.Sprintf("%s (%d %s)", kind, len(r), unit)
+	}
 	prefix := string(r)
 	if len(r) > 4 {
 		prefix = string(r[:4]) + "…"
 	}
-	if prefix == "" {
-		return kind.String()
-	}
 	return kind.String() + " " + prefix
+}
+
+func looksSecret(t string) bool {
+	if strings.Contains(t, "://") {
+		return true
+	}
+	hasAlnum := false
+	for i := 0; i < len(t); i++ {
+		switch c := t[i]; {
+		case c >= 'A' && c <= 'Z', c >= 'a' && c <= 'z', c >= '0' && c <= '9':
+			hasAlnum = true
+		case c == ' ', c == '\t', c == '-', c == '=':
+		default:
+			return false
+		}
+	}
+	return hasAlnum
 }
 
 // ParseText classifies and parses a text payload into accounts, collecting a

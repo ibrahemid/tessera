@@ -185,8 +185,44 @@ func TestParseTextEmpty(t *testing.T) {
 	if len(accts) != 0 {
 		t.Fatalf("expected no accounts, got %d", len(accts))
 	}
-	if len(errs) != 1 {
-		t.Fatalf("expected 1 invalid item, got %d", len(errs))
+	if len(errs) != 1 || errs[0].Line != 1 || errs[0].Input != "" || errs[0].Err.Error() != "no input" {
+		t.Fatalf("expected one line 1 \"no input\" error, got %+v", errs)
+	}
+}
+
+func TestRedactShowsKindAndLengthForSecretShapes(t *testing.T) {
+	cases := []struct {
+		kind Kind
+		raw  string
+		want string
+	}{
+		{SetupKey, "  ab  ", "setup-key (2 characters)"},
+		{OTPAuth, "otpauth://totp/A?secret=JBSWY3DPEHPK3PXP&digits=99", "otpauth (50 characters)"},
+		{Migration, "otpauth-migration://offline?data=%%%", "migration (36 characters)"},
+		{Migration, " \t", "migration"},
+		{Invalid, "ZB573K4APD63E6R", "invalid (15 characters)"},
+		{Invalid, "ZB57 3K4A-PD63=E6R1", "invalid (19 characters)"},
+		{Invalid, "x", "invalid (1 character)"},
+		{Invalid, "see https://example.com", "invalid (23 characters)"},
+		{Invalid, "\ufeffotpauth://totp/A?secret=JBSWY3DPEHPK3PXP", "invalid (41 characters)"},
+		{Invalid, "my key: abcd", "invalid my k…"},
+		{Invalid, "--==", "invalid --=="},
+		{Invalid, "e\u0301\u0301xyz", "invalid e\u0301\u0301x…"},
+		{ExportJSON, "Aegis", "export-json Aegi…"},
+	}
+	for _, c := range cases {
+		if got := redact(c.kind, c.raw); got != c.want {
+			t.Errorf("redact(%v, %q) = %q, want %q", c.kind, c.raw, got, c.want)
+		}
+	}
+}
+
+func TestParseTextNeverShowsTheStartOfAMistypedKey(t *testing.T) {
+	for _, line := range []string{"ZB573K4APD63E6R", "ZB573K4APD63E6R1", "zb57 3k4a pd63 e6r8", "ZB573K4APD63E6RL="} {
+		_, errs := ParseText(line)
+		if len(errs) != 1 || strings.Contains(errs[0].Input, "ZB57") || strings.Contains(errs[0].Input, "zb57") {
+			t.Errorf("%q: %+v", line, errs)
+		}
 	}
 }
 

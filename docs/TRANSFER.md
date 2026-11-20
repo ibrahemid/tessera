@@ -50,14 +50,24 @@ off the screen on macOS and Linux.
 Every source gives the type, issuer, account name, secret, algorithm, digits,
 and period or counter.
 
-| Source | Note | Folder, tags, pinned |
-|--------|------|----------------------|
-| Aegis | kept | dropped |
-| Bitwarden and Bitwarden Authenticator | kept | dropped |
-| Proton Authenticator | kept | dropped |
-| Apple Passwords CSV | kept | dropped |
-| 1Password, CSV and `.1pux` | kept | dropped |
-| every other source | dropped | dropped |
+| Source | Note | Folder | Tags | Pinned |
+|--------|------|--------|------|--------|
+| Aegis | kept | first group | other groups | from favorite |
+| 2FAS Auth | dropped | its group | dropped | dropped |
+| Raivo OTP | dropped | dropped | dropped | kept |
+| andOTP | dropped | dropped | kept | dropped |
+| Stratum / Authenticator Pro | dropped | first category | other categories | dropped |
+| Bitwarden and Bitwarden Authenticator | kept | folder, else first collection | other collections | from favorite |
+| Proton Authenticator | kept | dropped | dropped | dropped |
+| Apple Passwords CSV | kept | dropped | dropped | dropped |
+| 1Password `.1pux` | kept | vault name | kept | from favorite |
+| 1Password CSV | kept | dropped | kept, split on `;` | from favorite |
+| FreeOTP+, Ente Auth, Google Authenticator | dropped | dropped | dropped | dropped |
+
+Folder and tag names are cleaned like any other text. When an account sits in
+several groups, the first in the file's order becomes its folder and the rest
+become tags; Bitwarden puts the item's folder before its collections. Blank
+names, repeated names and groups the file does not define are dropped.
 
 An account with the same type, issuer, account name (case-insensitive) and
 secret as a live account in the vault, or as one earlier in the same import, is
@@ -105,6 +115,8 @@ image cannot go to stdout.
 | `andotp` | no | no | yes | no |
 | `apple-csv` | yes | no | no | no |
 | `google-migration` | no | no | no | no |
+
+`tess import` of one of these files restores every field marked here.
 
 `apple-csv` leaves out an account whose title or username starts with `=`, `+`,
 `-` or `@`, and drops a note that starts with one of them, since a spreadsheet

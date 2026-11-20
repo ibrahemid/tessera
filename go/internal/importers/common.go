@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
 	"github.com/ibrahemid/tessera/go/internal/base32x"
@@ -115,7 +116,7 @@ func mapType(s string) (account.Type, error) {
 	case "steam", "steam_totp", "steamtotp":
 		return account.Steam, nil
 	default:
-		return "", fmt.Errorf("unsupported account type %q", s)
+		return "", fmt.Errorf("unsupported account type %s", quoteBounded(s))
 	}
 }
 
@@ -128,7 +129,7 @@ func mapAlgo(s string) (string, error) {
 	case "SHA512":
 		return "SHA512", nil
 	default:
-		return "", fmt.Errorf("unsupported algorithm %q", s)
+		return "", fmt.Errorf("unsupported algorithm %s", quoteBounded(s))
 	}
 }
 
@@ -139,7 +140,20 @@ func atoiDefault(s string, def int) (int, error) {
 	}
 	n, err := strconv.Atoi(s)
 	if err != nil {
-		return 0, fmt.Errorf("not a number: %q", s)
+		return 0, fmt.Errorf("not a number: %s", quoteBounded(s))
 	}
 	return n, nil
+}
+
+const maxQuotedBytes = 16
+
+func quoteBounded(s string) string {
+	if len(s) <= maxQuotedBytes {
+		return strconv.Quote(s)
+	}
+	n := maxQuotedBytes
+	for i := 0; i < utf8.UTFMax-1 && n > 0 && !utf8.RuneStart(s[n]); i++ {
+		n--
+	}
+	return fmt.Sprintf("%s… (%d bytes)", strconv.Quote(s[:n]), len(s))
 }

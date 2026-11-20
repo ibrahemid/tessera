@@ -43,8 +43,9 @@ func newExportCmd() *cobra.Command {
   tess export --format aegis --out aegis.json          # ... or written to a file
   tess export --format google-migration --out ./qr     # transfer QR codes for Google Authenticator
 
-Trashed accounts are left out. Files are written readable by you only, and an
-existing file is replaced only with --force.
+Trashed accounts are left out, except by --file, which copies the whole vault.
+Files are written readable by you only, and an existing file is replaced only
+with --force.
 
 Formats for --format:
 `,

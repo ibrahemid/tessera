@@ -21,9 +21,12 @@ extension Importers {
         var loginFields = GoSlice<OnePUXLoginField>()
         var sections = GoSlice<OnePUXSection>()
         var title = ""
+        var tags: Int?
+        var favIndex: Int?
     }
 
     struct OnePUXVault {
+        var attrs: Int?
         var items = GoSlice<OnePUXItem>()
     }
 
@@ -33,21 +36,27 @@ extension Importers {
 
     private enum OnePUXType {
         static let items = #"[]importers.onePUXItem"#
-        static let vault = #"struct { Items []importers.onePUXItem "json:\"items\"" }"#
+        static let vault = #"struct { Attrs jsontext.Value "json:\"attrs\""; Items []importers.onePUXItem "json:\"items\"" }"#
         static let vaults = "[]" + vault
-        static let account = #"struct { Vaults []struct { Items []importers.onePUXItem "json:\"items\"" } "json:\"vaults\"" }"#
+        static let account = #"struct { Vaults []struct { Attrs jsontext.Value "json:\"attrs\""; Items []importers.onePUXItem "json:\"items\"" } "json:\"vaults\"" }"#
         static let accounts = "[]" + account
         static let loginField = #"struct { Value string "json:\"value\""; Designation string "json:\"designation\"" }"#
         static let field = #"struct { Value jsontext.Value "json:\"value\"" }"#
         static let section = #"struct { Fields []struct { Value jsontext.Value "json:\"value\"" } "json:\"fields\"" }"#
         static let details = #"struct { NotesPlain string "json:\"notesPlain\""; LoginFields []struct { Value string "json:\"value\""; Designation string "json:\"designation\"" } "json:\"loginFields\""; Sections []struct { Fields []struct { Value jsontext.Value "json:\"value\"" } "json:\"fields\"" } "json:\"sections\"" }"#
-        static let overview = #"struct { Title string "json:\"title\"" }"#
+        static let overview = #"struct { Title string "json:\"title\""; Tags jsontext.Value "json:\"tags\"" }"#
     }
 
     private static func decodeOnePUXItem(_ d: GoJSONDecoder, _ node: Int, _ item: inout OnePUXItem) throws {
-        try d.object(node, type: "importers.onePUXItem", fields: ["details", "overview"]) { f, v in
+        try d.object(node, type: "importers.onePUXItem", fields: ["details", "overview", "favIndex"]) { f, v in
+            if f == 2 {
+                item.favIndex = v
+                return
+            }
             if f == 1 {
-                try d.object(v, type: OnePUXType.overview, fields: ["title"]) { _, v in try d.string(v, &item.title) }
+                try d.object(v, type: OnePUXType.overview, fields: ["title", "tags"]) { f, v in
+                    if f == 0 { try d.string(v, &item.title) } else { item.tags = v }
+                }
                 return
             }
             try d.object(v, type: OnePUXType.details, fields: ["notesPlain", "loginFields", "sections"]) { f, v in
@@ -87,7 +96,6 @@ extension Importers {
     }
 
     /// Reads the export.data document at the heart of a 1Password 1PUX archive.
-    /// Both cores parse this document; only the CLI opens the zip.
     static func parse1PUXData(_ doc: GoJSON) throws -> [Account] {
         var accounts = GoSlice<OnePUXAccount>()
         try wrapping("1password: ") {
@@ -96,7 +104,11 @@ extension Importers {
                 try d.slice(v, &accounts, type: OnePUXType.accounts, zero: OnePUXAccount()) { e, acct in
                     try d.object(e, type: OnePUXType.account, fields: ["vaults"]) { _, v in
                         try d.slice(v, &acct.vaults, type: OnePUXType.vaults, zero: OnePUXVault()) { e, vault in
-                            try d.object(e, type: OnePUXType.vault, fields: ["items"]) { _, v in
+                            try d.object(e, type: OnePUXType.vault, fields: ["attrs", "items"]) { f, v in
+                                if f == 0 {
+                                    vault.attrs = v
+                                    return
+                                }
                                 try d.slice(v, &vault.items, type: OnePUXType.items, zero: OnePUXItem()) { e, item in
                                     try decodeOnePUXItem(d, e, &item)
                                 }
@@ -109,6 +121,7 @@ extension Importers {
         var out: [Account] = []
         for acct in accounts.items {
             for vault in acct.vaults.items {
+                let vaultName = rawObject(doc, vault.attrs, fields: ["name"]).flatMap { rawString(doc, $0[0]) } ?? ""
                 for item in vault.items.items {
                     let username = item.loginFields.items
                         .first { GoText.equal($0.designation, "username") }?.value ?? ""
@@ -118,10 +131,13 @@ extension Importers {
                             let parsed: Account?
                             do { parsed = try parseOTPValue(totp, item.title, username) }
                             catch {
-                                throw entryError("1password item \(GoText.quote(item.title)): ", error)
+                                throw entryError("1password item \(quoteBounded(item.title)): ", error)
                             }
                             guard var a = parsed else { continue }
                             a.note = TextClean.note(item.notesPlain)
+                            a.folder = TextClean.text(vaultName)
+                            a.tags = cleanTags(rawStrings(doc, item.tags))
+                            a.pinned = rawIsPositive(doc, item.favIndex)
                             out.append(a)
                         }
                     }
