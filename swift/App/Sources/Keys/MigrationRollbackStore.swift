@@ -1,16 +1,21 @@
+import CryptoKit
 import Darwin
 import Foundation
+import os
 
 enum MigrationRollbackError: Error, Equatable, Sendable {
     case io(operation: String, errno: Int32)
 }
 
 /// The bytes of a vault file as they were before a key lifecycle commit, kept
-/// until the vault has opened through its new key. One copy at a time; the
-/// vault path it belongs to lives in UserDefaults.
+/// until that vault has opened through its new key. One copy per vault, in a
+/// file named by a hash of the vault's real path; the map from that path to
+/// the file name lives in UserDefaults.
 struct MigrationRollbackStore: @unchecked Sendable {
-    static let vaultPathKey = "tessera.migrationRollbackVaultPath"
-    static let fileName = "migration-rollback.json"
+    static let copiesKey = "tessera.migrationRollbackCopies.v1"
+    static let legacyVaultPathKey = "tessera.migrationRollbackVaultPath"
+    static let legacyFileName = "migration-rollback.json"
+    private static let lock = OSAllocatedUnfairLock()
 
     let directory: URL
     private let defaults: UserDefaults
@@ -20,80 +25,104 @@ struct MigrationRollbackStore: @unchecked Sendable {
         self.defaults = defaults
     }
 
-    var fileURL: URL { directory.appendingPathComponent(Self.fileName) }
+    /// Where the copy for `vaultPath` is written.
+    func fileURL(for vaultPath: String) -> URL {
+        directory.appendingPathComponent(Self.fileName(for: SEKeyRegistry.normalizedPath(vaultPath)))
+    }
 
     func save(_ bytes: Data, for vaultPath: String) throws(MigrationRollbackError) {
-        defaults.removeObject(forKey: Self.vaultPathKey)
-        try DurableWrite.replace(fileURL, with: bytes, directory: directory)
-        defaults.set(SEKeyRegistry.normalizedPath(vaultPath), forKey: Self.vaultPathKey)
-    }
-
-    /// The saved copy and the real path of the vault it belongs to.
-    func pending() -> (vaultPath: String, url: URL)? {
-        guard let path = defaults.string(forKey: Self.vaultPathKey),
-              FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
-        return (path, fileURL)
-    }
-
-    func discard() throws(MigrationRollbackError) {
-        if unlink(fileURL.path) != 0 && errno != ENOENT { throw .io(operation: "unlink", errno: errno) }
-        defaults.removeObject(forKey: Self.vaultPathKey)
-    }
-}
-
-/// Temp file at 0600, full sync, rename over the target, then sync the directory.
-private enum DurableWrite {
-    static func replace(_ target: URL, with bytes: Data, directory: URL) throws(MigrationRollbackError) {
-        try makeDirectory(directory)
-        let temp = directory.appendingPathComponent(VaultSidecar.tempPrefix + UUID().uuidString + ".tmp")
-        let fd = open(temp.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
-        guard fd >= 0 else { throw .io(operation: "open", errno: errno) }
-        var renamed = false
-        defer { if !renamed { unlink(temp.path) } }
-        do throws(MigrationRollbackError) {
-            guard fchmod(fd, 0o600) == 0 else { throw .io(operation: "fchmod", errno: errno) }
-            try writeAll(fd, bytes)
-            try fullSync(fd)
+        Self.lock.lock()
+        defer { Self.lock.unlock() }
+        migrateLegacyCopy()
+        let path = SEKeyRegistry.normalizedPath(vaultPath)
+        do throws(POSIXError) {
+            try DurableFile.makePrivateDirectory(directory)
         } catch {
-            close(fd)
-            throw error
+            throw .io(operation: "mkdir", errno: error.code.rawValue)
         }
-        guard close(fd) == 0 else { throw .io(operation: "close", errno: errno) }
-        guard rename(temp.path, target.path) == 0 else { throw .io(operation: "rename", errno: errno) }
-        renamed = true
-        syncDirectory(directory)
-    }
-
-    private static func makeDirectory(_ directory: URL) throws(MigrationRollbackError) {
-        do {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
-                                                    attributes: [.posixPermissions: 0o700])
+        do throws(VaultWriteError) {
+            try DurableFile.replace(bytes, at: fileURL(for: path), hasDirectoryAccess: true)
         } catch {
-            throw .io(operation: "mkdir", errno: Int32((error as NSError).code))
+            throw Self.rollbackError(error)
+        }
+        updateCopies { $0[path] = Self.fileName(for: path) }
+    }
+
+    /// The copy saved for `vaultPath`, while both the copy and its entry exist.
+    func pending(for vaultPath: String) -> URL? {
+        Self.lock.lock()
+        defer { Self.lock.unlock() }
+        migrateLegacyCopy()
+        let path = SEKeyRegistry.normalizedPath(vaultPath)
+        guard loadCopies()[path] != nil else { return nil }
+        let url = fileURL(for: path)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    /// Removes the copy for `vaultPath` and its entry; the copies of other vaults stay.
+    func discard(for vaultPath: String) throws(MigrationRollbackError) {
+        Self.lock.lock()
+        defer { Self.lock.unlock() }
+        migrateLegacyCopy()
+        let path = SEKeyRegistry.normalizedPath(vaultPath)
+        do throws(VaultWriteError) {
+            try DurableFile.remove(fileURL(for: path))
+        } catch {
+            throw Self.rollbackError(error)
+        }
+        updateCopies { $0[path] = nil }
+    }
+
+    static func fileName(for normalizedPath: String) -> String {
+        let digest = SHA256.hash(data: Data(normalizedPath.utf8))
+        return "rollback-" + digest.map { String(format: "%02x", $0) }.joined() + ".json"
+    }
+
+    /// Moves the single copy an earlier version kept to the name of its vault.
+    /// A file left without its path is never pending, so it goes.
+    private func migrateLegacyCopy() {
+        let legacy = directory.appendingPathComponent(Self.legacyFileName)
+        guard let legacyPath = defaults.string(forKey: Self.legacyVaultPathKey) else {
+            unlink(legacy.path)
+            return
+        }
+        let path = SEKeyRegistry.normalizedPath(legacyPath)
+        let target = fileURL(for: path)
+        var info = stat()
+        if lstat(legacy.path, &info) == 0 {
+            guard Darwin.rename(legacy.path, target.path) == 0 else { return }
+            Self.syncDirectory(directory)
+        }
+        if FileManager.default.fileExists(atPath: target.path) {
+            updateCopies { $0[path] = Self.fileName(for: path) }
+        }
+        defaults.removeObject(forKey: Self.legacyVaultPathKey)
+    }
+
+    private func updateCopies(_ change: (inout [String: String]) -> Void) {
+        var copies = loadCopies()
+        change(&copies)
+        if copies.isEmpty {
+            defaults.removeObject(forKey: Self.copiesKey)
+        } else {
+            defaults.set(copies, forKey: Self.copiesKey)
         }
     }
 
-    private static func writeAll(_ fd: Int32, _ bytes: Data) throws(MigrationRollbackError) {
-        let failure: Int32? = bytes.withUnsafeBytes { raw -> Int32? in
-            guard var base = raw.baseAddress else { return nil }
-            var left = raw.count
-            while left > 0 {
-                let n = write(fd, base, left)
-                if n < 0 {
-                    if errno == EINTR { continue }
-                    return errno
-                }
-                left -= n
-                base += n
-            }
-            return nil
+    /// Only entries whose file name is the one their path derives.
+    private func loadCopies() -> [String: String] {
+        guard let stored = defaults.dictionary(forKey: Self.copiesKey) else { return [:] }
+        var out: [String: String] = [:]
+        for (path, value) in stored {
+            guard let name = value as? String, name == Self.fileName(for: path) else { continue }
+            out[path] = name
         }
-        if let failure { throw .io(operation: "write", errno: failure) }
+        return out
     }
 
-    private static func fullSync(_ fd: Int32) throws(MigrationRollbackError) {
-        if fcntl(fd, F_FULLFSYNC) == 0 { return }
-        guard fsync(fd) == 0 else { throw .io(operation: "fsync", errno: errno) }
+    private static func rollbackError(_ error: VaultWriteError) -> MigrationRollbackError {
+        if case let .io(operation, _, code) = error { return .io(operation: operation, errno: code) }
+        return .io(operation: "write", errno: EIO)
     }
 
     private static func syncDirectory(_ directory: URL) {

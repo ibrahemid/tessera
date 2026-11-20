@@ -24,6 +24,7 @@ final class FaultyKeyItemStore: KeyItemStore, Sendable {
         var delete: KeyItemError?
         var readData: Data?
         var readPendingFlipped = false
+        var readBiometricsFlipped = false
     }
 
     let base = InMemoryKeyItemStore()
@@ -33,9 +34,9 @@ final class FaultyKeyItemStore: KeyItemStore, Sendable {
         faults.withLockUnchecked { change(&$0) }
     }
 
-    func add(_ data: Data, account: String, isRotationPending: Bool) throws(KeyItemError) {
+    func add(_ item: KeyItem, account: String) throws(KeyItemError) {
         if let error = faults.withLock({ $0.add }) { throw error }
-        try base.add(data, account: account, isRotationPending: isRotationPending)
+        try base.add(item, account: account)
     }
 
     func read(account: String) throws(KeyItemError) -> KeyItem {
@@ -43,7 +44,9 @@ final class FaultyKeyItemStore: KeyItemStore, Sendable {
         if let error = current.read { throw error }
         let item = try base.read(account: account)
         return KeyItem(data: current.readData ?? item.data,
-                       isRotationPending: current.readPendingFlipped ? !item.isRotationPending : item.isRotationPending)
+                       isRotationPending: current.readPendingFlipped ? !item.isRotationPending : item.isRotationPending,
+                       requiresBiometrics: current.readBiometricsFlipped
+                           ? !item.requiresBiometrics : item.requiresBiometrics)
     }
 
     func delete(account: String) throws(KeyItemError) {

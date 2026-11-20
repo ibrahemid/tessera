@@ -45,7 +45,19 @@ final class SEKeyringTests: XCTestCase {
         let item = try items.read(account: id.account)
         XCTAssertEqual(item.data, key.key.dataRepresentation)
         XCTAssertTrue(item.isRotationPending)
-        XCTAssertEqual(SoftwareEnclaveKeyFactory.requiresBiometrics(item.data), true)
+        XCTAssertTrue(item.requiresBiometrics)
+        XCTAssertTrue(key.requiresBiometrics)
+    }
+
+    func testReadBackWithAnotherBiometricSettingIsAMismatch() throws {
+        items.setFaults { $0.readBiometricsFlipped = true }
+        let id = SEKeyID.random()
+        XCTAssertThrowsError(try keyring.createKey(id: id, for: vaultPath, requireBiometrics: true,
+                                                   isRotationPending: false, context: nil)) {
+            XCTAssertEqual($0 as? SEKeyError, .readBackMismatch(id))
+        }
+        XCTAssertEqual(items.accounts, [])
+        XCTAssertEqual(registry.ids(for: vaultPath), [])
     }
 
     func testReadBackMismatchRemovesWhatWasAdded() throws {
@@ -82,7 +94,8 @@ final class SEKeyringTests: XCTestCase {
 
     func testDuplicateLeavesTheExistingItem() throws {
         let id = SEKeyID.random()
-        try items.add(Data("existing".utf8), account: id.account, isRotationPending: false)
+        try items.add(KeyItem(data: Data("existing".utf8), isRotationPending: false, requiresBiometrics: false),
+                      account: id.account)
         XCTAssertThrowsError(try keyring.createKey(id: id, for: vaultPath, requireBiometrics: false,
                                                    isRotationPending: false, context: nil)) {
             XCTAssertEqual($0 as? KeyItemError, .duplicate)
@@ -149,10 +162,13 @@ final class SEKeyringTests: XCTestCase {
         let legacy = try KeyFixture.legacyWrap(dek: dek)
         let (key, current) = try provisionWrap(dek: dek, pending: true)
         let result = try keyring.unwrap(try envelope([legacy, current], dek: dek), context: nil)
-        guard case let .current(opened, id, isPending, wrap) = result else { return XCTFail("\(result)") }
+        guard case let .current(opened, id, isPending, requiresBiometrics, wrap) = result else {
+            return XCTFail("\(result)")
+        }
         XCTAssertEqual(opened, dek)
         XCTAssertEqual(id, key.id)
         XCTAssertTrue(isPending)
+        XCTAssertFalse(requiresBiometrics)
         XCTAssertTrue(wrap.isSameWrap(as: current))
     }
 
@@ -161,8 +177,19 @@ final class SEKeyringTests: XCTestCase {
         let foreign = try KeyFixture.foreignCurrentWrap()
         let (key, current) = try provisionWrap(dek: dek)
         let result = try keyring.unwrap(try envelope([foreign, current], dek: dek), context: nil)
-        guard case let .current(_, id, _, _) = result else { return XCTFail("\(result)") }
+        guard case let .current(_, id, _, _, _) = result else { return XCTFail("\(result)") }
         XCTAssertEqual(id, key.id)
+    }
+
+    func testUnwrapReportsTheBiometricSettingOfTheItem() throws {
+        let dek = SecureRandom.bytes(32)
+        let key = try keyring.createKey(for: vaultPath, requireBiometrics: true, isRotationPending: false, context: nil)
+        let wrap = try keyring.makeWrap(dek: dek, key: key)
+        let result = try keyring.unwrap(try envelope([wrap], dek: dek), context: nil)
+        guard case let .current(_, id, _, requiresBiometrics, _) = result else { return XCTFail("\(result)") }
+        XCTAssertEqual(id, key.id)
+        XCTAssertTrue(requiresBiometrics)
+        XCTAssertEqual(try keyring.localKeys(in: try envelope([wrap], dek: dek)).map(\.requiresBiometrics), [true])
     }
 
     func testUnwrapFallsBackToALegacyWrapFromThisMac() throws {

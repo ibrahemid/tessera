@@ -1,10 +1,12 @@
 import Foundation
 import Security
 
-/// One keychain item holding a Secure Enclave key's data representation.
+/// One keychain item holding a Secure Enclave key's data representation,
+/// with the pending marker and the biometric setting the key was made with.
 struct KeyItem: Sendable, Equatable {
     let data: Data
     let isRotationPending: Bool
+    let requiresBiometrics: Bool
 }
 
 enum KeyItemError: Error, Equatable, Sendable {
@@ -32,7 +34,7 @@ enum KeyItemError: Error, Equatable, Sendable {
 
 /// Where Secure Enclave key items live. Items are added and deleted, never updated.
 protocol KeyItemStore: Sendable {
-    func add(_ data: Data, account: String, isRotationPending: Bool) throws(KeyItemError)
+    func add(_ item: KeyItem, account: String) throws(KeyItemError)
     /// A fresh query on every call.
     func read(account: String) throws(KeyItemError) -> KeyItem
     /// Deleting an item that does not exist succeeds.
@@ -43,13 +45,14 @@ protocol KeyItemStore: Sendable {
 struct DataProtectionKeychain: KeyItemStore {
     static let defaultService = "com.ibrahemid.tessera"
     static let rotationPendingMarker = Data("tessera.rotation-pending.v1".utf8)
+    static let biometryRequiredMarker = "tessera.biometry-required.v1"
 
     let service: String
 
     init(service: String = Self.defaultService) { self.service = service }
 
-    func add(_ data: Data, account: String, isRotationPending: Bool) throws(KeyItemError) {
-        let attributes = addAttributes(data, account: account, isRotationPending: isRotationPending)
+    func add(_ item: KeyItem, account: String) throws(KeyItemError) {
+        let attributes = addAttributes(item, account: account)
         try KeyItemError.check(SecItemAdd(attributes as CFDictionary, nil), operation: "add")
     }
 
@@ -67,12 +70,13 @@ struct DataProtectionKeychain: KeyItemStore {
         try KeyItemError.check(status, operation: "delete")
     }
 
-    func addAttributes(_ data: Data, account: String, isRotationPending: Bool) -> [String: Any] {
+    func addAttributes(_ item: KeyItem, account: String) -> [String: Any] {
         var attributes = baseQuery(account: account)
-        attributes[kSecValueData as String] = data
+        attributes[kSecValueData as String] = item.data
         attributes[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         attributes[kSecAttrSynchronizable as String] = false
-        if isRotationPending { attributes[kSecAttrGeneric as String] = Self.rotationPendingMarker }
+        if item.isRotationPending { attributes[kSecAttrGeneric as String] = Self.rotationPendingMarker }
+        if item.requiresBiometrics { attributes[kSecAttrDescription as String] = Self.biometryRequiredMarker }
         return attributes
     }
 
@@ -91,7 +95,9 @@ struct DataProtectionKeychain: KeyItemStore {
             return nil
         }
         let generic = attributes[kSecAttrGeneric as String] as? Data
-        return KeyItem(data: data, isRotationPending: generic == rotationPendingMarker)
+        let description = attributes[kSecAttrDescription as String] as? String
+        return KeyItem(data: data, isRotationPending: generic == rotationPendingMarker,
+                       requiresBiometrics: description == biometryRequiredMarker)
     }
 
     private func baseQuery(account: String) -> [String: Any] {

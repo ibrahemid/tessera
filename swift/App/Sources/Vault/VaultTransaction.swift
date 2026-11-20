@@ -49,12 +49,25 @@ struct DamagedVaultInfo: Sendable, Equatable {
     let rollback: URL?
 }
 
+/// What a compare-and-restore found when it checked the file.
+enum RestoreOutcome: Sendable, Equatable {
+    /// The file held the committed bytes and is back to its state before that commit.
+    case restored
+    /// The file no longer held the committed bytes, or was gone; it was left as it is.
+    case changedSince
+}
+
 protocol VaultTransaction: Sendable {
     var location: VaultLocation { get }
     func read() async throws -> VaultSnapshot
     func commit(heldDEK: Data, _ transform: @escaping @Sendable (OpenedVault) throws -> VaultCommit) async throws -> CommittedVault
     func create(_ commit: VaultCommit) async throws -> CommittedVault
     func restore(verbatim bytes: Data) async throws
+    /// Writes `bytes` over the file only while it still holds exactly `committed`.
+    func restore(verbatim bytes: Data, ifStill committed: Data) async throws -> RestoreOutcome
+    /// Removes the file only while it still holds exactly `committed`; a link
+    /// at the vault's path is a file that changed since.
+    func removeCreated(ifStill committed: Data) async throws -> RestoreOutcome
     func readBackup() async throws -> VaultSnapshot?
     func deleteBackup() async throws
 }

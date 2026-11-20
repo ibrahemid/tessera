@@ -92,6 +92,21 @@ final class InMemoryVaultFile: VaultTransaction {
         replace(with: envelope)
     }
 
+    func restore(verbatim bytes: Data, ifStill committed: Data) async throws -> RestoreOutcome {
+        let envelope = try Envelope.decode(bytes)
+        return try state.withLock { s in
+            guard try s.envelope.encoded() == committed else { return .changedSince }
+            s.envelope = envelope
+            s.revision += 1
+            return .restored
+        }
+    }
+
+    /// This file always exists, so a removal fails.
+    func removeCreated(ifStill committed: Data) async throws -> RestoreOutcome {
+        throw VaultWriteError.io(operation: "remove", url: location.fileURL, errno: ENOTSUP)
+    }
+
     func readBackup() async throws -> VaultSnapshot? { nil }
 
     func deleteBackup() async throws {}

@@ -4,9 +4,11 @@ import XCTest
 @testable import Tessera
 
 /// Every transition, stopped after every step and by every write and
-/// read-back fault, then relaunched over the same state: the vault opens at
-/// every point, the run reaches its target, no legacy wrap or unreferenced
-/// key is left, and the accounts never change.
+/// read-back fault, and raced by another app that writes the file before the
+/// read-back, then relaunched over the same state: the vault opens at every
+/// point, the other app's file stands, the run reaches its target unless that
+/// file ends it, no legacy wrap or unreferenced key is left, and the accounts
+/// change only as the other app changed them.
 final class KeyLifecycleCrashMatrixTests: XCTestCase {
     func testLegacyToCurrentWithFolderAccess() async throws { try await runMatrix(Scenarios.migrate, .folder) }
     func testLegacyToCurrentWithFileAccess() async throws { try await runMatrix(Scenarios.migrate, .fileOnly) }
@@ -36,23 +38,14 @@ final class KeyLifecycleCrashMatrixTests: XCTestCase {
         try await runMatrix(Scenarios.rotateWithoutEnclave, .fileOnly)
     }
 
-    func testReplaceWithFolderAccess() async throws {
-        try await runMatrix(Scenarios.replace(preferenceKey: await Self.preferenceKey()), .folder)
-    }
-
-    func testReplaceWithFileAccess() async throws {
-        try await runMatrix(Scenarios.replace(preferenceKey: await Self.preferenceKey()), .fileOnly)
-    }
+    func testReplaceWithFolderAccess() async throws { try await runMatrix(Scenarios.replace, .folder) }
+    func testReplaceWithFileAccess() async throws { try await runMatrix(Scenarios.replace, .fileOnly) }
 
     func testAddWithFolderAccess() async throws { try await runMatrix(Scenarios.add, .folder) }
     func testAddWithFileAccess() async throws { try await runMatrix(Scenarios.add, .fileOnly) }
 
     func testCreateWithFolderAccess() async throws { try await runMatrix(Scenarios.create, .folder) }
     func testCreateWithFileAccess() async throws { try await runMatrix(Scenarios.create, .fileOnly) }
-
-    private static func preferenceKey() async -> String {
-        await MainActor.run { AppModel.biometricsPrefKey }
-    }
 
     private func runMatrix(_ scenario: LifecycleScenario, _ access: VaultLocation.Access) async throws {
         let matrix = LifecycleMatrix(scenario: scenario, access: access, defaults: try makeThrowawayDefaults(),
@@ -178,38 +171,28 @@ private enum Scenarios {
                 && !rig.opens(state.envelope, passphrase: Phrase.recovery, to: state.dek)
         })
 
-    /// Turns Touch ID on for a vault whose only path is this Mac's key. A
-    /// stop between the file write and the preference write leaves the
-    /// preference behind the key.
-    static func replace(preferenceKey: String) -> LifecycleScenario {
-        LifecycleScenario(
-            name: "replace",
-            prepare: { rig in
-                try rig.writeLegacyVault()
-                let start = try await rig.openExisting()
-                _ = try await rig.lifecycle().migrateLegacy(opened: start.opened, heldDEK: start.dek,
-                                                            requireBiometrics: false, context: nil)
-                rig.defaults.set(false, forKey: preferenceKey)
-            },
-            run: { lifecycle, rig, start in
-                let start = try started(start)
-                _ = try await lifecycle.replaceKey(opened: start.opened, heldDEK: start.dek, requireBiometrics: true,
-                                                   context: nil) { rig.defaults.set($0, forKey: preferenceKey) }
-            },
-            isDone: { rig, state, original in
-                rig.keyRequiresBiometrics(state.envelope) == true && state.dek == original
-                    && rig.currentKey(state.envelope)?.item.isRotationPending == false
-            },
-            finalCheck: { rig, state, fault in
-                let preference = rig.defaults.object(forKey: preferenceKey) as? Bool
-                let key = rig.keyRequiresBiometrics(state.envelope)
-                if fault == .commit(.crashAfterRename, number: 1) {
-                    return preference == false && key == true ? nil : "the preference was expected to lag the key"
-                }
-                return preference == key ? nil
-                    : "preference \(String(describing: preference)) differs from the key \(String(describing: key))"
-            })
-    }
+    /// Turns Touch ID on for a vault whose only path is this Mac's key.
+    static let replace = LifecycleScenario(
+        name: "replace",
+        prepare: { rig in
+            try rig.writeLegacyVault()
+            let start = try await rig.openExisting()
+            _ = try await rig.lifecycle().migrateLegacy(opened: start.opened, heldDEK: start.dek,
+                                                        requireBiometrics: false, context: nil)
+        },
+        run: { lifecycle, _, start in
+            let start = try started(start)
+            _ = try await lifecycle.replaceKey(opened: start.opened, heldDEK: start.dek, requireBiometrics: true,
+                                               context: nil)
+        },
+        isDone: { rig, state, original in
+            rig.keyRequiresBiometrics(state.envelope) == true && state.dek == original
+                && rig.currentKey(state.envelope)?.item.isRotationPending == false
+        },
+        finalCheck: { rig, state, _ in
+            rig.keyRequiresBiometrics(state.envelope) == true ? nil
+                : "the item of the key that opens does not record the biometric setting asked for"
+        })
 
     static let add = LifecycleScenario(
         name: "add",
@@ -235,6 +218,11 @@ private enum Scenarios {
         isDone: { rig, state, _ in
             guard let key = rig.currentKey(state.envelope) else { return false }
             return !key.item.isRotationPending && state.envelope.wraps.count == 1
+        },
+        stopCheck: { rig, fault in
+            guard fault == .readBack(.fail, restore: nil) || fault == .keyReadBackMismatch else { return nil }
+            return rig.disk.vault == nil && rig.items.accounts.isEmpty ? nil
+                : "a failed read-back left the created file or its key"
         })
 
     private static func started(_ start: OpenState?) throws -> OpenState {

@@ -15,10 +15,34 @@ struct OpenState: Sendable {
     var envelope: Envelope { opened.snapshot.envelope }
 }
 
+/// Another app that writes the vault file while a transition runs.
+enum SecondWriter: Sendable, Equatable, CustomStringConvertible {
+    /// Adds an account under the same DEK and keeps every wrap.
+    case editsAccounts
+    /// Rotates to a DEK of its own under a passphrase of its own, dropping this Mac's wrap.
+    case rotatesDroppingThisMac
+
+    static let passphrase = "the other app's passphrase"
+    static let addedAccount = VaultFixture.account("z", issuer: "Other", account: "added")
+
+    var description: String {
+        switch self {
+        case .editsAccounts: return "another app edits the accounts"
+        case .rotatesDroppingThisMac: return "another app rotates without this Mac"
+        }
+    }
+}
+
 /// The state that outlives a simulated launch: the vault file and its
 /// `.bak`, the keychain items, the defaults and the rollback directory. Each
 /// `lifecycle` call stands for a new launch over the same state.
 final class LifecycleRig: @unchecked Sendable {
+    private struct OtherWrite {
+        let kind: SecondWriter
+        let bytes: Data
+        let accounts: [Account]
+    }
+
     let disk = FakeVaultDisk()
     let items = FaultyKeyItemStore()
     let defaults: UserDefaults
@@ -26,6 +50,7 @@ final class LifecycleRig: @unchecked Sendable {
     let rollbackDirectory: URL
     let isEnclaveAvailable: Bool
     let argon2 = TestArgon2()
+    private let otherWrite = OSAllocatedUnfairLock<OtherWrite?>(initialState: nil)
 
     /// Creates `directory` so that the vault path resolves the same before and after the rollback copy lands in it.
     init(directory: URL, access: VaultLocation.Access, defaults: UserDefaults, isEnclaveAvailable: Bool = true) throws {
@@ -36,7 +61,8 @@ final class LifecycleRig: @unchecked Sendable {
         self.defaults = defaults
         self.isEnclaveAvailable = isEnclaveAvailable
         defaults.removeObject(forKey: SEKeyRegistry.defaultsKey)
-        defaults.removeObject(forKey: MigrationRollbackStore.vaultPathKey)
+        defaults.removeObject(forKey: MigrationRollbackStore.copiesKey)
+        defaults.removeObject(forKey: MigrationRollbackStore.legacyVaultPathKey)
     }
 
     var vaultPath: String { SEKeyRegistry.normalizedPath(location.fileURL.path) }
@@ -113,33 +139,81 @@ final class LifecycleRig: @unchecked Sendable {
         let truth = SEKeyring(items: items.base, enclave: enclave, registry: registry)
         var copies: [Data] = []
         if let bytes = disk.vault { copies.append(bytes) }
-        if let pending = rollback.pending(), pending.vaultPath == vaultPath,
-           let bytes = try? Data(contentsOf: pending.url) {
+        if let url = rollback.pending(for: vaultPath), let bytes = try? Data(contentsOf: url) {
             copies.append(bytes)
         }
-        return copies.contains { bytes in
-            guard let envelope = try? Envelope.decode(bytes) else { return false }
-            return deks(envelope, keyring: truth, passphrases: passphrases).contains {
-                (try? envelope.open(dek: $0)) == accounts
-            }
-        }
+        return copies.contains { opens($0, passphrases: passphrases, to: accounts, keyring: truth) }
+    }
+
+    /// Whether the vault file itself opens to `accounts`.
+    func fileOpens(passphrases: [String], accounts: [Account]) -> Bool {
+        let truth = SEKeyring(items: items.base, enclave: enclave, registry: registry)
+        return disk.vault.map { opens($0, passphrases: passphrases, to: accounts, keyring: truth) } ?? false
     }
 
     /// This Mac's current key that opens `envelope`, read without faults.
     func currentKey(_ envelope: Envelope) -> (id: SEKeyID, item: KeyItem, dek: Data)? {
         let truth = SEKeyring(items: items.base, enclave: enclave, registry: registry)
-        guard case let .current(dek, id, _, _)? = try? truth.unwrap(envelope, context: nil),
+        guard case let .current(dek, id, _, _, _)? = try? truth.unwrap(envelope, context: nil),
               let item = try? items.base.read(account: id.account) else { return nil }
         return (id, item, dek)
     }
 
-    /// The biometric setting of the key that opens `envelope`.
+    /// The biometric setting the item of the key that opens `envelope` records.
     func keyRequiresBiometrics(_ envelope: Envelope) -> Bool? {
-        currentKey(envelope).flatMap { SoftwareEnclaveKeyFactory.requiresBiometrics($0.item.data) }
+        currentKey(envelope)?.item.requiresBiometrics
+    }
+
+    /// The change another app makes to the file, opening it as `passphrases`
+    /// or this Mac's key would. The bytes it writes are recorded.
+    func secondWriter(_ kind: SecondWriter, passphrases: [String]) -> @Sendable (Data) -> Data {
+        { [self] bytes in
+            let truth = SEKeyring(items: items.base, enclave: enclave, registry: registry)
+            guard let envelope = try? Envelope.decode(bytes),
+                  let opened = deks(envelope, keyring: truth, passphrases: passphrases).lazy
+                      .compactMap({ dek in (try? envelope.open(dek: dek)).map { (dek, $0) } }).first else {
+                return bytes
+            }
+            let (dek, accounts) = opened
+            let next: Envelope?
+            let written: [Account]
+            switch kind {
+            case .editsAccounts:
+                written = (accounts + [SecondWriter.addedAccount]).sorted { $0.id < $1.id }
+                next = try? envelope.reseal(accounts: written, dek: dek)
+            case .rotatesDroppingThisMac:
+                written = accounts
+                next = try? Envelope.create(accounts: accounts, passphrase: SecondWriter.passphrase, argon2: argon2)
+            }
+            guard let out = try? next?.encoded() else { return bytes }
+            otherWrite.withLock { $0 = OtherWrite(kind: kind, bytes: out, accounts: written) }
+            return out
+        }
+    }
+
+    /// What another app wrote, when it did.
+    var otherWriter: (kind: SecondWriter, bytes: Data)? {
+        otherWrite.withLock { $0.map { (kind: $0.kind, bytes: $0.bytes) } }
+    }
+
+    /// The accounts the vault holds: the stored set, or the set another app wrote.
+    var expectedAccounts: [Account] { otherWrite.withLock { $0?.accounts } ?? KeyFixture.storedAccounts }
+
+    /// `passphrases`, with the one another app wrapped under when it did.
+    func knownPassphrases(_ passphrases: [String]) -> [String] {
+        let rotated = otherWrite.withLock { $0?.kind == .rotatesDroppingThisMac }
+        return rotated ? passphrases + [SecondWriter.passphrase] : passphrases
     }
 
     func opens(_ envelope: Envelope, passphrase: String, to dek: Data) -> Bool {
         (try? envelope.recoverDEK(passphrase: passphrase, argon2: argon2)) == dek
+    }
+
+    private func opens(_ bytes: Data, passphrases: [String], to accounts: [Account], keyring: SEKeyring) -> Bool {
+        guard let envelope = try? Envelope.decode(bytes) else { return false }
+        return deks(envelope, keyring: keyring, passphrases: passphrases).contains {
+            (try? envelope.open(dek: $0)) == accounts
+        }
     }
 
     private func deks(_ envelope: Envelope, keyring: SEKeyring, passphrases: [String]) -> [Data] {
@@ -163,6 +237,8 @@ struct LifecycleScenario: Sendable {
     let isDone: @Sendable (LifecycleRig, OpenState, Data?) -> Bool
     /// A further expectation for the end state, as a finding when it does not hold.
     var finalCheck: @Sendable (LifecycleRig, OpenState, LifecycleFault) -> String? = { _, _, _ in nil }
+    /// A further expectation for the state where the run stopped, as a finding when it does not hold.
+    var stopCheck: @Sendable (LifecycleRig, LifecycleFault) -> String? = { _, _ in nil }
 }
 
 enum LifecycleFault: Sendable, Equatable, CustomStringConvertible {
@@ -172,6 +248,8 @@ enum LifecycleFault: Sendable, Equatable, CustomStringConvertible {
     case readBack(FakeVaultDisk.ReadFault, restore: FakeVaultDisk.RestoreFault?)
     /// The keychain returns other bytes from the `committed` step on.
     case keyReadBackMismatch
+    /// Another app writes the file between the commit and its read-back, and that read fails when `readFails`.
+    case secondWriter(SecondWriter, readFails: Bool)
 
     var description: String {
         switch self {
@@ -180,7 +258,14 @@ enum LifecycleFault: Sendable, Equatable, CustomStringConvertible {
         case .readBack(let fault, let restore):
             return "read-back \(fault), restore \(restore.map { "\($0)" } ?? "ok")"
         case .keyReadBackMismatch: return "key read-back mismatch"
+        case .secondWriter(let kind, let readFails): return "\(kind), read-back \(readFails ? "fails" : "ok")"
         }
+    }
+
+    /// Whether the other app's file ends the transition: its rotation leaves nothing to rerun.
+    var supersedesTransition: Bool {
+        if case .secondWriter(.rotatesDroppingThisMac, _) = self { return true }
+        return false
     }
 }
 
@@ -194,8 +279,21 @@ final class Findings: Sendable {
     /// `allowsNoFile` holds for a flow that starts without a vault, until its file lands.
     func checkOpenable(_ rig: LifecycleRig, passphrases: [String], allowsNoFile: Bool, at point: String) {
         if allowsNoFile && rig.disk.vault == nil { return }
-        if !rig.isOpenable(passphrases: passphrases, accounts: KeyFixture.storedAccounts) {
+        if !rig.isOpenable(passphrases: rig.knownPassphrases(passphrases), accounts: rig.expectedAccounts) {
             add("nothing opens the vault \(point)")
+        }
+    }
+
+    /// The other app's file stands: its bytes after a rotation, its accounts after an edit.
+    func checkOtherWriterSurvives(_ rig: LifecycleRig, passphrases: [String], at point: String) {
+        guard let written = rig.otherWriter else { return }
+        switch written.kind {
+        case .editsAccounts:
+            if !rig.fileOpens(passphrases: passphrases, accounts: rig.expectedAccounts) {
+                add("the other app's accounts are gone \(point)")
+            }
+        case .rotatesDroppingThisMac:
+            if rig.disk.vault != written.bytes { add("the other app's file was overwritten \(point)") }
         }
     }
 }
@@ -210,7 +308,8 @@ struct LifecycleMatrix {
     let directory: URL
 
     /// A crash after every step a clean run reaches, every write fault on
-    /// every write it makes, and every read-back fault.
+    /// every write it makes, every read-back fault, and another app writing
+    /// before the read-back.
     func faults() async throws -> [LifecycleFault] {
         let rig = try makeRig()
         try await scenario.prepare(rig)
@@ -226,6 +325,9 @@ struct LifecycleMatrix {
         }
         out += [.readBack(.crash, restore: nil), .readBack(.fail, restore: nil), .readBack(.fail, restore: .fail),
                 .readBack(.fail, restore: .crashAfterWrite), .keyReadBackMismatch]
+        for kind in [SecondWriter.editsAccounts, .rotatesDroppingThisMac] {
+            out += [.secondWriter(kind, readFails: false), .secondWriter(kind, readFails: true)]
+        }
         return out
     }
 
@@ -251,6 +353,9 @@ struct LifecycleMatrix {
             if let restore { rig.disk.injectRestoreFault(restore) }
         case .keyReadBackMismatch:
             break
+        case .secondWriter(let kind, let readFails):
+            rig.disk.injectWriterAfterNextCommit(rig.secondWriter(kind, passphrases: passphrases))
+            if readFails { rig.disk.injectReadFaultAfterNextCommit(.fail) }
         }
         let breaksKeyReads = fault == .keyReadBackMismatch
         let checkpoint = CrashingCheckpoint(crashAt: crashAt) { step in
@@ -261,13 +366,16 @@ struct LifecycleMatrix {
             try await scenario.run(rig.lifecycle(checkpoint: checkpoint), rig, start)
         } catch {}
         found.checkOpenable(rig, passphrases: passphrases, allowsNoFile: startsEmpty, at: "where the run stopped")
+        if case .secondWriter = fault, rig.otherWriter == nil { found.add("the other app did not write") }
+        found.checkOtherWriterSurvives(rig, passphrases: passphrases, at: "where the run stopped")
+        if let finding = scenario.stopCheck(rig, fault) { found.add(finding) }
 
         rig.disk.clearFaults()
         rig.items.setFaults { $0 = FaultyKeyItemStore.Faults() }
         guard var state = await relaunch(rig, found, passphrases: passphrases, label: "after the relaunch") else {
             return found.all
         }
-        if !(state.map { scenario.isDone(rig, $0, original) } ?? false) {
+        if !fault.supersedesTransition, !(state.map { scenario.isDone(rig, $0, original) } ?? false) {
             do {
                 try await scenario.run(rig.lifecycle(), rig, state)
             } catch {
@@ -288,7 +396,9 @@ struct LifecycleMatrix {
 
     private func checkEndState(_ rig: LifecycleRig, _ end: OpenState, original: Data?, fault: LifecycleFault,
                                found: Findings) async {
-        if !scenario.isDone(rig, end, original) { found.add("the target state was not reached") }
+        if !fault.supersedesTransition, !scenario.isDone(rig, end, original) {
+            found.add("the target state was not reached")
+        }
         if !end.envelope.secureEnclaveWraps(.legacy).isEmpty { found.add("a legacy wrap is left in the vault") }
         if let backup = try? await rig.file.readBackup(), !backup.envelope.secureEnclaveWraps(.legacy).isEmpty {
             found.add("a legacy wrap is left in the backup")
@@ -299,9 +409,10 @@ struct LifecycleMatrix {
         if Set(rig.registry.ids(for: rig.vaultPath).map(\.account)) != held {
             found.add("the registry does not match the key items")
         }
-        if rig.rollback.pending() != nil { found.add("the rollback copy is left") }
+        if rig.rollback.pending(for: rig.vaultPath) != nil { found.add("the rollback copy is left") }
         found.checkOpenable(rig, passphrases: scenario.passphrases, allowsNoFile: false, at: "at the end")
-        if let finding = scenario.finalCheck(rig, end, fault) { found.add(finding) }
+        found.checkOtherWriterSurvives(rig, passphrases: scenario.passphrases, at: "at the end")
+        if !fault.supersedesTransition, let finding = scenario.finalCheck(rig, end, fault) { found.add(finding) }
     }
 
     /// Opens and reconciles as a launch does. The outer nil means the file
@@ -310,13 +421,13 @@ struct LifecycleMatrix {
                           label: String) async -> OpenState?? {
         let state: OpenState?
         do {
-            state = try await rig.open(passphrases: passphrases)
+            state = try await rig.open(passphrases: rig.knownPassphrases(passphrases))
         } catch {
             found.add("the vault does not open \(label)")
             return nil
         }
         guard let state else { return .some(nil) }
-        if state.opened.accounts != KeyFixture.storedAccounts { found.add("the accounts changed \(label)") }
+        if state.opened.accounts != rig.expectedAccounts { found.add("the accounts changed \(label)") }
         await rig.lifecycle().reconcile(opened: state.opened, dek: state.dek)
         return state
     }

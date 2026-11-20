@@ -23,9 +23,13 @@ final class KeychainStatusMappingTests: XCTestCase {
         }
     }
 
+    private func item(_ data: Data, pending: Bool = false, biometrics: Bool = false) -> KeyItem {
+        KeyItem(data: data, isRotationPending: pending, requiresBiometrics: biometrics)
+    }
+
     func testAddAttributesAreExact() throws {
         let data = Data("rep".utf8)
-        let plain = keychain.addAttributes(data, account: account, isRotationPending: false)
+        let plain = keychain.addAttributes(item(data), account: account)
         XCTAssertEqual(Set(plain.keys), [
             kSecClass as String, kSecAttrService as String, kSecAttrAccount as String, kSecValueData as String,
             kSecAttrAccessible as String, kSecAttrSynchronizable as String, kSecUseDataProtectionKeychain as String,
@@ -39,9 +43,18 @@ final class KeychainStatusMappingTests: XCTestCase {
         XCTAssertEqual(plain[kSecUseDataProtectionKeychain as String] as? Bool, true)
         XCTAssertNil(plain[kSecAttrAccessGroup as String])
 
-        let pending = keychain.addAttributes(data, account: account, isRotationPending: true)
+        let pending = keychain.addAttributes(item(data, pending: true), account: account)
         XCTAssertEqual(pending[kSecAttrGeneric as String] as? Data, Data("tessera.rotation-pending.v1".utf8))
         XCTAssertEqual(Set(pending.keys), Set(plain.keys).union([kSecAttrGeneric as String]))
+
+        let biometric = keychain.addAttributes(item(data, biometrics: true), account: account)
+        XCTAssertEqual(biometric[kSecAttrDescription as String] as? String, "tessera.biometry-required.v1")
+        XCTAssertEqual(Set(biometric.keys), Set(plain.keys).union([kSecAttrDescription as String]))
+
+        let both = keychain.addAttributes(item(data, pending: true, biometrics: true), account: account)
+        XCTAssertEqual(both[kSecAttrGeneric as String] as? Data, Data("tessera.rotation-pending.v1".utf8))
+        XCTAssertEqual(both[kSecAttrDescription as String] as? String, "tessera.biometry-required.v1")
+        XCTAssertEqual(Set(both.keys), Set(plain.keys).union([kSecAttrGeneric as String, kSecAttrDescription as String]))
     }
 
     func testReadAndDeleteQueriesAreExact() {
@@ -71,15 +84,29 @@ final class KeychainStatusMappingTests: XCTestCase {
         let data = Data("rep".utf8)
         let pending: [String: Any] = [kSecValueData as String: data,
                                       kSecAttrGeneric as String: Data("tessera.rotation-pending.v1".utf8)]
-        XCTAssertEqual(DataProtectionKeychain.keyItem(from: pending as CFDictionary),
-                       KeyItem(data: data, isRotationPending: true))
+        XCTAssertEqual(DataProtectionKeychain.keyItem(from: pending as CFDictionary), item(data, pending: true))
         let other: [String: Any] = [kSecValueData as String: data, kSecAttrGeneric as String: Data("x".utf8)]
-        XCTAssertEqual(DataProtectionKeychain.keyItem(from: other as CFDictionary),
-                       KeyItem(data: data, isRotationPending: false))
+        XCTAssertEqual(DataProtectionKeychain.keyItem(from: other as CFDictionary), item(data))
         let plain: [String: Any] = [kSecValueData as String: data]
-        XCTAssertEqual(DataProtectionKeychain.keyItem(from: plain as CFDictionary),
-                       KeyItem(data: data, isRotationPending: false))
+        XCTAssertEqual(DataProtectionKeychain.keyItem(from: plain as CFDictionary), item(data))
         XCTAssertNil(DataProtectionKeychain.keyItem(from: [kSecAttrAccount as String: account] as CFDictionary))
         XCTAssertNil(DataProtectionKeychain.keyItem(from: nil))
+    }
+
+    func testKeyItemParsesTheBiometricSetting() {
+        let data = Data("rep".utf8)
+        let biometric: [String: Any] = [kSecValueData as String: data,
+                                        kSecAttrDescription as String: "tessera.biometry-required.v1"]
+        XCTAssertEqual(DataProtectionKeychain.keyItem(from: biometric as CFDictionary), item(data, biometrics: true))
+        let both: [String: Any] = [kSecValueData as String: data,
+                                   kSecAttrGeneric as String: Data("tessera.rotation-pending.v1".utf8),
+                                   kSecAttrDescription as String: "tessera.biometry-required.v1"]
+        XCTAssertEqual(DataProtectionKeychain.keyItem(from: both as CFDictionary),
+                       item(data, pending: true, biometrics: true))
+        let other: [String: Any] = [kSecValueData as String: data, kSecAttrDescription as String: "tessera.other"]
+        XCTAssertEqual(DataProtectionKeychain.keyItem(from: other as CFDictionary), item(data))
+        let wrongType: [String: Any] = [kSecValueData as String: data,
+                                        kSecAttrDescription as String: Data("tessera.biometry-required.v1".utf8)]
+        XCTAssertEqual(DataProtectionKeychain.keyItem(from: wrongType as CFDictionary), item(data))
     }
 }

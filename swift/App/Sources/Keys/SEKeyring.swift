@@ -8,6 +8,7 @@ struct ProvisionedSEKey {
     let id: SEKeyID
     let key: any EnclaveKey
     let isRotationPending: Bool
+    let requiresBiometrics: Bool
 }
 
 /// How far `createKey` got, reported after each step.
@@ -15,12 +16,12 @@ enum KeyProvisionStage: Sendable, Equatable { case registered, itemWritten, read
 
 /// The wrap that opened, and the DEK it holds.
 enum SEUnwrap {
-    case current(dek: Data, id: SEKeyID, isRotationPending: Bool, wrap: VaultWrap)
+    case current(dek: Data, id: SEKeyID, isRotationPending: Bool, requiresBiometrics: Bool, wrap: VaultWrap)
     case legacy(dek: Data, wrap: VaultWrap)
 
     var dek: Data {
         switch self {
-        case .current(let dek, _, _, _), .legacy(let dek, _): return dek
+        case .current(let dek, _, _, _, _), .legacy(let dek, _): return dek
         }
     }
 }
@@ -30,6 +31,8 @@ struct LocalSEKey {
     let id: SEKeyID
     let item: KeyItem
     let wrap: VaultWrap
+
+    var requiresBiometrics: Bool { item.requiresBiometrics }
 }
 
 struct SEKeyring: Sendable {
@@ -58,7 +61,8 @@ struct SEKeyring: Sendable {
         let made: any EnclaveKey
         do {
             made = try enclave.makeKey(requireBiometrics: requireBiometrics, context: context)
-            try items.add(made.dataRepresentation, account: id.account, isRotationPending: isRotationPending)
+            try items.add(KeyItem(data: made.dataRepresentation, isRotationPending: isRotationPending,
+                                  requiresBiometrics: requireBiometrics), account: id.account)
         } catch let error as KeyItemError where error == .duplicate {
             registry.unregister(id, for: vaultPath)
             throw error
@@ -70,7 +74,9 @@ struct SEKeyring: Sendable {
 
         let provisioned: ProvisionedSEKey
         do {
-            provisioned = try readBack(id, expecting: made, isRotationPending: isRotationPending, context: context)
+            let expected = KeyItem(data: made.dataRepresentation, isRotationPending: isRotationPending,
+                                   requiresBiometrics: requireBiometrics)
+            provisioned = try readBack(id, expecting: expected, made: made, context: context)
         } catch {
             discard(id, for: vaultPath)
             throw error
@@ -101,7 +107,8 @@ struct SEKeyring: Sendable {
             }
             let key = try enclave.restoreKey(dataRepresentation: item.data, context: context)
             return .current(dek: try SEWrapCodec.open(wrap: wrap, with: key), id: id,
-                            isRotationPending: item.isRotationPending, wrap: wrap)
+                            isRotationPending: item.isRotationPending, requiresBiometrics: item.requiresBiometrics,
+                            wrap: wrap)
         }
         for wrap in envelope.secureEnclaveWraps(.legacy) {
             guard let blob = try? SEWrapCodec.legacyKeyData(wrap),
@@ -147,7 +154,7 @@ struct SEKeyring: Sendable {
         }
     }
 
-    private func readBack(_ id: SEKeyID, expecting made: any EnclaveKey, isRotationPending: Bool,
+    private func readBack(_ id: SEKeyID, expecting expected: KeyItem, made: any EnclaveKey,
                           context: LAContext?) throws -> ProvisionedSEKey {
         let item: KeyItem
         do {
@@ -155,15 +162,14 @@ struct SEKeyring: Sendable {
         } catch KeyItemError.notFound {
             throw SEKeyError.keyItemMissing(id)
         }
-        guard item.data == made.dataRepresentation, item.isRotationPending == isRotationPending else {
-            throw SEKeyError.readBackMismatch(id)
-        }
+        guard item == expected else { throw SEKeyError.readBackMismatch(id) }
         let restored = try enclave.restoreKey(dataRepresentation: item.data, context: context)
         guard restored.dataRepresentation == item.data,
               restored.publicKey.rawRepresentation == made.publicKey.rawRepresentation else {
             throw SEKeyError.readBackMismatch(id)
         }
-        return ProvisionedSEKey(id: id, key: restored, isRotationPending: item.isRotationPending)
+        return ProvisionedSEKey(id: id, key: restored, isRotationPending: item.isRotationPending,
+                                requiresBiometrics: item.requiresBiometrics)
     }
 
     private func discard(_ id: SEKeyID, for vaultPath: String) {

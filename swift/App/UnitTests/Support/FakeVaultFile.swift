@@ -11,7 +11,8 @@ enum FakeDiskError: Error, Equatable {
 }
 
 /// One vault file and its `.bak`, kept across simulated launches, with faults
-/// that fire inside a write, on the read after a write, and in a restore.
+/// that fire inside a write, on the read after a write, and in a restore, and
+/// a second writer that changes the file between a commit and its read-back.
 final class FakeVaultDisk: Sendable {
     enum CommitFault: Sendable, Equatable, CaseIterable {
         case crashBeforeRename, failBeforeRename, crashAfterRename, failAfterRename
@@ -32,6 +33,8 @@ final class FakeVaultDisk: Sendable {
         var readFaultAfterCommit: ReadFault?
         var armedReadFault: ReadFault?
         var restoreFault: RestoreFault?
+        var writerAfterCommit: (@Sendable (Data) -> Data)?
+        var armedWriter: (@Sendable (Data) -> Data)?
     }
 
     private let state = OSAllocatedUnfairLock(initialState: State())
@@ -65,18 +68,31 @@ final class FakeVaultDisk: Sendable {
         state.withLock { $0.restoreFault = fault }
     }
 
+    /// The next commit that lands arms `change`; the read after it writes
+    /// `change(file)` first, as another app would, and then any read fault fires.
+    func injectWriterAfterNextCommit(_ change: @escaping @Sendable (Data) -> Data) {
+        state.withLock { $0.writerAfterCommit = change }
+    }
+
     func clearFaults() {
         state.withLock {
             $0.commitFaults = [:]
             $0.readFaultAfterCommit = nil
             $0.armedReadFault = nil
             $0.restoreFault = nil
+            $0.writerAfterCommit = nil
+            $0.armedWriter = nil
             $0.transformRuns = 1
         }
     }
 
     func read() throws -> (bytes: Data, modifiedAt: Date)? {
         let (bytes, writes, fault) = state.withLock { s -> (Data?, Int, ReadFault?) in
+            if let writer = s.armedWriter, let current = s.vault {
+                s.vault = writer(current)
+                s.writes += 1
+            }
+            s.armedWriter = nil
             let fault = s.armedReadFault
             s.armedReadFault = nil
             return (s.vault, s.writes, fault)
@@ -108,6 +124,8 @@ final class FakeVaultDisk: Sendable {
             s.writes += 1
             s.armedReadFault = s.readFaultAfterCommit
             s.readFaultAfterCommit = nil
+            s.armedWriter = s.writerAfterCommit
+            s.writerAfterCommit = nil
             return (fault, Self.date(s.writes))
         }
         switch fault {
@@ -118,19 +136,35 @@ final class FakeVaultDisk: Sendable {
     }
 
     func restore(_ bytes: Data) throws {
-        let fault = state.withLock { s -> RestoreFault? in
+        _ = try restore(bytes, ifStill: nil)
+    }
+
+    /// Writes `bytes` only while the file holds `committed`, when it is set.
+    func restore(_ bytes: Data, ifStill committed: Data?) throws -> RestoreOutcome {
+        try changeIfStill(committed) { $0.vault = bytes }
+    }
+
+    /// Removes the file only while it holds `committed`.
+    func remove(ifStill committed: Data) throws -> RestoreOutcome {
+        try changeIfStill(committed) { $0.vault = nil }
+    }
+
+    private func changeIfStill(_ committed: Data?,
+                               _ change: @Sendable (inout State) -> Void) throws -> RestoreOutcome {
+        let (fault, outcome) = state.withLock { s -> (RestoreFault?, RestoreOutcome) in
+            if let committed, s.vault != committed { return (nil, .changedSince) }
             let fault = s.restoreFault
             s.restoreFault = nil
             if fault != .fail {
-                s.vault = bytes
+                change(&s)
                 s.writes += 1
             }
-            return fault
+            return (fault, .restored)
         }
         switch fault {
         case .fail?: throw FakeDiskError.restoreFailed
         case .crashAfterWrite?: throw SimulatedCrash()
-        case nil: return
+        case nil: return outcome
         }
     }
 
@@ -175,6 +209,14 @@ struct FakeVaultFile: VaultTransaction {
 
     func restore(verbatim bytes: Data) async throws {
         try disk.restore(bytes)
+    }
+
+    func restore(verbatim bytes: Data, ifStill committed: Data) async throws -> RestoreOutcome {
+        try disk.restore(bytes, ifStill: committed)
+    }
+
+    func removeCreated(ifStill committed: Data) async throws -> RestoreOutcome {
+        try disk.remove(ifStill: committed)
     }
 
     func readBackup() async throws -> VaultSnapshot? {

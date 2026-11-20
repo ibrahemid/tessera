@@ -1,5 +1,4 @@
 import Foundation
-import os
 import TesseraCore
 import XCTest
 @testable import Tessera
@@ -146,12 +145,83 @@ final class KeyLifecycleTests: XCTestCase {
         } catch {
             XCTAssertEqual(error as? MigrationError, .restoreFailed)
         }
-        let pending = try XCTUnwrap(rig.rollback.pending())
-        XCTAssertEqual(pending.vaultPath, rig.vaultPath)
-        XCTAssertEqual(try Data(contentsOf: pending.url), before)
+        let pending = try XCTUnwrap(rig.rollback.pending(for: rig.vaultPath))
+        XCTAssertEqual(try Data(contentsOf: pending), before)
         XCTAssertEqual(rig.items.accounts.count, 1)
         let reopened = try await rig.openExisting()
         XCTAssertNotNil(rig.currentKey(reopened.envelope))
+    }
+
+    // MARK: - Another writer
+
+    func testAnEditBeforeTheReadBackStandsAndKeepsTheKeyItReferences() async throws {
+        try rig.writeLegacyVault()
+        let before = try XCTUnwrap(rig.disk.vault)
+        let start = try await rig.openExisting()
+        rig.disk.injectWriterAfterNextCommit(rig.secondWriter(.editsAccounts, passphrases: []))
+        rig.disk.injectReadFaultAfterNextCommit(.fail)
+
+        do {
+            _ = try await rig.lifecycle().migrateLegacy(opened: start.opened, heldDEK: start.dek,
+                                                        requireBiometrics: false, context: nil)
+            XCTFail("the migration went on")
+        } catch {
+            XCTAssertEqual(error as? MigrationError, .changedByAnotherApp)
+        }
+        XCTAssertEqual(rig.disk.vault, rig.otherWriter?.bytes)
+        let reopened = try await rig.openExisting()
+        XCTAssertEqual(reopened.opened.accounts, rig.expectedAccounts)
+        XCTAssertTrue(reopened.opened.accounts.contains(SecondWriter.addedAccount))
+        let key = try XCTUnwrap(rig.currentKey(reopened.envelope))
+        XCTAssertEqual(rig.items.accounts, [key.id.account])
+        let pending = try XCTUnwrap(rig.rollback.pending(for: rig.vaultPath))
+        XCTAssertEqual(try Data(contentsOf: pending), before)
+    }
+
+    func testARotationBeforeTheReadBackStandsAndRemovesTheKeyItDropped() async throws {
+        try rig.writeLegacyVault(passphrase: recovery)
+        let before = try XCTUnwrap(rig.disk.vault)
+        let start = try await rig.openExisting()
+        rig.disk.injectWriterAfterNextCommit(rig.secondWriter(.rotatesDroppingThisMac, passphrases: [recovery]))
+
+        do {
+            _ = try await rig.lifecycle().migrateLegacy(opened: start.opened, heldDEK: start.dek,
+                                                        passphrase: recovery, requireBiometrics: false, context: nil)
+            XCTFail("the migration went on")
+        } catch {
+            XCTAssertEqual(error as? MigrationError, .changedByAnotherApp)
+        }
+        let written = try XCTUnwrap(rig.otherWriter?.bytes)
+        XCTAssertEqual(rig.disk.vault, written)
+        XCTAssertEqual(rig.items.accounts, [])
+        let reopened = try await rig.openExisting(passphrases: [SecondWriter.passphrase])
+        XCTAssertEqual(reopened.opened.accounts, KeyFixture.storedAccounts)
+        let pending = try XCTUnwrap(rig.rollback.pending(for: rig.vaultPath))
+        XCTAssertEqual(try Data(contentsOf: pending), before)
+    }
+
+    func testAVerificationFailureAfterAnEditLeavesTheEdit() async throws {
+        let rig = try XCTUnwrap(self.rig)
+        let (start, oldID) = try await prepareCurrentVault()
+        rig.disk.injectWriterAfterNextCommit(rig.secondWriter(.editsAccounts, passphrases: []))
+        let checkpoint = CrashingCheckpoint { step in
+            if step == .committed { rig.items.setFaults { $0.readData = Data("other".utf8) } }
+        }
+
+        do {
+            _ = try await rig.lifecycle(checkpoint: checkpoint).replaceKey(opened: start.opened, heldDEK: start.dek,
+                                                                           requireBiometrics: true, context: nil)
+            XCTFail("the replace went on")
+        } catch {
+            XCTAssertEqual(error as? MigrationError, .changedByAnotherApp)
+        }
+        rig.items.setFaults { $0 = FaultyKeyItemStore.Faults() }
+        XCTAssertEqual(rig.disk.vault, rig.otherWriter?.bytes)
+        XCTAssertEqual(rig.items.accounts.count, 2)
+        XCTAssertTrue(rig.items.accounts.contains(oldID.account))
+        let reopened = try await rig.openExisting()
+        XCTAssertEqual(reopened.opened.accounts, rig.expectedAccounts)
+        XCTAssertEqual(rig.keyRequiresBiometrics(reopened.envelope), true)
     }
 
     func testStaleFlowsStopBeforeWriting() async throws {
@@ -251,6 +321,49 @@ final class KeyLifecycleTests: XCTestCase {
         XCTAssertEqual(rig.registry.ids(for: rig.vaultPath), [])
     }
 
+    func testCreateWhoseReadBackFailsRemovesTheFileAndTheKey() async throws {
+        rig.disk.injectReadFaultAfterNextCommit(.fail)
+        do {
+            _ = try await rig.lifecycle().createVault(accounts: KeyFixture.accounts, requireBiometrics: false,
+                                                      context: nil)
+            XCTFail("the create went on")
+        } catch {
+            XCTAssertEqual(error as? MigrationError, .verificationFailed(.readBackVerified))
+        }
+        XCTAssertNil(rig.disk.vault)
+        XCTAssertEqual(rig.items.accounts, [])
+        XCTAssertEqual(rig.registry.ids(for: rig.vaultPath), [])
+    }
+
+    func testCreateWhoseFileChangedBeforeAFailedReadBackLeavesIt() async throws {
+        rig.disk.injectWriterAfterNextCommit(rig.secondWriter(.rotatesDroppingThisMac, passphrases: []))
+        do {
+            _ = try await rig.lifecycle().createVault(accounts: KeyFixture.accounts, requireBiometrics: false,
+                                                      context: nil)
+            XCTFail("the create went on")
+        } catch {
+            XCTAssertEqual(error as? MigrationError, .changedByAnotherApp)
+        }
+        XCTAssertEqual(rig.disk.vault, rig.otherWriter?.bytes)
+        XCTAssertEqual(rig.items.accounts, [])
+        XCTAssertEqual(rig.registry.ids(for: rig.vaultPath), [])
+    }
+
+    func testCreateWhoseRemovalFailsKeepsTheFileAndTheKey() async throws {
+        rig.disk.injectReadFaultAfterNextCommit(.fail)
+        rig.disk.injectRestoreFault(.fail)
+        do {
+            _ = try await rig.lifecycle().createVault(accounts: KeyFixture.accounts, requireBiometrics: false,
+                                                      context: nil)
+            XCTFail("the create went on")
+        } catch {
+            XCTAssertEqual(error as? MigrationError, .restoreFailed)
+        }
+        let opened = try await rig.openExisting()
+        XCTAssertEqual(opened.opened.accounts, KeyFixture.storedAccounts)
+        XCTAssertNotNil(rig.currentKey(opened.envelope))
+    }
+
     // MARK: - Replace
 
     private func prepareCurrentVault() async throws -> (OpenState, SEKeyID) {
@@ -262,38 +375,33 @@ final class KeyLifecycleTests: XCTestCase {
         return (start, try XCTUnwrap(rig.currentKey(start.envelope)).id)
     }
 
-    func testReplaceVerificationFailureRecordsBothSettingsAndRestores() async throws {
+    func testReplaceVerificationFailureRestoresTheOldKeyAndItsSetting() async throws {
         let rig = try XCTUnwrap(self.rig)
         let (start, oldID) = try await prepareCurrentVault()
         let before = try XCTUnwrap(rig.disk.vault)
-        let recorded = OSAllocatedUnfairLock(initialState: [Bool]())
         let checkpoint = CrashingCheckpoint { step in
             if step == .committed { rig.items.setFaults { $0.readData = Data("other".utf8) } }
         }
 
         do {
-            _ = try await rig.lifecycle(checkpoint: checkpoint).replaceKey(
-                opened: start.opened, heldDEK: start.dek, requireBiometrics: true, context: nil
-            ) { value in recorded.withLock { $0.append(value) } }
+            _ = try await rig.lifecycle(checkpoint: checkpoint).replaceKey(opened: start.opened, heldDEK: start.dek,
+                                                                           requireBiometrics: true, context: nil)
             XCTFail("the replace went on")
         } catch {
             XCTAssertEqual(error as? MigrationError, .verificationFailed(.readBackVerified))
         }
-        XCTAssertEqual(recorded.withLock { $0 }, [true, false])
+        rig.items.setFaults { $0 = FaultyKeyItemStore.Faults() }
         XCTAssertEqual(rig.disk.vault, before)
         XCTAssertEqual(rig.items.accounts, [oldID.account])
         XCTAssertEqual(rig.registry.ids(for: rig.vaultPath), [oldID])
+        XCTAssertEqual(rig.keyRequiresBiometrics(start.envelope), false)
     }
 
     func testReplaceKeepsTheDEKAndRefreshesTheBackup() async throws {
         let (start, oldID) = try await prepareCurrentVault()
-        let recorded = OSAllocatedUnfairLock(initialState: [Bool]())
         let outcome = try await rig.lifecycle().replaceKey(opened: start.opened, heldDEK: start.dek,
-                                                           requireBiometrics: true, context: nil) { value in
-            recorded.withLock { $0.append(value) }
-        }
+                                                           requireBiometrics: true, context: nil)
         XCTAssertEqual(outcome.state, .current)
-        XCTAssertEqual(recorded.withLock { $0 }, [true])
         let opened = try await rig.openExisting()
         let key = try XCTUnwrap(rig.currentKey(opened.envelope))
         XCTAssertNotEqual(key.id, oldID)
@@ -304,7 +412,7 @@ final class KeyLifecycleTests: XCTestCase {
         let backup = try Envelope.decode(try XCTUnwrap(rig.disk.backup))
         let newWrap = try XCTUnwrap(opened.envelope.secureEnclaveWraps(.current).first)
         XCTAssertTrue(backup.containsWrap(newWrap))
-        XCTAssertNil(rig.rollback.pending())
+        XCTAssertNil(rig.rollback.pending(for: rig.vaultPath))
     }
 
     // MARK: - Reconcile
@@ -319,7 +427,20 @@ final class KeyLifecycleTests: XCTestCase {
         let report = await rig.lifecycle().reconcile(opened: start.opened, dek: start.dek)
         XCTAssertEqual(report, ReconcileReport())
         XCTAssertEqual(rig.disk.backup, Data("not a vault".utf8))
-        XCTAssertEqual(rig.rollback.pending()?.vaultPath, SEKeyRegistry.normalizedPath(other))
+        XCTAssertEqual(try Data(contentsOf: XCTUnwrap(rig.rollback.pending(for: other))), Data("other".utf8))
+    }
+
+    func testReconcileDropsOnlyThisVaultsRollbackCopy() async throws {
+        try rig.writePassphraseVault(recovery)
+        let other = rig.location.fileURL.deletingLastPathComponent().appendingPathComponent("other.json").path
+        try rig.rollback.save(Data("other".utf8), for: other)
+        try rig.rollback.save(try XCTUnwrap(rig.disk.vault), for: rig.vaultPath)
+
+        let start = try await rig.openExisting(passphrases: [recovery])
+        let report = await rig.lifecycle().reconcile(opened: start.opened, dek: start.dek)
+        XCTAssertTrue(report.discardedRollback)
+        XCTAssertNil(rig.rollback.pending(for: rig.vaultPath))
+        XCTAssertEqual(try Data(contentsOf: XCTUnwrap(rig.rollback.pending(for: other))), Data("other".utf8))
     }
 
     func testReconcileDropsStaleCopiesAndUnreferencedKeys() async throws {
@@ -334,7 +455,7 @@ final class KeyLifecycleTests: XCTestCase {
         let report = await rig.lifecycle().reconcile(opened: start.opened, dek: start.dek)
         XCTAssertEqual(report, ReconcileReport(discardedRollback: true, deletedBackup: true, sweptKeys: [orphan.id]))
         XCTAssertNil(rig.disk.backup)
-        XCTAssertNil(rig.rollback.pending())
+        XCTAssertNil(rig.rollback.pending(for: rig.vaultPath))
         XCTAssertEqual(rig.items.accounts, [])
         XCTAssertEqual(rig.registry.ids(for: rig.vaultPath), [])
     }

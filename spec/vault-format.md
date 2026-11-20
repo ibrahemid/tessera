@@ -74,7 +74,7 @@ Upgrade: after a successful unlock, a wrap whose `m`, `t` or `p` is below the cu
   "ct":    "<seal(DEK), b64>"
 }
 ```
-A non-extractable SE P-256 key, created with `.privateKeyUsage` and, when the user enables "Require Touch ID", `.biometryCurrentSet`. The key's `dataRepresentation` is stored in the data-protection keychain, never in the vault file: generic password, service `com.ibrahemid.tessera`, account `se-key.<lowercase hex of the key id>`, `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`, not synchronizable. `se_key` in the wrap is the random 16-byte id that names that item.
+A non-extractable SE P-256 key, created with `.privateKeyUsage` and, when the user enables "Require Touch ID", `.biometryCurrentSet`. The key's `dataRepresentation` is stored in the data-protection keychain, never in the vault file: generic password, service `com.ibrahemid.tessera`, account `se-key.<lowercase hex of the key id>`, `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`, not synchronizable. `se_key` in the wrap is the random 16-byte id that names that item. The same add records the key's biometric setting on the item: `kSecAttrDescription` holds `tessera.biometry-required.v1` when the key was created with `.biometryCurrentSet` and is absent otherwise.
 
 `wrapKey = HKDF-SHA256(ECDH(se_priv, se_pub)) -> 32 bytes` (self key-agreement; salt `tessera.se.salt.v1`, info `tessera.se.dek.v2`). `ct = XChaCha20-Poly1305(seal(DEK, wrapKey, nonce))`. The plaintext DEK never rests on disk; the biometric flag is an OS access-control attribute and does not change the wire format. This is the Mac app's default daily-unlock wrap (no argon2); the passphrase wrap is the cross-platform/export path and the SE-unavailable fallback.
 

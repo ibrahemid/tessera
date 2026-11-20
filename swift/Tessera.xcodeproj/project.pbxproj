@@ -35,6 +35,7 @@
 		29789084512BF7ADAA921A74 /* QuickAccessList.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1041BDE1E5D0306FB488178 /* QuickAccessList.swift */; };
 		31D0647BFDB60C7785939568 /* MigrationRollbackStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EB2E1F212582612F647BAD3 /* MigrationRollbackStore.swift */; };
 		31E8D58015CCD1EE89D9E89D /* AppModel+VaultFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = E987D178F48C22F1E4179A60 /* AppModel+VaultFile.swift */; };
+		322C6F19E48DFF385A8993CF /* VaultWriterCompareRestoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E23160FFB2F87128C2BE73F /* VaultWriterCompareRestoreTests.swift */; };
 		32682E745991A01EC94E919A /* VaultWriterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00D32CD8654DA2FB4DCFC623 /* VaultWriterTests.swift */; };
 		32882808AD13B8E0C19B9C7D /* VaultTimingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E21C70B4D1BE4D0F4DF5B272 /* VaultTimingTests.swift */; };
 		356F49CB5CC6F3E48C5B342D /* testvectors.json in Resources */ = {isa = PBXBuildFile; fileRef = 3AB4384F170EBAE4F0DB095E /* testvectors.json */; };
@@ -227,6 +228,7 @@
 		7D8E6108223818628D5486B1 /* VaultTransactions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultTransactions.swift; sourceTree = "<group>"; };
 		7D8ED7C9199A8ED6A45171CD /* AppModel+Reset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel+Reset.swift"; sourceTree = "<group>"; };
 		7DDF44016BE501DA0206F39D /* Intents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Intents.swift; sourceTree = "<group>"; };
+		7E23160FFB2F87128C2BE73F /* VaultWriterCompareRestoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultWriterCompareRestoreTests.swift; sourceTree = "<group>"; };
 		7E38FBFB5DBA9213BCF72257 /* TextCleaning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextCleaning.swift; sourceTree = "<group>"; };
 		7FEA6CA735CA89E71654280E /* AppModel+Persist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel+Persist.swift"; sourceTree = "<group>"; };
 		800068721C618631440D2CCC /* TesseraAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TesseraAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -443,6 +445,7 @@
 				75CCAC12B6F98D6642175940 /* VaultFileSupport.swift */,
 				12958F0B114F8C60A1DD97CB /* VaultLocationTests.swift */,
 				017F200F47991CB6742C3418 /* VaultLocationViewsTests.swift */,
+				7E23160FFB2F87128C2BE73F /* VaultWriterCompareRestoreTests.swift */,
 				00D32CD8654DA2FB4DCFC623 /* VaultWriterTests.swift */,
 				2E8821B3C1C2908EA17E6917 /* WriteOrderTests.swift */,
 			);
@@ -898,6 +901,7 @@
 				CF28BBBA31E8356C607E8C95 /* VaultLocationViewsTests.swift in Sources */,
 				E907CBA8452240FDB8590A93 /* VaultSelectionTests.swift in Sources */,
 				32882808AD13B8E0C19B9C7D /* VaultTimingTests.swift in Sources */,
+				322C6F19E48DFF385A8993CF /* VaultWriterCompareRestoreTests.swift in Sources */,
 				32682E745991A01EC94E919A /* VaultWriterTests.swift in Sources */,
 				50FDCB3CE1E5130C7C4EE7DD /* WriteOrderTests.swift in Sources */,
 			);

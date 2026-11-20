@@ -81,12 +81,10 @@ struct KeyLifecycle: Sendable {
                                           requireBiometrics: requireBiometrics, legacyGuard: [], context: context)
     }
 
-    /// Puts a key with the other biometric setting in place of this Mac's key,
-    /// keeping the DEK. `recordPreference` is called with the setting of the
-    /// key that opens the file each time that changes: right after the commit,
-    /// and again if the earlier bytes are restored.
-    func replaceKey(opened: OpenedVault, heldDEK: Data, requireBiometrics: Bool, context: LAContext?,
-                    recordPreference: @Sendable (Bool) -> Void) async throws -> MigrationOutcome {
+    /// Puts a key made with `requireBiometrics` in place of this Mac's key,
+    /// keeping the DEK. The key item records the setting.
+    func replaceKey(opened: OpenedVault, heldDEK: Data, requireBiometrics: Bool,
+                    context: LAContext?) async throws -> MigrationOutcome {
         let envelope = opened.snapshot.envelope
         let old = try keyring.localKeys(in: envelope)
         guard let first = old.first else { throw SEKeyError.noWrap }
@@ -112,16 +110,9 @@ struct KeyLifecycle: Sendable {
             try Self.replace(oldWraps, with: newWrap, in: &next)
             return VaultCommit(envelope: next, accounts: fresh.accounts, dek: heldDEK, backupPolicy: .copyCurrent)
         }
-        recordPreference(requireBiometrics)
         try checkpoint.reached(.committed)
-
-        do {
-            try await verifyReadBack(committed, preCommit: preCommit, newKey: id) { snapshot in
-                try expectCurrent(snapshot, id: id, dek: heldDEK, isPending: isPending, context: context)
-            }
-        } catch MigrationError.verificationFailed(let step) {
-            recordPreference(!requireBiometrics)
-            throw MigrationError.verificationFailed(step)
+        try await verifyReadBack(committed, preCommit: preCommit, newKey: id) { snapshot in
+            try expectCurrent(snapshot, id: id, dek: heldDEK, isPending: isPending, context: context)
         }
 
         var latest = committed
@@ -171,7 +162,9 @@ struct KeyLifecycle: Sendable {
         return MigrationOutcome(committed: committed, state: .current, removedWraps: [], appKeyWrapSalt: nil)
     }
 
-    /// Creates a vault whose only wrap is for a new key on this Mac.
+    /// Creates a vault whose only wrap is for a new key on this Mac. When the
+    /// read-back fails, the file goes while it still holds the bytes written,
+    /// and the key with it.
     func createVault(accounts: [Account], requireBiometrics: Bool, context: LAContext?) async throws -> MigrationOutcome {
         let id = SEKeyID.random()
         let (envelope, dek, stored) = try beforeCommit(newKey: id) {
@@ -206,12 +199,13 @@ struct KeyLifecycle: Sendable {
         do {
             let snapshot = try await transaction.read()
             try expectCurrent(snapshot, id: id, dek: dek, isPending: false, context: context)
-            guard try snapshot.envelope.open(dek: dek) == stored else {
+            let opened = try snapshot.envelope.open(dek: dek)
+            if snapshot.bytes == committed.bytes, opened != stored {
                 throw MigrationError.verificationFailed(.readBackVerified)
             }
         } catch {
             if checkpoint.isInterruption(error) { throw error }
-            throw MigrationError.verificationFailed(.readBackVerified)
+            try await discardCreatedVault(committed, newKey: id)
         }
         try checkpoint.reached(.readBackVerified)
         return MigrationOutcome(committed: committed, state: .current, removedWraps: [], appKeyWrapSalt: nil)
@@ -224,7 +218,7 @@ struct KeyLifecycle: Sendable {
     @discardableResult
     func reconcile(opened: OpenedVault, dek: Data) async -> ReconcileReport {
         var report = ReconcileReport()
-        if let pending = rollback.pending(), pending.vaultPath == vaultPath, (try? rollback.discard()) != nil {
+        if rollback.pending(for: vaultPath) != nil, (try? rollback.discard(for: vaultPath)) != nil {
             report.discardedRollback = true
         }
         if transaction.location.hasDirectoryAccess, let backup = try? await transaction.readBackup() {
@@ -404,8 +398,11 @@ struct KeyLifecycle: Sendable {
     }
 
     /// Re-reads the committed file and opens it through the new path. On a
-    /// failure the bytes from before the commit go back verbatim and the new
-    /// key is removed; if the restore fails too, the key and the rollback copy stay.
+    /// failure the bytes from before the commit go back verbatim, only while
+    /// the file still holds the committed bytes, and the new key is removed;
+    /// if the restore fails, the key and the rollback copy stay. A file
+    /// changed since the commit stands, with the rollback copy, and keeps the
+    /// new key while it references it.
     private func verifyReadBack(_ committed: CommittedVault, preCommit: Data, newKey id: SEKeyID?,
                                 opensThroughNewPath: (VaultSnapshot) throws -> Void) async throws {
         do {
@@ -417,22 +414,63 @@ struct KeyLifecycle: Sendable {
             }
         } catch {
             if checkpoint.isInterruption(error) { throw error }
+            let outcome: RestoreOutcome
             do {
-                try await transaction.restore(verbatim: preCommit)
+                outcome = try await transaction.restore(verbatim: preCommit, ifStill: committed.bytes)
             } catch {
                 if checkpoint.isInterruption(error) { throw error }
                 throw MigrationError.restoreFailed
             }
-            removeKey(id)
-            throw MigrationError.verificationFailed(.readBackVerified)
+            switch outcome {
+            case .restored:
+                removeKey(id)
+                throw MigrationError.verificationFailed(.readBackVerified)
+            case .changedSince:
+                try await removeKeyUnlessReferenced(id)
+                throw MigrationError.changedByAnotherApp
+            }
         }
         try checkpoint.reached(.readBackVerified)
     }
 
+    /// Removes a vault this flow created, and its key, while the file still
+    /// holds the bytes written. If the removal fails, both stay.
+    private func discardCreatedVault(_ committed: CommittedVault, newKey id: SEKeyID) async throws -> Never {
+        let outcome: RestoreOutcome
+        do {
+            outcome = try await transaction.removeCreated(ifStill: committed.bytes)
+        } catch {
+            if checkpoint.isInterruption(error) { throw error }
+            throw MigrationError.restoreFailed
+        }
+        switch outcome {
+        case .restored:
+            removeKey(id)
+            throw MigrationError.verificationFailed(.readBackVerified)
+        case .changedSince:
+            try await removeKeyUnlessReferenced(id)
+            throw MigrationError.changedByAnotherApp
+        }
+    }
+
+    /// Removes the new key when the file another app wrote does not reference
+    /// it, or is gone. A file that does not read keeps the key for the sweep.
+    private func removeKeyUnlessReferenced(_ id: SEKeyID?) async throws {
+        guard let id else { return }
+        do {
+            let snapshot = try await transaction.read()
+            if !snapshot.envelope.secureEnclaveKeyIDs.contains(id) { removeKey(id) }
+        } catch VaultWriteError.missingFile {
+            removeKey(id)
+        } catch {
+            if checkpoint.isInterruption(error) { throw error }
+        }
+    }
+
     private func expectCurrent(_ snapshot: VaultSnapshot, id: SEKeyID, dek: Data, isPending: Bool,
                                context: LAContext?) throws {
-        guard case let .current(opened, openedID, openedPending, _) = try keyring.unwrap(snapshot.envelope,
-                                                                                         context: context),
+        guard case let .current(opened, openedID, openedPending, _, _) = try keyring.unwrap(snapshot.envelope,
+                                                                                            context: context),
               openedID == id, opened == dek, openedPending == isPending else {
             throw MigrationError.verificationFailed(.readBackVerified)
         }
@@ -453,7 +491,7 @@ struct KeyLifecycle: Sendable {
 
     /// Best effort: the next open of this vault discards a copy left behind.
     private func discardRollback() throws {
-        try? rollback.discard()
+        try? rollback.discard(for: vaultPath)
         try checkpoint.reached(.rollbackDiscarded)
     }
 

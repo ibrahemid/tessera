@@ -1,4 +1,6 @@
+import Darwin
 import Foundation
+import os
 import TesseraCore
 
 struct VaultWriter: VaultTransaction {
@@ -65,6 +67,42 @@ struct VaultWriter: VaultTransaction {
         }
     }
 
+    func restore(verbatim bytes: Data, ifStill committed: Data) async throws -> RestoreOutcome {
+        let writer = self
+        return try await queue.run {
+            let target = DurableFile.resolvedTarget(writer.location.fileURL)
+            guard writer.location.hasDirectoryAccess else {
+                return try writer.replace(bytes, at: target, ifStill: committed)
+            }
+            let lock = try Self.lock(target)
+            defer { lock.release() }
+            return try writer.replace(bytes, at: target, ifStill: committed)
+        }
+    }
+
+    func removeCreated(ifStill committed: Data) async throws -> RestoreOutcome {
+        let writer = self
+        return try await queue.run {
+            let target = writer.location.fileURL
+            guard writer.location.hasDirectoryAccess else {
+                try writer.beforeReplace?()
+                guard try Self.holds(committed, at: target) else { return .changedSince }
+                do throws(VaultWriteError) {
+                    try DurableFile.remove(target)
+                } catch .io(operation: "flush directory", url: _, errno: let code) where code == EPERM || code == EACCES {
+                    // Without folder access the directory cannot be synced; `create` skips that sync the same way.
+                }
+                return .restored
+            }
+            let lock = try Self.lock(target)
+            defer { lock.release() }
+            try writer.beforeReplace?()
+            guard try Self.holds(committed, at: target) else { return .changedSince }
+            try DurableFile.remove(target)
+            return .restored
+        }
+    }
+
     func readBackup() async throws -> VaultSnapshot? {
         guard location.hasDirectoryAccess else { return nil }
         let url = location.fileURL
@@ -125,6 +163,64 @@ struct VaultWriter: VaultTransaction {
             current = try Self.snapshot(of: fresh, at: target)
         }
         throw VaultWriteError.concurrentChange(target)
+    }
+
+    /// Replaces the file with `bytes` after checking, right before the rename,
+    /// that it still holds `committed`.
+    private func replace(_ bytes: Data, at target: URL, ifStill committed: Data) throws -> RestoreOutcome {
+        try Self.refuseLink(target)
+        let check = CommittedBytesCheck(target: target, expected: committed, beforeCheck: beforeReplace)
+        do {
+            try DurableFile.replace(bytes, at: target, hasDirectoryAccess: location.hasDirectoryAccess,
+                                    fileProtection: protectsFiles, rename: { from, to in check.rename(from, to) })
+        } catch {
+            switch check.finding {
+            case .success(false)?: return .changedSince
+            case .failure(let failure)?: throw failure
+            case .success(true)?, nil: throw error
+            }
+        }
+        return .restored
+    }
+
+    /// Whether `target` is a regular file holding exactly `expected`. A
+    /// missing, oversized, linked or non-regular file holds something else.
+    private static func holds(_ expected: Data, at target: URL) throws(VaultWriteError) -> Bool {
+        if DurableFile.isSymlink(target) { return false }
+        do throws(VaultWriteError) {
+            return try DurableFile.read(target) == expected
+        } catch .missingFile, .unparseable {
+            return false
+        } catch .io(operation: _, url: _, errno: EFTYPE) {
+            return false
+        }
+    }
+
+    /// The rename `DurableFile.replace` calls once the new bytes are on disk:
+    /// it compares the file first and refuses the rename when it changed.
+    private final class CommittedBytesCheck: Sendable {
+        private let target: URL
+        private let expected: Data
+        private let beforeCheck: (@Sendable () throws -> Void)?
+        private let found = OSAllocatedUnfairLock<Result<Bool, any Error>?>(initialState: nil)
+
+        init(target: URL, expected: Data, beforeCheck: (@Sendable () throws -> Void)?) {
+            self.target = target
+            self.expected = expected
+            self.beforeCheck = beforeCheck
+        }
+
+        var finding: Result<Bool, any Error>? { found.withLock { $0 } }
+
+        func rename(_ from: String, _ to: String) -> Int32 {
+            let result = Result<Bool, any Error> {
+                try beforeCheck?()
+                return try VaultWriter.holds(expected, at: target)
+            }
+            found.withLock { $0 = result }
+            guard case .success(true) = result else { return ECANCELED }
+            return DurableFile.systemRename(from, to)
+        }
     }
 
     static func snapshot(at url: URL) throws -> VaultSnapshot {

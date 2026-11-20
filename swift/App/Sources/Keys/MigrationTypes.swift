@@ -46,6 +46,9 @@ enum MigrationError: Error, Equatable, Sendable {
     case verificationFailed(MigrationStep)
     /// The written file failed to open and putting the earlier bytes back failed too.
     case restoreFailed
+    /// The written file failed to open and another app had changed it since
+    /// the commit; its file stands and the rollback copy stays.
+    case changedByAnotherApp
 }
 
 /// The passphrase of an AppKey wrap and the salt that names that wrap.
