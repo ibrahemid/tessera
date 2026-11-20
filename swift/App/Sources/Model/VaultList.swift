@@ -302,7 +302,7 @@ enum RingMotion {
 
 enum VaultEdit {
     static func normalizedTag(_ raw: String) -> String? {
-        let t = TextCleaning.clean(raw).drop { $0 == "#" }
+        let t = TextClean.text(raw).drop { $0 == "#" }
         let tag = String(t).trimmingCharacters(in: .whitespacesAndNewlines)
         return tag.isEmpty ? nil : tag
     }

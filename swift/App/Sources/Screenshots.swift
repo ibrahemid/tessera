@@ -127,7 +127,7 @@ enum Screenshots {
     static var sampleReport: ImportSummary {
         ImportSummary(added: 2, duplicates: 1, failures: [
             ImportItemFailure(source: "Line 3", display: "otpauth://totp/Acme:dev?secret=…",
-                              reason: "base32: invalid character 1"),
+                              reason: "base32x: invalid base32 input"),
             ImportItemFailure(source: "Line 5", display: "", reason: "missing secret"),
             ImportItemFailure(source: "scan.png", display: "", reason: "No QR code found", kind: .noQR),
         ])

@@ -735,8 +735,10 @@ struct VaultView: View {
 
     private func activate(_ account: Account) {
         if account.type == .hotp {
-            model.advanceHOTP(account)
-            markCopied(account, nextUntil: nil)
+            let now = model.ticker.refresh()
+            Task { @MainActor in
+                if await model.copyConfirmed(account, at: now) { markCopied(account, nextUntil: nil) }
+            }
         } else {
             copy(account)
         }

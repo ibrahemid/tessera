@@ -2,17 +2,17 @@ import XCTest
 @testable import Tessera
 import TesseraCore
 
-final class FeaturesTextCleaningTests: XCTestCase {
+final class FeaturesTextCleanTests: XCTestCase {
     func testControlAndDirectionCharactersAreRemoved() {
-        XCTAssertEqual(TextCleaning.clean("a\u{0}b\u{7}c\u{7F}d\u{85}e"), "abcde")
-        XCTAssertEqual(TextCleaning.clean("\u{202E}moc.liame\u{202C}"), "moc.liame")
-        XCTAssertEqual(TextCleaning.clean("\u{2066}x\u{2069}\u{FEFF}"), "x")
+        XCTAssertEqual(TextClean.text("a\u{0}b\u{7}c\u{7F}d\u{85}e"), "abcde")
+        XCTAssertEqual(TextClean.text("\u{202E}moc.liame\u{202C}"), "moc.liame")
+        XCTAssertEqual(TextClean.text("\u{2066}x\u{2069}\u{FEFF}"), "x")
     }
 
     func testOuterWhitespaceIsTrimmedAndInnerKept() {
-        XCTAssertEqual(TextCleaning.clean("  two words \n"), "two words")
-        XCTAssertEqual(TextCleaning.clean("\u{FEFF}  \u{202A}"), "")
-        XCTAssertEqual(TextCleaning.clean("Café"), "Café")
+        XCTAssertEqual(TextClean.text("  two words \n"), "two words")
+        XCTAssertEqual(TextClean.text("\u{FEFF}  \u{202A}"), "")
+        XCTAssertEqual(TextClean.text("Café"), "Café")
     }
 }
 

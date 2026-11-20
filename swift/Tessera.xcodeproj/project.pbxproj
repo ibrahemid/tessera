@@ -13,7 +13,6 @@
 		01FF63F1E4D93546EB12A378 /* TesseraArgon2 in Frameworks */ = {isa = PBXBuildFile; productRef = 0997318CE937D69E1FC2EFEC /* TesseraArgon2 */; };
 		0227F488047457462AF7EE31 /* DebugKeyStores.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DE1BB410059E499BAF307FD /* DebugKeyStores.swift */; };
 		03A764F1DC9854472A2C2F0F /* GlobalShortcut.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E963EDA061D57B465A6C0B5 /* GlobalShortcut.swift */; };
-		05223C448D2EE1EA75F8CD80 /* LoginItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D1CFF602BB3F3C39BF84E5A /* LoginItem.swift */; };
 		0A123344BA63FC4959BB5F5D /* Screenshots+Sheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E7945974EFB1241E19C0C8E /* Screenshots+Sheets.swift */; };
 		0C77E9DE9A06B8414BDACC96 /* DamagedVaultRestore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7B274E0E8ABDD58C00C6E9F /* DamagedVaultRestore.swift */; };
 		0E78EA8840D43967C40D219B /* LockBookkeepingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51C9FB41A3AACDB4DEFD7941 /* LockBookkeepingTests.swift */; };
@@ -57,7 +56,6 @@
 		50262C7FBE612258A5FDD371 /* QuickAccessSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7ABA0B40FE0ED871940664E /* QuickAccessSettingsSection.swift */; };
 		50DEEDEB073700D241C56817 /* KeyItemStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B666C25C47B9AA1972F2BDCB /* KeyItemStore.swift */; };
 		50FDCB3CE1E5130C7C4EE7DD /* WriteOrderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E8821B3C1C2908EA17E6917 /* WriteOrderTests.swift */; };
-		5186EB5F772CBDC018DDDF5F /* TextCleaning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E38FBFB5DBA9213BCF72257 /* TextCleaning.swift */; };
 		51F15E9711C62EFD8BD226A5 /* IdleTimeSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D75B8FEF81ABA9DAE0DA3BE /* IdleTimeSource.swift */; };
 		5273A63774C4C33E37A90269 /* HotKeys.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B15B29930E7AE1799FAB7D7 /* HotKeys.swift */; };
 		5600A9A88D6B5AC57CE4EFF3 /* SheetsLaunchAtLoginTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9D8077A61230BE44385872E /* SheetsLaunchAtLoginTests.swift */; };
@@ -240,7 +238,6 @@
 		7D8ED7C9199A8ED6A45171CD /* AppModel+Reset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel+Reset.swift"; sourceTree = "<group>"; };
 		7DDF44016BE501DA0206F39D /* Intents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Intents.swift; sourceTree = "<group>"; };
 		7E23160FFB2F87128C2BE73F /* VaultWriterCompareRestoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultWriterCompareRestoreTests.swift; sourceTree = "<group>"; };
-		7E38FBFB5DBA9213BCF72257 /* TextCleaning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextCleaning.swift; sourceTree = "<group>"; };
 		7FEA6CA735CA89E71654280E /* AppModel+Persist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel+Persist.swift"; sourceTree = "<group>"; };
 		800068721C618631440D2CCC /* TesseraAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TesseraAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		8183D9CD70E70DDA7F5509C0 /* AppSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSession.swift; sourceTree = "<group>"; };
@@ -256,7 +253,6 @@
 		9928C1087EEB2536FCABDCD2 /* VaultCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultCommands.swift; sourceTree = "<group>"; };
 		9AED1F09F7348D9D84F3C43C /* SecretPasteboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecretPasteboard.swift; sourceTree = "<group>"; };
 		9B50C6055FF0451CD74076F5 /* UserMessage+Vault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UserMessage+Vault.swift"; sourceTree = "<group>"; };
-		9D1CFF602BB3F3C39BF84E5A /* LoginItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginItem.swift; sourceTree = "<group>"; };
 		9D2749ED298C8BDC0455A2F1 /* DamagedVaultRestoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DamagedVaultRestoreTests.swift; sourceTree = "<group>"; };
 		9F2FC1915D23DFE601D0BAE0 /* ContentKeyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentKeyTests.swift; sourceTree = "<group>"; };
 		9F9F389BD7F7F003EF70F189 /* AppIntents.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppIntents.framework; path = System/Library/Frameworks/AppIntents.framework; sourceTree = SDKROOT; };
@@ -367,7 +363,6 @@
 				B58A9C0A636514A9721B0212 /* QuickAccessSettings.swift */,
 				E0FEBE288EBE864BBB7C2A8F /* ResetConfirmation.swift */,
 				592D0A120D493989A36939A4 /* RowLayout.swift */,
-				7E38FBFB5DBA9213BCF72257 /* TextCleaning.swift */,
 				88FB2B7EC9160708EBF1C4CC /* UserMessage.swift */,
 				9B50C6055FF0451CD74076F5 /* UserMessage+Vault.swift */,
 				2A18C82D43BE69B4A05AFA7A /* VaultList.swift */,
@@ -511,7 +506,6 @@
 				D8DDF9A8DC6E209A6456F90D /* DesignSystem.swift */,
 				6B15B29930E7AE1799FAB7D7 /* HotKeys.swift */,
 				7DDF44016BE501DA0206F39D /* Intents.swift */,
-				9D1CFF602BB3F3C39BF84E5A /* LoginItem.swift */,
 				6ACB1EA702E8FB216F872413 /* MarketingShot.swift */,
 				2DBAA510C3D19FC1992EAFA4 /* QRCapture.swift */,
 				AB20145D16705BFB72841740 /* QRImage.swift */,
@@ -825,7 +819,6 @@
 				FB46AB551CE08DDC217BFEFF /* LinkIntake.swift in Sources */,
 				473DD4E6BE0F336E4CE6AFAB /* LockPolicy.swift in Sources */,
 				4899831EC73CDC9C89299866 /* LockReason.swift in Sources */,
-				05223C448D2EE1EA75F8CD80 /* LoginItem.swift in Sources */,
 				75E886CE62E54B812C800E45 /* MarketingShot.swift in Sources */,
 				31D0647BFDB60C7785939568 /* MigrationRollbackStore.swift in Sources */,
 				47D02DD8CDDAAC9C1E1EF697 /* MigrationTypes.swift in Sources */,
@@ -858,7 +851,6 @@
 				3DB5C56435002045878599BE /* SharedViews.swift in Sources */,
 				E71B2BAF8C235D3E8AD24F28 /* StatusItemController.swift in Sources */,
 				69185F9A9441F58A667F6D00 /* TesseraApp.swift in Sources */,
-				5186EB5F772CBDC018DDDF5F /* TextCleaning.swift in Sources */,
 				3DDEFD1AC96FCA97FBB820FA /* Ticker.swift in Sources */,
 				ED8A9B044637ED7679FB2EC8 /* UnlockViews.swift in Sources */,
 				8857BC770BEE079DD6F46DAC /* UserMessage+Clipboard.swift in Sources */,

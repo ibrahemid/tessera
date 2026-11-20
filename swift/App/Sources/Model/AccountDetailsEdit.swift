@@ -50,7 +50,7 @@ enum SecretInput: Equatable {
 
 enum ParameterEdit {
     static func secretInput(_ raw: String) -> SecretInput {
-        let text = TextCleaning.clean(raw)
+        let text = TextClean.text(raw)
         guard !text.isEmpty else { return .keep }
         switch InputDetect.classify(text) {
         case .otpauth:

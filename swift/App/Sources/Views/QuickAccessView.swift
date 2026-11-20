@@ -166,7 +166,14 @@ struct QuickAccessView: View {
 
     private func copy(_ id: String?, from accounts: [Account]) {
         guard let id, let account = accounts.first(where: { $0.id == id }) else { return }
-        if model.copyFromQuickAccess(account, at: clock.refresh()) { onClose() }
+        let now = clock.refresh()
+        if account.type == .hotp {
+            Task { @MainActor in
+                if await model.copyConfirmed(account, at: now) { onClose() }
+            }
+        } else if model.copyFromQuickAccess(account, at: now) {
+            onClose()
+        }
     }
 
     // MARK: Locked

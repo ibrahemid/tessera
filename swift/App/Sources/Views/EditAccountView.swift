@@ -250,8 +250,8 @@ struct EditAccountView: View {
             error = UserMessage.text(for: e, context: .save)
             return
         }
-        let names = (TextCleaning.clean(issuer), TextCleaning.clean(accountLabel),
-                     TextCleaning.clean(alias), TextCleaning.clean(folder))
+        let names = (TextClean.text(issuer), TextClean.text(accountLabel),
+                     TextClean.text(alias), TextClean.text(folder))
         if names != (account.issuer, account.account, account.handle, account.folder) {
             if let reason = model.applyEdit(account, issuer: names.0, accountLabel: names.1,
                                             handle: names.2, folder: names.3) {
