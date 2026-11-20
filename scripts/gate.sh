@@ -90,8 +90,18 @@ check_linux() {
     sh -c 'go vet ./... && go test ./...'
 }
 
+# The CLI links no HTTP, TLS or other network client code on any platform it ships for.
+check_go_no_network() {
+  for target_os in darwin linux windows; do
+    found="$(GOOS="$target_os" go -C "$ROOT/go" list -deps ./cmd/tess |
+      grep -E '^(net/http|net/rpc|net/smtp|net/mail|net/textproto|crypto/tls|golang\.org/x/net)(/|$)')"
+    [ -z "$found" ] || { printf '%s links:\n%s\n' "$target_os" "$found"; return 1; }
+  done
+}
+
 gate_go() {
   run_check go-build go -C "$ROOT/go" build ./...
+  run_check go-no-network check_go_no_network
   run_check go-vet go -C "$ROOT/go" vet ./...
   run_check go-fmt check_gofmt
   run_check go-vet-gendocs go -C "$ROOT/go" vet -tags gendocs ./cmd/tess
