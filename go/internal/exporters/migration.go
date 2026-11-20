@@ -185,6 +185,9 @@ func encodeOtpParameters(a account.Account) (params []byte, reason string, kind 
 	if a.Type == account.TOTP && a.Period != 30 {
 		return nil, fmt.Sprintf("Google Authenticator stores only 30-second codes, this one uses %ds", a.Period), SkipUnsupportedPeriod
 	}
+	if len(a.Secret) == 0 {
+		return nil, "the account has no secret", SkipEmptySecret
+	}
 
 	var b []byte
 	b = protowire.AppendTag(b, paramSecret, protowire.BytesType)

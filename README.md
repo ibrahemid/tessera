@@ -171,7 +171,7 @@ The view locks after 15 minutes without a key press (`--lock-after`, or `$TESSER
 | `XDG_DATA_HOME` | Base folder of the default vault path (below) |
 | `NO_COLOR` | Turns off colored output |
 
-tess removes the three passphrase variables from the environment of any program it starts.
+tess removes the three passphrase variables from the environment of any program it starts. A new passphrase must be valid UTF-8.
 
 ## Vault location
 

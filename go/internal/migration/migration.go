@@ -17,6 +17,7 @@ import (
 	"google.golang.org/protobuf/encoding/protowire"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
+	"github.com/ibrahemid/tessera/go/internal/otpauth"
 )
 
 // MigrationPayload wire field numbers.
@@ -62,6 +63,44 @@ const (
 	typeTOTP        int64 = 2
 )
 
+var errUnexpectedHost = errors.New("migration: unexpected host; the link must start with otpauth-migration://offline?")
+
+type wireError struct {
+	text  string
+	cause error
+}
+
+func (e *wireError) Error() string { return e.text }
+func (e *wireError) Unwrap() error { return e.cause }
+
+// protowire's own error text changes between builds, so each failure maps to a fixed text.
+var wireErrors = []wireError{
+	{"unexpected EOF", wireCause(func() int { _, n := protowire.ConsumeVarint(nil); return n })},
+	{"proto: invalid field number", wireCause(func() int { _, _, n := protowire.ConsumeTag([]byte{0}); return n })},
+	{"proto: variable length integer overflow", wireCause(func() int {
+		_, n := protowire.ConsumeVarint([]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
+		return n
+	})},
+	{"proto: cannot parse reserved wire type", wireCause(func() int { return protowire.ConsumeFieldValue(1, 6, nil) })},
+	{"proto: mismatching end group marker", wireCause(func() int {
+		return protowire.ConsumeFieldValue(1, protowire.EndGroupType, nil)
+	})},
+}
+
+const wireParseText = "proto: parse error"
+
+func wireCause(consume func() int) error { return protowire.ParseError(consume()) }
+
+func wireFailure(n int) error {
+	err := protowire.ParseError(n)
+	for i := range wireErrors {
+		if wireErrors[i].cause == err {
+			return &wireErrors[i]
+		}
+	}
+	return &wireError{text: wireParseText, cause: err}
+}
+
 // Parse decodes an otpauth-migration:// URI into one or more accounts. When the
 // export spans multiple QR codes (batch_size > 1), only the parameters present
 // in this single URI are returned; the caller merges batches.
@@ -73,10 +112,10 @@ func Parse(uri string) ([]account.Account, error) {
 		return nil, errors.New("migration: invalid URI")
 	}
 	if u.Scheme != "otpauth-migration" {
-		return nil, fmt.Errorf("migration: not an otpauth-migration uri (scheme %q)", u.Scheme)
+		return nil, fmt.Errorf("migration: not an otpauth-migration uri (scheme %s)", otpauth.QuoteValue(u.Scheme))
 	}
 	if !strings.EqualFold(u.Host, "offline") {
-		return nil, fmt.Errorf("migration: unexpected host %q (want \"offline\")", u.Host)
+		return nil, errUnexpectedHost
 	}
 
 	data, ok := rawQueryValue(u.RawQuery, "data")
@@ -155,7 +194,7 @@ func decodePayload(b []byte) ([]otpParams, error) {
 	for len(b) > 0 {
 		num, typ, n := protowire.ConsumeTag(b)
 		if n < 0 {
-			return nil, fmt.Errorf("migration: malformed payload tag: %w", protowire.ParseError(n))
+			return nil, fmt.Errorf("migration: malformed payload tag: %w", wireFailure(n))
 		}
 		b = b[n:]
 
@@ -166,7 +205,7 @@ func decodePayload(b []byte) ([]otpParams, error) {
 			}
 			sub, n := protowire.ConsumeBytes(b)
 			if n < 0 {
-				return nil, fmt.Errorf("migration: malformed otp_parameters: %w", protowire.ParseError(n))
+				return nil, fmt.Errorf("migration: malformed otp_parameters: %w", wireFailure(n))
 			}
 			b = b[n:]
 			p, err := decodeOtpParameters(sub)
@@ -180,13 +219,13 @@ func decodePayload(b []byte) ([]otpParams, error) {
 			}
 			_, n := protowire.ConsumeVarint(b)
 			if n < 0 {
-				return nil, fmt.Errorf("migration: malformed payload field %d: %w", num, protowire.ParseError(n))
+				return nil, fmt.Errorf("migration: malformed payload field %d: %w", num, wireFailure(n))
 			}
 			b = b[n:]
 		default:
 			n := protowire.ConsumeFieldValue(num, typ, b)
 			if n < 0 {
-				return nil, fmt.Errorf("migration: malformed unknown field %d: %w", num, protowire.ParseError(n))
+				return nil, fmt.Errorf("migration: malformed unknown field %d: %w", num, wireFailure(n))
 			}
 			b = b[n:]
 		}
@@ -200,7 +239,7 @@ func decodeOtpParameters(b []byte) (otpParams, error) {
 	for len(b) > 0 {
 		num, typ, n := protowire.ConsumeTag(b)
 		if n < 0 {
-			return p, fmt.Errorf("migration: malformed otp parameter tag: %w", protowire.ParseError(n))
+			return p, fmt.Errorf("migration: malformed otp parameter tag: %w", wireFailure(n))
 		}
 		b = b[n:]
 
@@ -211,7 +250,7 @@ func decodeOtpParameters(b []byte) (otpParams, error) {
 			}
 			v, n := protowire.ConsumeBytes(b)
 			if n < 0 {
-				return p, fmt.Errorf("migration: malformed secret: %w", protowire.ParseError(n))
+				return p, fmt.Errorf("migration: malformed secret: %w", wireFailure(n))
 			}
 			b = b[n:]
 			p.secret = append([]byte(nil), v...)
@@ -221,7 +260,7 @@ func decodeOtpParameters(b []byte) (otpParams, error) {
 			}
 			v, n := protowire.ConsumeString(b)
 			if n < 0 {
-				return p, fmt.Errorf("migration: malformed name: %w", protowire.ParseError(n))
+				return p, fmt.Errorf("migration: malformed name: %w", wireFailure(n))
 			}
 			b = b[n:]
 			p.name = v
@@ -231,7 +270,7 @@ func decodeOtpParameters(b []byte) (otpParams, error) {
 			}
 			v, n := protowire.ConsumeString(b)
 			if n < 0 {
-				return p, fmt.Errorf("migration: malformed issuer: %w", protowire.ParseError(n))
+				return p, fmt.Errorf("migration: malformed issuer: %w", wireFailure(n))
 			}
 			b = b[n:]
 			p.issuer = v
@@ -241,7 +280,7 @@ func decodeOtpParameters(b []byte) (otpParams, error) {
 			}
 			v, n := protowire.ConsumeVarint(b)
 			if n < 0 {
-				return p, fmt.Errorf("migration: malformed algorithm: %w", protowire.ParseError(n))
+				return p, fmt.Errorf("migration: malformed algorithm: %w", wireFailure(n))
 			}
 			b = b[n:]
 			p.algorithm = int64(v)
@@ -251,7 +290,7 @@ func decodeOtpParameters(b []byte) (otpParams, error) {
 			}
 			v, n := protowire.ConsumeVarint(b)
 			if n < 0 {
-				return p, fmt.Errorf("migration: malformed digits: %w", protowire.ParseError(n))
+				return p, fmt.Errorf("migration: malformed digits: %w", wireFailure(n))
 			}
 			b = b[n:]
 			p.digits = int64(v)
@@ -261,7 +300,7 @@ func decodeOtpParameters(b []byte) (otpParams, error) {
 			}
 			v, n := protowire.ConsumeVarint(b)
 			if n < 0 {
-				return p, fmt.Errorf("migration: malformed type: %w", protowire.ParseError(n))
+				return p, fmt.Errorf("migration: malformed type: %w", wireFailure(n))
 			}
 			b = b[n:]
 			p.otpType = int64(v)
@@ -271,7 +310,7 @@ func decodeOtpParameters(b []byte) (otpParams, error) {
 			}
 			v, n := protowire.ConsumeVarint(b)
 			if n < 0 {
-				return p, fmt.Errorf("migration: malformed counter: %w", protowire.ParseError(n))
+				return p, fmt.Errorf("migration: malformed counter: %w", wireFailure(n))
 			}
 			b = b[n:]
 			// The wire type is unsigned; a value above int64 range would wrap to
@@ -283,7 +322,7 @@ func decodeOtpParameters(b []byte) (otpParams, error) {
 		default:
 			n := protowire.ConsumeFieldValue(num, typ, b)
 			if n < 0 {
-				return p, fmt.Errorf("migration: malformed unknown otp field %d: %w", num, protowire.ParseError(n))
+				return p, fmt.Errorf("migration: malformed unknown otp field %d: %w", num, wireFailure(n))
 			}
 			b = b[n:]
 		}

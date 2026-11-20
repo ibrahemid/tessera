@@ -268,6 +268,41 @@
           "u2": "ac2",
           "u3": "ac3"
         }
+      },
+      {
+        "name": "combining-mark-after-at",
+        "accounts": [
+          {
+            "id": "h1",
+            "issuer": "",
+            "account": "x@\u0301y.com",
+            "created_at": 1
+          }
+        ],
+        "expected": {
+          "h1": "x"
+        }
+      },
+      {
+        "name": "id-byte-order",
+        "accounts": [
+          {
+            "id": "\u00e9",
+            "issuer": "ACME",
+            "account": "",
+            "created_at": 1
+          },
+          {
+            "id": "e\u0301",
+            "issuer": "ACME",
+            "account": "",
+            "created_at": 1
+          }
+        ],
+        "expected": {
+          "e\u0301": "ac",
+          "\u00e9": "ac2"
+        }
       }
     ],
     "canonical": {
@@ -638,6 +673,10 @@
       "unknown_wrap_types": [
         "hardware-key"
       ]
+    },
+    "line_separators": {
+      "envelope_json": "{\"version\":2,\"aead\":\"xchacha20poly1305\",\"wraps\":[{\"type\":\"passphrase\",\"kdf\":\"argon2id\",\"params\":{\"v\":1,\"m\":8,\"t\":1,\"p\":1},\"salt\":\"dGVzc2VyYS1zYWx0LXYyIQ==\",\"nonce\":\"MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZH\",\"ct\":\"AQoRim1+qlQKmtjxK2hF/hzJMYjMC6UdPnpzVc5+fexRIVcjvpVOf4zGHp9z1iXF\",\"x_hint\":\"g\u2029h\"},{\"type\":\"secure-enclave\",\"kdf\":\"se-keychain-v1\",\"se_key\":\"YGFiY2RlZmdoaWprbG1ubw==\",\"nonce\":\"cHFyc3R1dnd4eXp7fH1+f4CBgoOEhYaH\",\"ct\":\"gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp+goaKjpKWmp6ipqqusra6v\",\"x_hint\":\"e\u2028f\"},{\"type\":\"hardware-key\",\"slot\":1,\"blob\":\"AQIDBAUGBwg=\",\"note\":\"c\u2029d\"}],\"payload\":{\"nonce\":\"+/+/+/+/+/+/+/+/+/+/+/+/+/+/+/+/\",\"ct\":\"G0jSQwyo9ds6vh5TkM9/tRIsdUco+H0IDurZAJdsE4ZK+tOg3kPkUVXz6Lw9ugnyIeyZAUe67dlYrHU5hWJqSFtpD5oWWtlhuzonfiHtHll0wmYq5w6Y+/ZvOOf5DTY164m0dXii/GkTjL8IpIshmlwdK7WYR6kCp5Pa5LQX/lFKctJl45OQSkIop0I/4Nk2PUczpVW8PR4YECbGDqERUHTTZ1A+Vdah6xqPYqj2K4mPeWCUPlyzWVEO+HFHMZDRFK1FW1L7I6V8LNS6nY/wDRfmvOzlE9bpwVksj0Rdmmkh/hEMEkWX5JVaJ+nbM/sJ1W4NY9u7iMh8EA4Nm25ppFCXfloXALRDVs9R+HFzFRPi5y703lbecl63+D4wh0Ev1+P2Pvd+LTlRob2SUJu65flynVFEF+1TgcaYGnLClv8g\"},\"x_note\":\"a\u2028b\"}",
+      "expected_envelope_json": "{\n  \"version\": 2,\n  \"aead\": \"xchacha20poly1305\",\n  \"wraps\": [\n    {\n      \"type\": \"passphrase\",\n      \"kdf\": \"argon2id\",\n      \"params\": {\n        \"v\": 1,\n        \"m\": 8,\n        \"t\": 1,\n        \"p\": 1\n      },\n      \"salt\": \"dGVzc2VyYS1zYWx0LXYyIQ==\",\n      \"nonce\": \"MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZH\",\n      \"ct\": \"AQoRim1+qlQKmtjxK2hF/hzJMYjMC6UdPnpzVc5+fexRIVcjvpVOf4zGHp9z1iXF\",\n      \"x_hint\": \"g\\u2029h\"\n    },\n    {\n      \"type\": \"secure-enclave\",\n      \"kdf\": \"se-keychain-v1\",\n      \"se_key\": \"YGFiY2RlZmdoaWprbG1ubw==\",\n      \"nonce\": \"cHFyc3R1dnd4eXp7fH1+f4CBgoOEhYaH\",\n      \"ct\": \"gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp+goaKjpKWmp6ipqqusra6v\",\n      \"x_hint\": \"e\\u2028f\"\n    },\n    {\n      \"type\": \"hardware-key\",\n      \"slot\": 1,\n      \"blob\": \"AQIDBAUGBwg=\",\n      \"note\": \"c\\u2029d\"\n    }\n  ],\n  \"payload\": {\n    \"nonce\": \"+/+/+/+/+/+/+/+/+/+/+/+/+/+/+/+/\",\n    \"ct\": \"G0jSQwyo9ds6vh5TkM9/tRIsdUco+H0IDurZAJdsE4ZK+tOg3kPkUVXz6Lw9ugnyIeyZAUe67dlYrHU5hWJqSFtpD5oWWtlhuzonfiHtHll0wmYq5w6Y+/ZvOOf5DTY164m0dXii/GkTjL8IpIshmlwdK7WYR6kCp5Pa5LQX/lFKctJl45OQSkIop0I/4Nk2PUczpVW8PR4YECbGDqERUHTTZ1A+Vdah6xqPYqj2K4mPeWCUPlyzWVEO+HFHMZDRFK1FW1L7I6V8LNS6nY/wDRfmvOzlE9bpwVksj0Rdmmkh/hEMEkWX5JVaJ+nbM/sJ1W4NY9u7iMh8EA4Nm25ppFCXfloXALRDVs9R+HFzFRPi5y703lbecl63+D4wh0Ev1+P2Pvd+LTlRob2SUJu65flynVFEF+1TgcaYGnLClv8g\"\n  },\n  \"x_note\": \"a\\u2028b\"\n}"
     }
   },
   "payload_strict": {
@@ -1314,6 +1353,21 @@
       "digits": 6,
       "algorithm": "SHA1",
       "code": "891618"
+    },
+    "code_refused": {
+      "_note": "the payload_accept account with each counter; code generation is refused",
+      "cases": [
+        {
+          "counter": -1,
+          "error": "counter_range",
+          "message": "account \"00000000-0000-4000-8000-000000000040\": counter outside 0..9223372036854775806, got -1"
+        },
+        {
+          "counter": 9223372036854775807,
+          "error": "counter_range",
+          "message": "account \"00000000-0000-4000-8000-000000000040\": counter outside 0..9223372036854775806, got 9223372036854775807"
+        }
+      ]
     }
   },
   "display_order": {
@@ -1635,6 +1689,19 @@
           "ct": "gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp+goaKjpKWmp6ipqqusra6v"
         },
         {
+          "type": "passphrase",
+          "kdf": "argon2id",
+          "params": {
+            "v": 1,
+            "m": 8,
+            "t": 1,
+            "p": 1
+          },
+          "salt": "kZKTlJWWl5iZmpucnZ6foA==",
+          "nonce": "Ozw9Pj9AQUJDREVGR0hJSktMTU5PUFFS",
+          "ct": "fkFUWLHTNN7w4tU/t60IP2BI+/tsCGtcLsvqDb6M7l4eT6u9+Rwzw7gZns+Z0xbR"
+        },
+        {
           "type": "hardware-key",
           "slot": 1,
           "blob": "AQIDBAUGBwg="
@@ -1773,7 +1840,28 @@
           }
         ]
       }
-    ]
+    ],
+    "migration_empty_secret": {
+      "canonical_json": "[{\"account\":\"kept@example.com\",\"algorithm\":\"SHA1\",\"counter\":0,\"created_at\":1700000000,\"digits\":6,\"folder\":\"\",\"id\":\"00000000-0000-4000-8000-000000000231\",\"issuer\":\"Kept\",\"period\":30,\"pinned\":false,\"secret\":\"ISIjJCUmJygpKissLS4vMDEyMzQ=\",\"tags\":[],\"type\":\"totp\",\"updated_at\":1700000060},{\"account\":\"empty@example.com\",\"algorithm\":\"SHA1\",\"counter\":0,\"created_at\":1700000000,\"digits\":6,\"folder\":\"\",\"id\":\"00000000-0000-4000-8000-000000000232\",\"issuer\":\"Empty\",\"period\":30,\"pinned\":false,\"secret\":\"\",\"tags\":[],\"type\":\"totp\",\"updated_at\":1700000120},{\"account\":\"empty-steam\",\"algorithm\":\"SHA1\",\"counter\":0,\"created_at\":1700000000,\"digits\":5,\"folder\":\"\",\"id\":\"00000000-0000-4000-8000-000000000233\",\"issuer\":\"Steam\",\"period\":30,\"pinned\":false,\"secret\":\"\",\"tags\":[],\"type\":\"steam\",\"updated_at\":1700000180}]",
+      "codes": [
+        {
+          "name": "google-migration-1-of-1.png",
+          "uri": "otpauth-migration://offline?data=CjkKFCEiIyQlJicoKSorLC0uLzAxMjM0EhVLZXB0OmtlcHRAZXhhbXBsZS5jb20aBEtlcHQgASgBMAIQARgBIAAoi9a6zPr%2F%2F%2F%2F%2FAQ%3D%3D"
+        }
+      ],
+      "skipped": [
+        {
+          "label": "Empty (empty@example.com)",
+          "kind": "empty_secret",
+          "reason": "the account has no secret"
+        },
+        {
+          "label": "Steam (empty-steam)",
+          "kind": "unsupported_type",
+          "reason": "Google Authenticator has no Steam entry type"
+        }
+      ]
+    }
   },
   "merge": {
     "cases": [
@@ -2026,7 +2114,169 @@
           "duplicate": 0,
           "invalid": 0
         }
+      },
+      {
+        "name": "hotp-counter-kept-from-older-copy",
+        "local": "[{\"account\":\"token\",\"algorithm\":\"SHA1\",\"counter\":7,\"created_at\":1700000000,\"digits\":6,\"folder\":\"\",\"handle\":\"tok\",\"id\":\"00000000-0000-4000-8000-000000000304\",\"issuer\":\"Bank\",\"period\":30,\"pinned\":false,\"secret\":\"bWVyZ2Utc2VjcmV0LTA0LXBhZCE=\",\"tags\":[],\"type\":\"hotp\",\"updated_at\":1700001000}]",
+        "source": "[{\"account\":\"token\",\"algorithm\":\"SHA1\",\"counter\":12,\"created_at\":1700000000,\"digits\":6,\"folder\":\"\",\"handle\":\"tok\",\"id\":\"00000000-0000-4000-8000-000000000304\",\"issuer\":\"Bank\",\"period\":30,\"pinned\":false,\"secret\":\"bWVyZ2Utc2VjcmV0LTA0LXBhZCE=\",\"tags\":[],\"type\":\"hotp\",\"updated_at\":1700000500}]",
+        "local_after": "[{\"account\":\"token\",\"algorithm\":\"SHA1\",\"counter\":12,\"created_at\":1700000000,\"digits\":6,\"folder\":\"\",\"handle\":\"tok\",\"id\":\"00000000-0000-4000-8000-000000000304\",\"issuer\":\"Bank\",\"period\":30,\"pinned\":false,\"secret\":\"bWVyZ2Utc2VjcmV0LTA0LXBhZCE=\",\"tags\":[],\"type\":\"hotp\",\"updated_at\":1700001000}]",
+        "source_after": "[{\"account\":\"token\",\"algorithm\":\"SHA1\",\"counter\":12,\"created_at\":1700000000,\"digits\":6,\"folder\":\"\",\"handle\":\"tok\",\"id\":\"00000000-0000-4000-8000-000000000304\",\"issuer\":\"Bank\",\"period\":30,\"pinned\":false,\"secret\":\"bWVyZ2Utc2VjcmV0LTA0LXBhZCE=\",\"tags\":[],\"type\":\"hotp\",\"updated_at\":1700001000}]",
+        "local_written": true,
+        "source_written": true,
+        "local_counts": {
+          "added": 0,
+          "updated": 1,
+          "trashed": 0,
+          "unchanged": 0,
+          "duplicate": 0,
+          "invalid": 0
+        },
+        "source_counts": {
+          "added": 0,
+          "updated": 1,
+          "trashed": 0,
+          "unchanged": 0,
+          "duplicate": 0,
+          "invalid": 0
+        }
+      },
+      {
+        "name": "hotp-counter-kept-under-newer-copy",
+        "local": "[{\"account\":\"token\",\"algorithm\":\"SHA1\",\"counter\":7,\"created_at\":1700000000,\"digits\":6,\"folder\":\"\",\"handle\":\"tok\",\"id\":\"00000000-0000-4000-8000-000000000304\",\"issuer\":\"Bank\",\"period\":30,\"pinned\":false,\"secret\":\"bWVyZ2Utc2VjcmV0LTA0LXBhZCE=\",\"tags\":[],\"type\":\"hotp\",\"updated_at\":1700001000}]",
+        "source": "[{\"account\":\"token\",\"algorithm\":\"SHA1\",\"counter\":3,\"created_at\":1700000000,\"digits\":6,\"folder\":\"\",\"handle\":\"tok\",\"id\":\"00000000-0000-4000-8000-000000000304\",\"issuer\":\"Bank Renamed\",\"period\":30,\"pinned\":false,\"secret\":\"bWVyZ2Utc2VjcmV0LTA0LXBhZCE=\",\"tags\":[],\"type\":\"hotp\",\"updated_at\":1700002000}]",
+        "local_after": "[{\"account\":\"token\",\"algorithm\":\"SHA1\",\"counter\":7,\"created_at\":1700000000,\"digits\":6,\"folder\":\"\",\"handle\":\"tok\",\"id\":\"00000000-0000-4000-8000-000000000304\",\"issuer\":\"Bank Renamed\",\"period\":30,\"pinned\":false,\"secret\":\"bWVyZ2Utc2VjcmV0LTA0LXBhZCE=\",\"tags\":[],\"type\":\"hotp\",\"updated_at\":1700002000}]",
+        "source_after": "[{\"account\":\"token\",\"algorithm\":\"SHA1\",\"counter\":7,\"created_at\":1700000000,\"digits\":6,\"folder\":\"\",\"handle\":\"tok\",\"id\":\"00000000-0000-4000-8000-000000000304\",\"issuer\":\"Bank Renamed\",\"period\":30,\"pinned\":false,\"secret\":\"bWVyZ2Utc2VjcmV0LTA0LXBhZCE=\",\"tags\":[],\"type\":\"hotp\",\"updated_at\":1700002000}]",
+        "local_written": true,
+        "source_written": true,
+        "local_counts": {
+          "added": 0,
+          "updated": 1,
+          "trashed": 0,
+          "unchanged": 0,
+          "duplicate": 0,
+          "invalid": 0
+        },
+        "source_counts": {
+          "added": 0,
+          "updated": 1,
+          "trashed": 0,
+          "unchanged": 0,
+          "duplicate": 0,
+          "invalid": 0
+        }
+      },
+      {
+        "name": "hotp-counter-needs-equal-secret",
+        "local": "[{\"account\":\"token\",\"algorithm\":\"SHA1\",\"counter\":7,\"created_at\":1700000000,\"digits\":6,\"folder\":\"\",\"handle\":\"tok\",\"id\":\"00000000-0000-4000-8000-000000000304\",\"issuer\":\"Bank\",\"period\":30,\"pinned\":false,\"secret\":\"bWVyZ2Utc2VjcmV0LTA0LXBhZCE=\",\"tags\":[],\"type\":\"hotp\",\"updated_at\":1700001000}]",
+        "source": "[{\"account\":\"token\",\"algorithm\":\"SHA1\",\"counter\":12,\"created_at\":1700000000,\"digits\":6,\"folder\":\"\",\"handle\":\"tok\",\"id\":\"00000000-0000-4000-8000-000000000304\",\"issuer\":\"Bank\",\"period\":30,\"pinned\":false,\"secret\":\"YW5vdGhlciBob3RwIHNlY3JldCE=\",\"tags\":[],\"type\":\"hotp\",\"updated_at\":1700000500}]",
+        "local_after": "[{\"account\":\"token\",\"algorithm\":\"SHA1\",\"counter\":7,\"created_at\":1700000000,\"digits\":6,\"folder\":\"\",\"handle\":\"tok\",\"id\":\"00000000-0000-4000-8000-000000000304\",\"issuer\":\"Bank\",\"period\":30,\"pinned\":false,\"secret\":\"bWVyZ2Utc2VjcmV0LTA0LXBhZCE=\",\"tags\":[],\"type\":\"hotp\",\"updated_at\":1700001000}]",
+        "source_after": "[{\"account\":\"token\",\"algorithm\":\"SHA1\",\"counter\":7,\"created_at\":1700000000,\"digits\":6,\"folder\":\"\",\"handle\":\"tok\",\"id\":\"00000000-0000-4000-8000-000000000304\",\"issuer\":\"Bank\",\"period\":30,\"pinned\":false,\"secret\":\"bWVyZ2Utc2VjcmV0LTA0LXBhZCE=\",\"tags\":[],\"type\":\"hotp\",\"updated_at\":1700001000}]",
+        "local_written": false,
+        "source_written": true,
+        "local_counts": {
+          "added": 0,
+          "updated": 0,
+          "trashed": 0,
+          "unchanged": 1,
+          "duplicate": 0,
+          "invalid": 0
+        },
+        "source_counts": {
+          "added": 0,
+          "updated": 1,
+          "trashed": 0,
+          "unchanged": 0,
+          "duplicate": 0,
+          "invalid": 0
+        }
+      },
+      {
+        "name": "content-fields-compared-separately",
+        "local": "[{\"account\":\"c\",\"algorithm\":\"SHA1\",\"counter\":0,\"created_at\":1700000000,\"digits\":6,\"folder\":\"\",\"handle\":\"pa\",\"id\":\"00000000-0000-4000-8000-000000000305\",\"issuer\":\"a|b\",\"period\":30,\"pinned\":false,\"secret\":\"bWVyZ2Utc2VjcmV0LTA1LXBhZCE=\",\"tags\":[],\"type\":\"totp\",\"updated_at\":1700001000}]",
+        "source": "[{\"account\":\"b|c\",\"algorithm\":\"SHA1\",\"counter\":0,\"created_at\":1700000000,\"digits\":6,\"folder\":\"\",\"handle\":\"pb\",\"id\":\"00000000-0000-4000-8000-000000000306\",\"issuer\":\"a\",\"period\":30,\"pinned\":false,\"secret\":\"bWVyZ2Utc2VjcmV0LTA1LXBhZCE=\",\"tags\":[],\"type\":\"totp\",\"updated_at\":1700001000}]",
+        "local_after": "[{\"account\":\"c\",\"algorithm\":\"SHA1\",\"counter\":0,\"created_at\":1700000000,\"digits\":6,\"folder\":\"\",\"handle\":\"pa\",\"id\":\"00000000-0000-4000-8000-000000000305\",\"issuer\":\"a|b\",\"period\":30,\"pinned\":false,\"secret\":\"bWVyZ2Utc2VjcmV0LTA1LXBhZCE=\",\"tags\":[],\"type\":\"totp\",\"updated_at\":1700001000},{\"account\":\"b|c\",\"algorithm\":\"SHA1\",\"counter\":0,\"created_at\":1700000000,\"digits\":6,\"folder\":\"\",\"handle\":\"pb\",\"id\":\"00000000-0000-4000-8000-000000000306\",\"issuer\":\"a\",\"period\":30,\"pinned\":false,\"secret\":\"bWVyZ2Utc2VjcmV0LTA1LXBhZCE=\",\"tags\":[],\"type\":\"totp\",\"updated_at\":1700001000}]",
+        "source_after": "[{\"account\":\"c\",\"algorithm\":\"SHA1\",\"counter\":0,\"created_at\":1700000000,\"digits\":6,\"folder\":\"\",\"handle\":\"pa\",\"id\":\"00000000-0000-4000-8000-000000000305\",\"issuer\":\"a|b\",\"period\":30,\"pinned\":false,\"secret\":\"bWVyZ2Utc2VjcmV0LTA1LXBhZCE=\",\"tags\":[],\"type\":\"totp\",\"updated_at\":1700001000},{\"account\":\"b|c\",\"algorithm\":\"SHA1\",\"counter\":0,\"created_at\":1700000000,\"digits\":6,\"folder\":\"\",\"handle\":\"pb\",\"id\":\"00000000-0000-4000-8000-000000000306\",\"issuer\":\"a\",\"period\":30,\"pinned\":false,\"secret\":\"bWVyZ2Utc2VjcmV0LTA1LXBhZCE=\",\"tags\":[],\"type\":\"totp\",\"updated_at\":1700001000}]",
+        "local_written": true,
+        "source_written": true,
+        "local_counts": {
+          "added": 1,
+          "updated": 0,
+          "trashed": 0,
+          "unchanged": 0,
+          "duplicate": 0,
+          "invalid": 0
+        },
+        "source_counts": {
+          "added": 1,
+          "updated": 0,
+          "trashed": 0,
+          "unchanged": 0,
+          "duplicate": 0,
+          "invalid": 0
+        }
       }
     ]
+  },
+  "unknown_type": {
+    "_note": "the payload decodes; re-encoding gives expected_canonical_json (a missing type is written as an empty string); validation and code generation refuse each account",
+    "payload": "[{\"account\":\"alice@example.com\",\"algorithm\":\"SHA1\",\"counter\":0,\"created_at\":1700000000,\"digits\":6,\"folder\":\"\",\"id\":\"00000000-0000-4000-8000-000000000060\",\"issuer\":\"ACME\",\"period\":30,\"pinned\":false,\"secret\":\"MTIzNDU2Nzg5MDEyMzQ1Njc4OTA=\",\"tags\":[],\"type\":\"future-otp\",\"updated_at\":1700000000,\"x_future\":{\"kept\":true}},{\"account\":\"alice@example.com\",\"algorithm\":\"SHA1\",\"counter\":0,\"created_at\":1700000000,\"digits\":6,\"folder\":\"\",\"id\":\"00000000-0000-4000-8000-000000000061\",\"issuer\":\"ACME\",\"period\":30,\"pinned\":false,\"secret\":\"MTIzNDU2Nzg5MDEyMzQ1Njc4OTA=\",\"tags\":[],\"updated_at\":1700000000}]",
+    "expected_canonical_json": "[{\"account\":\"alice@example.com\",\"algorithm\":\"SHA1\",\"counter\":0,\"created_at\":1700000000,\"digits\":6,\"folder\":\"\",\"id\":\"00000000-0000-4000-8000-000000000060\",\"issuer\":\"ACME\",\"period\":30,\"pinned\":false,\"secret\":\"MTIzNDU2Nzg5MDEyMzQ1Njc4OTA=\",\"tags\":[],\"type\":\"future-otp\",\"updated_at\":1700000000,\"x_future\":{\"kept\":true}},{\"account\":\"alice@example.com\",\"algorithm\":\"SHA1\",\"counter\":0,\"created_at\":1700000000,\"digits\":6,\"folder\":\"\",\"id\":\"00000000-0000-4000-8000-000000000061\",\"issuer\":\"ACME\",\"period\":30,\"pinned\":false,\"secret\":\"MTIzNDU2Nzg5MDEyMzQ1Njc4OTA=\",\"tags\":[],\"type\":\"\",\"updated_at\":1700000000}]",
+    "accounts": [
+      {
+        "id": "00000000-0000-4000-8000-000000000060",
+        "type": "future-otp",
+        "validate_error": "account \"00000000-0000-4000-8000-000000000060\": invalid type \"future-otp\"",
+        "code_error": "unknown_type",
+        "code_message": "account \"00000000-0000-4000-8000-000000000060\": unknown type \"future-otp\"; update Tessera to generate its codes"
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000061",
+        "type": "",
+        "validate_error": "account \"00000000-0000-4000-8000-000000000061\": invalid type \"\"",
+        "code_error": "unknown_type",
+        "code_message": "account \"00000000-0000-4000-8000-000000000061\": unknown type \"\"; update Tessera to generate its codes"
+      }
+    ]
+  },
+  "otp_time_range": {
+    "_note": "time is Unix seconds; 9223372036854774784 is the largest value both an int64 and a double hold exactly; each refused time gives error time_range for TOTP and Steam",
+    "secret_b64": "MTIzNDU2Nzg5MDEyMzQ1Njc4OTA=",
+    "algorithm": "SHA1",
+    "digits": 6,
+    "period": 30,
+    "accepted": [
+      {
+        "time": 0,
+        "totp": "755224",
+        "steam": "GG5F5"
+      },
+      {
+        "time": 29,
+        "totp": "755224",
+        "steam": "GG5F5"
+      },
+      {
+        "time": 30,
+        "totp": "287082",
+        "steam": "PV9M4"
+      },
+      {
+        "time": 1700000000,
+        "totp": "921300",
+        "steam": "R87JJ"
+      },
+      {
+        "time": 9223372036854774784,
+        "totp": "664156",
+        "steam": "XD435"
+      }
+    ],
+    "refused": [
+      -1,
+      -30,
+      -9223372036854775808
+    ],
+    "error": "time_range",
+    "message": "otp: the system clock is out of range; set the correct date and time"
   }
 }

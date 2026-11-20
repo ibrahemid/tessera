@@ -5,6 +5,28 @@ import Foundation
 private struct DeriveFailure: Error {}
 
 /// Succeeds `allowed` times, then throws.
+/// Fails the derivations whose zero-based call index it lists.
+private final class FailingCallsArgon2: Argon2idProvider, @unchecked Sendable {
+    private let lock = NSLock()
+    private var calls = 0
+    private let failing: Set<Int>
+
+    init(failing: Set<Int>) { self.failing = failing }
+
+    var count: Int { lock.withLock { calls } }
+
+    func deriveKey(passphrase: Data, salt: Data, memoryKiB: UInt32, iterations: UInt32,
+                   parallelism: UInt8, keyLength: Int) throws -> Data {
+        let call = lock.withLock { () -> Int in
+            calls += 1
+            return calls - 1
+        }
+        if failing.contains(call) { throw DeriveFailure() }
+        return try XorArgon2().deriveKey(passphrase: passphrase, salt: salt, memoryKiB: memoryKiB,
+                                         iterations: iterations, parallelism: parallelism, keyLength: keyLength)
+    }
+}
+
 private final class LimitedArgon2: Argon2idProvider, @unchecked Sendable {
     private let lock = NSLock()
     private var remaining: Int
@@ -184,6 +206,34 @@ final class VaultEnvelopeTests: XCTestCase {
         XCTAssertEqual(none.count, 0)
     }
 
+    func testDerivationFailureMovesOnToTheNextWrap() throws {
+        var env = try Envelope.create(accounts: [account("1")], passphrase: "p", argon2: argon2)
+        let dek = try env.recoverDEK(passphrase: "p", argon2: argon2)
+        env.wraps = [try passphraseWrap(env, dek: dek, passphrase: "p"), try passphraseWrap(env, dek: dek, passphrase: "p")]
+
+        let firstFails = FailingCallsArgon2(failing: [0])
+        XCTAssertEqual(try env.open(passphrase: "p", argon2: firstFails).count, 1)
+        XCTAssertEqual(firstFails.count, 2)
+
+        let allFail = FailingCallsArgon2(failing: [0, 1])
+        XCTAssertThrowsError(try env.open(passphrase: "p", argon2: allFail)) { XCTAssertTrue($0 is DeriveFailure) }
+        XCTAssertEqual(allFail.count, 2)
+    }
+
+    func testDerivationFailuresCountTowardTheAttemptLimit() throws {
+        var env = try Envelope.create(accounts: [account("1")], passphrase: "p", argon2: argon2)
+        let dek = try env.recoverDEK(passphrase: "p", argon2: argon2)
+        env.wraps = try (0..<6).map { _ in try passphraseWrap(env, dek: dek, passphrase: "p") }
+
+        let failing = FailingCallsArgon2(failing: [0, 1, 2, 3, 4, 5])
+        XCTAssertThrowsError(try env.open(passphrase: "p", argon2: failing)) { XCTAssertTrue($0 is DeriveFailure) }
+        XCTAssertEqual(failing.count, 4)
+
+        let lastAllowed = FailingCallsArgon2(failing: [0, 1, 2])
+        XCTAssertEqual(try env.open(passphrase: "p", argon2: lastAllowed).count, 1)
+        XCTAssertEqual(lastAllowed.count, 4)
+    }
+
     func testPassphraseUnlockWithoutPassphraseWrap() throws {
         let (base, _) = try Envelope.createUnwrapped(accounts: [])
         var enclave = base
@@ -223,7 +273,7 @@ final class VaultEnvelopeTests: XCTestCase {
 
     // MARK: - Rotation
 
-    func testRotateRemovedListNamesEveryWrapNotRecreatedInOrder() throws {
+    func testRotateRemovedListNamesEachTypeOnceInFirstOccurrenceOrder() throws {
         var env = try Envelope.create(accounts: [account("1")], passphrase: "first", argon2: argon2)
         let dek = try env.recoverDEK(passphrase: "first", argon2: argon2)
         env.wraps += [try currentEnclaveWrap(), try passphraseWrap(env, dek: dek, passphrase: "second"),
@@ -231,7 +281,7 @@ final class VaultEnvelopeTests: XCTestCase {
 
         var keepNone = env
         let all = try keepNone.rotate(accounts: [account("1")], passphrases: ["first"], argon2: argon2)
-        XCTAssertEqual(all.removed, ["passphrase", "secure-enclave", "passphrase", "hardware-key", "secure-enclave"])
+        XCTAssertEqual(all.removed, ["passphrase", "secure-enclave", "hardware-key"])
 
         let some = try env.rotate(accounts: [account("1")], passphrases: ["first"], recreating: [0, 1], argon2: argon2)
         XCTAssertEqual(some.removed, ["passphrase", "hardware-key", "secure-enclave"])

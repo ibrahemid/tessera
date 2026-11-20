@@ -103,6 +103,28 @@ func exportsBlock() object {
 		{"batch_id", int64(exportsBatchID)},
 		{"canonical_json", string(mustCanonical(accts...))},
 		{"formats", formats},
+		{"migration_empty_secret", migrationEmptySecretBlock()},
+	}
+}
+
+func migrationEmptySecretBlock() object {
+	kept := exportAccount("31", "Kept", "kept@example.com", pattern(20, 0x21), 60)
+	empty := exportAccount("32", "Empty", "empty@example.com", []byte{}, 120)
+	steam := exportAccount("33", "Steam", "empty-steam", []byte{}, 180)
+	steam.Type, steam.Digits = account.Steam, 5
+	accts := []account.Account{kept, empty, steam}
+	codes, skipped := exporters.MigrationCodes(accts, exportsBatchID)
+	if len(codes) != 1 || len(skipped) != 2 {
+		panic(fmt.Sprintf("vectorgen: exports: empty secret: %d code(s), %d skip(s), want 1 and 2", len(codes), len(skipped)))
+	}
+	list := make([]object, len(codes))
+	for i, c := range codes {
+		list[i] = object{{"name", c.Name}, {"uri", c.URI}}
+	}
+	return object{
+		{"canonical_json", string(mustCanonical(accts...))},
+		{"codes", list},
+		{"skipped", skippedObjects(skipped)},
 	}
 }
 

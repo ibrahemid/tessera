@@ -51,6 +51,44 @@ public enum TextClean {
     }
 }
 
+/// Go's simple per-scalar case mappings, read from the generated `CaseTables`
+/// so the result does not depend on the runtime's Unicode version.
+enum CaseMap {
+    /// The Unicode version the tables were generated from.
+    static var unicodeVersion: String { CaseTables.unicodeVersion }
+
+    /// Go `unicode.ToLower`.
+    static func lower(_ v: UInt32) -> UInt32 {
+        if v < 0x80 { return v >= 0x41 && v <= 0x5A ? v + 0x20 : v }
+        return map(v, CaseTables.lower)
+    }
+
+    /// Go `unicode.ToUpper`.
+    static func upper(_ v: UInt32) -> UInt32 {
+        if v < 0x80 { return v >= 0x61 && v <= 0x7A ? v - 0x20 : v }
+        return map(v, CaseTables.upper)
+    }
+
+    private static func map(_ v: UInt32, _ table: [Int32]) -> UInt32 {
+        guard v <= 0x10FFFF else { return v }
+        let r = Int32(v)
+        var lo = 0, hi = table.count / 4
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            let base = mid * 4
+            if r < table[base] {
+                hi = mid
+            } else if r > table[base + 1] {
+                lo = mid + 1
+            } else {
+                guard (r - table[base]) % table[base + 2] == 0 else { return v }
+                return UInt32(r + table[base + 3])
+            }
+        }
+        return v
+    }
+}
+
 /// String and number helpers with Go's semantics, for the code paths that must
 /// accept and reject exactly what the Go core does.
 enum GoText {
@@ -155,26 +193,12 @@ enum GoText {
 
     /// Go `unicode.ToUpper` on one scalar (the simple mapping).
     static func upper(_ u: Unicode.Scalar) -> Unicode.Scalar {
-        if u.isASCII {
-            return (u.value >= 0x61 && u.value <= 0x7A) ? Unicode.Scalar(u.value - 0x20)! : u
-        }
-        switch u.value {
-        case 0x1F80...0x1F87, 0x1F90...0x1F97, 0x1FA0...0x1FA7: return Unicode.Scalar(u.value + 8)!
-        case 0x1FB3, 0x1FC3, 0x1FF3: return Unicode.Scalar(u.value + 9)!
-        default: break
-        }
-        let m = u.properties.uppercaseMapping.unicodeScalars
-        return m.count == 1 ? m.first! : u
+        Unicode.Scalar(CaseMap.upper(u.value)) ?? u
     }
 
     /// Go `unicode.ToLower` on one scalar (the simple mapping).
     static func lower(_ u: Unicode.Scalar) -> Unicode.Scalar {
-        if u.isASCII {
-            return (u.value >= 0x41 && u.value <= 0x5A) ? Unicode.Scalar(u.value + 0x20)! : u
-        }
-        if u.value == 0x130 { return "i" }
-        let m = u.properties.lowercaseMapping.unicodeScalars
-        return m.count == 1 ? m.first! : u
+        Unicode.Scalar(CaseMap.lower(u.value)) ?? u
     }
 
     /// Go `strings.ToUpper`.
@@ -238,10 +262,39 @@ enum GoText {
         parseInt64(s).map { Int($0) }
     }
 
+    static let maxQuotedBytes = 16
+
+    /// Go `otpauth.QuoteValue`: `quote` of the longest whole-rune prefix of at
+    /// most `maxQuotedBytes` bytes, then an ellipsis and the full byte length.
+    static func quoteValue(bytes b: [UInt8]) -> String {
+        guard b.count > maxQuotedBytes else { return quote(bytes: b) }
+        var n = 0
+        while n < b.count {
+            let (_, w) = decodeRune(b, n)
+            if n + w > maxQuotedBytes { break }
+            n += w
+        }
+        return quote(bytes: Array(b[..<n])) + "… (\(b.count) bytes)"
+    }
+
+    static func quoteValue(_ s: String) -> String { quoteValue(bytes: Array(s.utf8)) }
+
     /// Go `strconv.Quote`, for error messages.
-    static func quote(_ s: String) -> String {
+    static func quote(_ s: String) -> String { quote(bytes: Array(s.utf8)) }
+
+    /// Go `strconv.Quote` over raw bytes: each byte of an invalid sequence is
+    /// written as `\xNN`.
+    static func quote(bytes b: [UInt8]) -> String {
         var out = "\""
-        for u in s.unicodeScalars {
+        var i = 0
+        while i < b.count {
+            let (r, w) = decodeRune(b, i)
+            defer { i += w }
+            if r == runeError && w == 1 {
+                out += String(format: "\\x%02x", b[i])
+                continue
+            }
+            let u = Unicode.Scalar(r)!
             switch u {
             case "\"": out += "\\\""
             case "\\": out += "\\\\"

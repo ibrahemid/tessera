@@ -231,8 +231,11 @@ do {
                     handle: a["handle"] as? String ?? "", createdAt: Int64((a["created_at"] as! NSNumber).intValue))
         }
         Handles.assign(&accts)
-        let want = c["expected"] as! [String: String]
-        for a in accts where a.handle != want[a.id] { allOK = false }
+        // Swift String keys merge canonically equivalent ids; match them by UTF-8 bytes.
+        var want: [[UInt8]: String] = [:]
+        for (k, v) in c["expected"] as! NSDictionary { want[Array((k as! String).utf8)] = (v as! String) }
+        if want.count != accts.count { allOK = false }
+        for a in accts where a.handle != want[Array(a.id.utf8)] { allOK = false }
         // Assignment is idempotent: a second pass changes nothing.
         var again = accts
         if Handles.assign(&again) || again.map(\.handle) != accts.map(\.handle) { allOK = false }
@@ -408,6 +411,11 @@ do {
     let before = try JSONSerialization.jsonObject(with: original) as! NSDictionary
     let after = try JSONSerialization.jsonObject(with: env.encoded()) as! NSDictionary
     check(before.isEqual(after), "envelope_strict preserve: re-marshal keeps unknown keys and wraps")
+
+    let ls = vnode(es, "line_separators")
+    let lsOut = try? Envelope.decode(vbytes(ls, "envelope_json")).encoded()
+    check(lsOut == vbytes(ls, "expected_envelope_json"),
+          "envelope_strict line separators are escaped when written")
 }
 
 // 12e. Rotation from the vector's old DEK, with stub-derived passphrase wraps.
@@ -476,6 +484,64 @@ do {
                        secret: Data(base64Encoded: vtext(m, "secret_b64"))!, algorithm: vtext(m, "algorithm"),
                        digits: Int(vint(m, "digits")), counter: vint(m, "counter"))
     check((try? OTP.code(for: acct, at: Date())) == vtext(m, "code"), "HOTP code at the maximum counter")
+
+    let base = try! CanonicalJSON.decode(vbytes(vnode(h, "payload_accept").items[0], "payload"))[0]
+    var refusedOK = true
+    for c in vnode(vnode(h, "code_refused"), "cases").items {
+        var a = base
+        a.counter = vint(c, "counter")
+        do {
+            _ = try OTP.code(for: a, at: Date())
+            refusedOK = false
+        } catch {
+            if "\(error)" != vtext(c, "message") { refusedOK = false }
+        }
+    }
+    check(refusedOK, "hotp_counter_range code_refused")
+}
+
+// 12h. Time range and unknown account types.
+do {
+    let v = vnode(vectorRoot, "otp_time_range")
+    let secret = Data(base64Encoded: vtext(v, "secret_b64"))!
+    let alg = try OTP.Algorithm.parse(vtext(v, "algorithm"))
+    var allOK = true
+    for c in vnode(v, "accepted").items {
+        let t = Date(timeIntervalSince1970: TimeInterval(vint(c, "time")))
+        if (try? OTP.totp(secret: secret, time: t, period: Int(vint(v, "period")), digits: Int(vint(v, "digits")),
+                          algorithm: alg)) != vtext(c, "totp") { allOK = false }
+        if (try? OTP.steam(secret: secret, time: t)) != vtext(c, "steam") { allOK = false }
+    }
+    for c in vnode(v, "refused").items {
+        let t = Date(timeIntervalSince1970: TimeInterval(vint(c)))
+        do {
+            _ = try OTP.steam(secret: secret, time: t)
+            allOK = false
+        } catch {
+            if "\(error)" != vtext(v, "message") { allOK = false }
+        }
+    }
+    check(allOK, "otp_time_range accepted and refused times")
+
+    let u = vnode(vectorRoot, "unknown_type")
+    let accts = try CanonicalJSON.decode(vbytes(u, "payload"))
+    var unknownOK = CanonicalJSON.encode(accts) == vbytes(u, "expected_canonical_json")
+    for (a, c) in zip(accts, vnode(u, "accounts").items) {
+        if a.type != .unrecognized(vtext(c, "type")) { unknownOK = false }
+        do {
+            try a.validate()
+            unknownOK = false
+        } catch {
+            if "\(error)" != vtext(c, "validate_error") { unknownOK = false }
+        }
+        do {
+            _ = try OTP.code(for: a, at: Date())
+            unknownOK = false
+        } catch {
+            if "\(error)" != vtext(c, "code_message") { unknownOK = false }
+        }
+    }
+    check(unknownOK && accts.count == vnode(u, "accounts").items.count, "unknown_type keep, re-encode, refuse")
 }
 
 // 12g. Display order.

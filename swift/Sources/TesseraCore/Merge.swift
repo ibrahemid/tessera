@@ -1,9 +1,9 @@
 import Foundation
 
 /// Combines two account lists by id the way the Go `merge` package does: the
-/// newer `updatedAt` wins, an existing handle is kept, a live account whose
-/// content another live account already holds is refused as a duplicate, and an
-/// account that fails validation is refused.
+/// newer `updatedAt` wins, an existing handle is kept, an HOTP counter never
+/// moves back, a live account whose content another live account already holds
+/// is refused as a duplicate, and an account that fails validation is refused.
 public enum Merge {
 
     /// What one merge did to its destination.
@@ -31,19 +31,22 @@ public enum Merge {
     }
 
     /// The identity two accounts share when they hold the same code: type,
-    /// lowercased issuer and account, and secret. Import and dedupe use the
-    /// same key, compared by bytes as Go compares strings.
+    /// lowercased issuer and account, and secret, each written as its byte
+    /// length, a colon and the field, so no two field lists share a key.
+    /// Import and dedupe use the same key, compared by bytes as Go compares
+    /// strings.
     public struct ContentKey: Hashable, Sendable {
         let bytes: [UInt8]
 
         public init(_ a: Account) {
-            var b = Array(a.type.rawValue.utf8)
-            b.append(0x7C)
-            b.append(contentsOf: Array(GoText.toLower(a.issuer).utf8))
-            b.append(0x7C)
-            b.append(contentsOf: Array(GoText.toLower(a.account).utf8))
-            b.append(0x7C)
-            b.append(contentsOf: Array(Base32.encodeNoPad(a.secret).utf8))
+            var b: [UInt8] = []
+            for field in [a.type.rawValue, GoText.toLower(a.issuer), GoText.toLower(a.account),
+                          Base32.encodeNoPad(a.secret)] {
+                let f = Array(field.utf8)
+                b.append(contentsOf: Array(String(f.count).utf8))
+                b.append(0x3A)
+                b.append(contentsOf: f)
+            }
             bytes = b
         }
     }
@@ -65,11 +68,24 @@ public enum Merge {
             let id = Array(a.id.utf8)
             if let idx = byID[id] {
                 let cur = out[idx]
+                let (counter, raised) = hotpCounter(cur, a)
                 if a.updatedAt <= cur.updatedAt {
-                    counts.unchanged += 1
+                    guard raised else {
+                        counts.unchanged += 1
+                        continue
+                    }
+                    var kept = cur
+                    kept.counter = counter
+                    if (try? kept.validate()) == nil {
+                        counts.invalid += 1
+                        continue
+                    }
+                    out[idx] = kept
+                    counts.updated += 1
                     continue
                 }
                 var next = a
+                next.counter = counter
                 if !cur.handle.isEmpty { next.handle = cur.handle }
                 if (try? next.validate()) == nil {
                     counts.invalid += 1
@@ -109,6 +125,14 @@ public enum Merge {
         let here = into(local, source)
         let there = into(source, local)
         return (here.accounts, there.accounts, here.counts, there.counts)
+    }
+
+    /// The counter the merged copy of an id carries and whether it is larger
+    /// than the destination's: the larger of the two when both copies are HOTP
+    /// with equal secrets, else the source's.
+    private static func hotpCounter(_ cur: Account, _ src: Account) -> (Int64, Bool) {
+        guard cur.type == .hotp, src.type == .hotp, cur.secret == src.secret else { return (src.counter, false) }
+        return (max(cur.counter, src.counter), src.counter > cur.counter)
     }
 
     /// Clears every non-empty handle already held by an earlier account.

@@ -46,7 +46,7 @@ A `<query>` equal to an account's full `id` (case-sensitive) selects that accoun
 | `next_code` | string | `totp` and `steam`, unless the following step starts after the largest unix time in seconds | the code for the following time step |
 | `expires_in` | integer | `totp` and `steam` | seconds until `code` stops being current |
 
-For `hotp`, `code` is the code at the stored counter. `tess code <query> --next --json` advances and saves the counter first; `--all` and `--at` never advance it. `--at` takes RFC 3339 (`2026-03-01T09:00:00Z`) or unix seconds, and refuses `hotp` accounts.
+For `hotp`, `code` is the code at the stored counter. `tess code <query> --next --json` advances and saves the counter first; `--all` and `--at` never advance it. `--at` takes RFC 3339 (`2026-03-01T09:00:00Z`) or unix seconds, and refuses `hotp` accounts. A system clock set before 1970 gives an error instead of a code.
 
 `tess code <query> --json -c` copies `code`. For `totp` and `steam`, `--next` leaves the row unchanged and `-c --next` copies `next_code`. With `-c`, a query that matches several accounts prints nothing on stdout, lists the matches on stderr and exits 2. `-c` with `--no-copy` is an error.
 

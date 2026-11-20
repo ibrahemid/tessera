@@ -219,7 +219,7 @@ extension Exporters {
                     ("entry_type", .string("Steam")),
                     ("name", .string(a.account)),
                 ])
-            case .totp:
+            case .totp, .unrecognized:
                 content = .object([
                     ("uri", .string(OTPAuth.format(a))),
                     ("entry_type", .string("Totp")),
@@ -238,33 +238,12 @@ extension Exporters {
 
     // MARK: - Google Authenticator transfer
 
-    /// Why the transfer format leaves `a` out, checked in the Go order, or nil
-    /// when it can carry the account.
-    static func transferSkipKind(_ a: Account) -> SkipKind? {
-        if a.type == .steam { return .unsupportedType }
-        switch Array(a.algorithm.utf8) {
-        case Array("SHA1".utf8), Array("SHA256".utf8), Array("SHA512".utf8): break
-        default: return .unsupportedAlgorithm
-        }
-        if a.digits != 6 && a.digits != 8 { return .unsupportedDigits }
-        if a.type == .totp && a.period != 30 { return .unsupportedPeriod }
-        return nil
-    }
-
-    static func renderTransferCodes(_ accounts: [Account], batchID: Int32) throws -> ([TransferCode], [Skipped]) {
+    static func renderTransferCodes(_ accounts: [Account], batchID: Int32) -> ([TransferCode], [Skipped]) {
         let export = Migration.export(accounts, batchID: batchID)
-        let left = accounts.compactMap { a in transferSkipKind(a).map { (label(a), $0) } }
-        guard left.count == export.skipped.count else { throw ExportError.transferSkipsDisagree }
-        var skipped: [Skipped] = []
-        skipped.reserveCapacity(left.count)
-        for (rule, encoder) in zip(left, export.skipped) {
-            guard Array(rule.0.utf8) == Array(encoder.label.utf8) else { throw ExportError.transferSkipsDisagree }
-            skipped.append(Skipped(label: encoder.label, reason: encoder.reason, kind: rule.1))
-        }
         let total = export.uris.count
         let codes = export.uris.enumerated().map { i, uri in
             TransferCode(name: "google-migration-\(i + 1)-of-\(total).png", uri: uri)
         }
-        return (codes, skipped)
+        return (codes, export.skipped)
     }
 }

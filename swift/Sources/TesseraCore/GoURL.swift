@@ -278,6 +278,11 @@ struct GoURL: Equatable {
         return (Array(s[..<i]), Array(s[(i + 1)...]), true)
     }
 
+    static func cut(_ s: ArraySlice<UInt8>, _ sep: UInt8) -> (ArraySlice<UInt8>, ArraySlice<UInt8>, Bool) {
+        guard let i = s.firstIndex(of: sep) else { return (s, s[s.endIndex...], false) }
+        return (s[..<i], s[(i + 1)...], true)
+    }
+
     private static func validEncoded(_ s: [UInt8], _ mode: Mode) -> Bool {
         for c in s {
             switch Unicode.Scalar(c) {

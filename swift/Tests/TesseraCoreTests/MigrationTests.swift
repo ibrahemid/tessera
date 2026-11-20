@@ -94,7 +94,7 @@ final class MigrationTests: XCTestCase {
             ("otpauth-migration://offline", "migration: missing data query parameter"),
             ("otpauth-migration://offline?data=", "migration: empty data query parameter"),
             ("otpauth-migration://offline?data=%%%", "migration: missing data query parameter"),
-            ("otpauth-migration://online?data=AA", "migration: unexpected host \"online\" (want \"offline\")"),
+            ("otpauth-migration://online?data=AA", "migration: unexpected host; the link must start with otpauth-migration://offline?"),
             ("otpauth://offline?data=AA", "migration: not an otpauth-migration uri (scheme \"otpauth\")"),
             ("otpauth-migration://offline?data=AA", "migration: base64-decode data: illegal base64 data at input byte 0"),
             ("otpauth-migration://offline?data=Cg==", "migration: malformed otp_parameters: unexpected EOF"),
@@ -179,11 +179,14 @@ final class MigrationTests: XCTestCase {
             "3f2bfa39fa66ef7b5edc54e14f2811cda324bbdc34292063a3ec0a3cb72feb07",
         ])
         XCTAssertEqual(e.skipped, [
-            Migration.Skipped(label: "Steam (gaben)", reason: "Google Authenticator has no Steam entry type"),
+            Migration.Skipped(label: "Steam (gaben)", reason: "Google Authenticator has no Steam entry type",
+                              kind: .unsupportedType),
             Migration.Skipped(label: "Seven (digits)",
-                              reason: "Google Authenticator stores only 6- and 8-digit codes, this one has 7"),
+                              reason: "Google Authenticator stores only 6- and 8-digit codes, this one has 7",
+                              kind: .unsupportedDigits),
             Migration.Skipped(label: "Slow (period)",
-                              reason: "Google Authenticator stores only 30-second codes, this one uses 60s"),
+                              reason: "Google Authenticator stores only 30-second codes, this one uses 60s",
+                              kind: .unsupportedPeriod),
         ])
     }
 
@@ -254,6 +257,7 @@ final class MigrationTests: XCTestCase {
         let e = Migration.export([a], batchID: 1)
         XCTAssertEqual(e.payloads, [])
         XCTAssertEqual(e.skipped, [Migration.Skipped(label: "Old",
-                                                     reason: "Google Authenticator does not store the MD5 algorithm")])
+                                                     reason: "Google Authenticator does not store the MD5 algorithm",
+                                                     kind: .unsupportedAlgorithm)])
     }
 }

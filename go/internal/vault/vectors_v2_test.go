@@ -38,6 +38,10 @@ type v2VaultVectors struct {
 			UnknownTopLevel  []string `json:"unknown_top_level"`
 			UnknownWrapTypes []string `json:"unknown_wrap_types"`
 		} `json:"preserve"`
+		LineSeparators struct {
+			EnvelopeJSON         string `json:"envelope_json"`
+			ExpectedEnvelopeJSON string `json:"expected_envelope_json"`
+		} `json:"line_separators"`
 	} `json:"envelope_strict"`
 	Rotation                v2RotationVectors `json:"rotation"`
 	RotationExtraPassphrase v2RotationVectors `json:"rotation_extra_passphrase"`
@@ -332,5 +336,27 @@ func checkRotationVectors(t *testing.T, v v2RotationVectors) {
 				}
 			}
 		})
+	}
+}
+
+func TestV2VectorsEnvelopeLineSeparators(t *testing.T) {
+	v := loadV2VaultVectors(t).EnvelopeStrict.LineSeparators
+	in := []byte(v.EnvelopeJSON)
+	if !bytes.Contains(in, []byte("\u2028")) || !bytes.Contains(in, []byte("\u2029")) {
+		t.Fatal("line_separators input carries no raw line separators")
+	}
+	e, err := Unmarshal(in)
+	if err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	out, err := e.Marshal()
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if string(out) != v.ExpectedEnvelopeJSON {
+		t.Fatalf("written envelope\n got  %s\n want %s", out, v.ExpectedEnvelopeJSON)
+	}
+	if bytes.Contains(out, []byte("\u2028")) || bytes.Contains(out, []byte("\u2029")) {
+		t.Fatal("written envelope keeps a raw line separator")
 	}
 }

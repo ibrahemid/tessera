@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
@@ -18,10 +19,11 @@ import (
 //
 //   - Added: a new id, appended.
 //   - Updated: a strictly newer copy replaced the account, other than a move
-//     to the Trash.
+//     to the Trash, or a copy that is not newer raised its HOTP counter.
 //   - Trashed: a strictly newer copy replaced a live account and is in the
 //     Trash.
-//   - Unchanged: same id, and the copy is not strictly newer.
+//   - Unchanged: same id, the copy is not strictly newer and carries no
+//     larger HOTP counter.
 //   - Duplicate: a new id whose live content matches a live account.
 //   - Invalid: a copy that fails validation, not applied.
 type Counts struct {
@@ -42,7 +44,9 @@ func (c Counts) Changed() bool { return c.Added > 0 || c.Updated > 0 || c.Trashe
 // a different id counts as already present, while trashed accounts take no part
 // in that check. On an id collision the copy with the STRICTLY newer UpdatedAt
 // wins and carries its DeletedAt, so an equal timestamp writes nothing on either
-// side and repeated merges cannot ping-pong. A copy that would replace or add an
+// side and repeated merges cannot ping-pong. When both copies are HOTP with
+// equal secrets the result keeps the larger counter on either path, so a merge
+// never moves a counter backwards. A copy that would replace or add an
 // account is validated first and left out when it fails. Handles that would
 // collide after the merge are cleared so the caller's handle assignment gives
 // them unique ones.
@@ -63,11 +67,24 @@ func Into(dst, src []account.Account) ([]account.Account, Counts) {
 	for _, a := range src {
 		if idx, ok := byID[a.ID]; ok {
 			cur := out[idx]
+			counter, raised := hotpCounter(cur, a)
 			if a.UpdatedAt <= cur.UpdatedAt {
-				c.Unchanged++
+				if !raised {
+					c.Unchanged++
+					continue
+				}
+				next := clone(cur)
+				next.Counter = counter
+				if next.Validate() != nil {
+					c.Invalid++
+					continue
+				}
+				out[idx] = next
+				c.Updated++
 				continue
 			}
 			next := clone(a)
+			next.Counter = counter
 			// A handle is per vault, so the local one wins over the other vault's.
 			if cur.Handle != "" {
 				next.Handle = cur.Handle
@@ -136,12 +153,29 @@ func DedupeHandles(accts []account.Account) {
 	}
 }
 
+// hotpCounter returns the counter the merged copy of an id carries and whether
+// it is larger than the destination's: the larger of the two when both copies
+// are HOTP with equal secrets, else the source's.
+func hotpCounter(cur, src account.Account) (int64, bool) {
+	if cur.Type != account.HOTP || src.Type != account.HOTP || !bytes.Equal(cur.Secret, src.Secret) {
+		return src.Counter, false
+	}
+	return max(cur.Counter, src.Counter), src.Counter > cur.Counter
+}
+
 // ContentKey identifies an account by content rather than id: type, issuer
-// and account name compared case-insensitively, and the secret. Import,
-// merge and dedupe all treat two accounts with the same key as the same
-// account.
+// and account name compared case-insensitively, and the secret. Each field is
+// written as its byte length, a colon and the field, so no two field lists
+// share a key. Import, merge and dedupe all treat two accounts with the same
+// key as the same account.
 func ContentKey(a account.Account) string {
-	return strings.Join([]string{string(a.Type), strings.ToLower(a.Issuer), strings.ToLower(a.Account), base32x.EncodeNoPad(a.Secret)}, "|")
+	var b strings.Builder
+	for _, f := range []string{string(a.Type), strings.ToLower(a.Issuer), strings.ToLower(a.Account), base32x.EncodeNoPad(a.Secret)} {
+		b.WriteString(strconv.Itoa(len(f)))
+		b.WriteByte(':')
+		b.WriteString(f)
+	}
+	return b.String()
 }
 
 // clone copies an account so the copy shares no slice or map with it.

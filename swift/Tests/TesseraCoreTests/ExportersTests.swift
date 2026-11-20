@@ -42,6 +42,24 @@ final class ExportersTests: XCTestCase {
         }
     }
 
+    func testMigrationEmptySecretVectorMatchesGo() throws {
+        let e = try VectorNode.root().get("exports")
+        let v = try e.get("migration_empty_secret")
+        let accounts = try CanonicalJSON.decode(v.get("canonical_json").data)
+        let batchID = try XCTUnwrap(Int32(exactly: e.get("batch_id").int()))
+        let r = try Exporters.render(.googleMigration, accounts, batchID: batchID)
+        guard case .transferCodes(let codes) = r.output else { return XCTFail("no transfer codes") }
+        let want = try v.get("codes").items
+        XCTAssertFalse(want.isEmpty)
+        XCTAssertEqual(codes.map { Data($0.name.utf8) }, try want.map { try $0.get("name").data })
+        XCTAssertEqual(codes.map { Data($0.uri.utf8) }, try want.map { try $0.get("uri").data })
+        let skipped = try v.get("skipped").items
+        XCTAssertEqual(r.skipped.map { Data($0.label.utf8) }, try skipped.map { try $0.get("label").data })
+        XCTAssertEqual(r.skipped.map(\.kind.rawValue), try skipped.map { try $0.get("kind").text })
+        XCTAssertEqual(r.skipped.map { Data($0.reason.utf8) }, try skipped.map { try $0.get("reason").data })
+        XCTAssertTrue(r.skipped.contains { $0.kind == .emptySecret })
+    }
+
     func testFormatLookupTrimsAndLowercases() {
         XCTAssertEqual(Exporters.Format.lookup(" Apple-CSV\n"), .appleCSV)
         XCTAssertEqual(Exporters.Format.lookup("2FAS"), .twoFAS)
@@ -102,11 +120,6 @@ final class ExportersTests: XCTestCase {
         XCTAssertEqual(r.skipped.first?.label, "Bank (ops)")
         let secret = Base32.encodeNoPad(hotp.secret)
         XCTAssertFalse(r.skipped.contains { $0.label.contains(secret) || $0.reason.contains(secret) })
-    }
-
-    func testExportErrorTextNamesTheFormat() {
-        XCTAssertEqual(Exporters.ExportError.transferSkipsDisagree.localizedDescription,
-                       "google-migration: the transfer encoder and the skip rules disagree on which accounts to leave out")
     }
 
     func testTransferCodesShareTheBatchID() throws {

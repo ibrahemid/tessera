@@ -339,3 +339,50 @@ func TestEnvelopeUsesStandardBase64Padding(t *testing.T) {
 		t.Error("envelope contains base64url characters")
 	}
 }
+
+func TestPassphraseMustBeUTF8(t *testing.T) {
+	if _, err := Seal(accounts(), "pass\xffword"); !errors.Is(err, ErrPassphraseEncoding) {
+		t.Fatalf("seal: err = %v, want ErrPassphraseEncoding", err)
+	}
+	e, err := Seal(accounts(), "pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := compactJSON(t, e)
+	if _, err := e.RotatePassphrase("pw", "new\xc3"); !errors.Is(err, ErrPassphraseEncoding) {
+		t.Fatalf("rotate: err = %v, want ErrPassphraseEncoding", err)
+	}
+	if compactJSON(t, e) != before {
+		t.Fatal("a refused rotation changed the envelope")
+	}
+	if _, err := e.Open("pw"); err != nil {
+		t.Fatalf("open after a refused rotation: %v", err)
+	}
+}
+
+func TestWrittenEnvelopeEscapesLineSeparators(t *testing.T) {
+	e, err := Seal(accounts(), "pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := compactJSON(t, e)
+	in := strings.Replace(base, `"wraps":[`, `"wraps":[{"type":"fido2","note":"a`+"\u2028"+`b`+"\u2029"+`c"},`, 1)
+	in = strings.TrimSuffix(in, "}") + `,"x_note":"d` + "\u2029\u2028" + `e"}`
+	got, err := Unmarshal([]byte(in))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := got.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(out, []byte("\u2028")) || bytes.Contains(out, []byte("\u2029")) {
+		t.Fatalf("written envelope carries a raw line separator:\n%s", out)
+	}
+	compact := compactJSON(t, got)
+	for _, want := range []string{`"note":"a\u2028b\u2029c"`, `"x_note":"d\u2029\u2028e"`} {
+		if !strings.Contains(compact, want) {
+			t.Errorf("written envelope lost %s:\n%s", want, out)
+		}
+	}
+}

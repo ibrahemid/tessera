@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
 	"github.com/ibrahemid/tessera/go/internal/base32x"
@@ -22,7 +23,26 @@ type IssuerMismatchError struct {
 }
 
 func (e *IssuerMismatchError) Error() string {
-	return fmt.Sprintf("otpauth: issuer mismatch (label %q, param %q)", e.Label, e.Param)
+	return fmt.Sprintf("otpauth: issuer mismatch (label %s, param %s)", QuoteValue(e.Label), QuoteValue(e.Param))
+}
+
+const maxQuotedBytes = 16
+
+// QuoteValue is strconv.Quote for an error message, cut to the whole
+// characters within 16 bytes plus the length when the value is longer.
+func QuoteValue(s string) string {
+	if len(s) <= maxQuotedBytes {
+		return strconv.Quote(s)
+	}
+	n := 0
+	for n < len(s) {
+		_, w := utf8.DecodeRuneInString(s[n:])
+		if n+w > maxQuotedBytes {
+			break
+		}
+		n += w
+	}
+	return fmt.Sprintf("%s… (%d bytes)", strconv.Quote(s[:n]), len(s))
 }
 
 // Parse decodes an otpauth:// URI into an Account.
@@ -36,7 +56,7 @@ func Parse(uri string) (account.Account, error) {
 		return a, errors.New("otpauth: invalid URI")
 	}
 	if u.Scheme != "otpauth" {
-		return a, fmt.Errorf("otpauth: not an otpauth uri (scheme %q)", u.Scheme)
+		return a, fmt.Errorf("otpauth: not an otpauth uri (scheme %s)", QuoteValue(u.Scheme))
 	}
 	switch strings.ToLower(u.Host) {
 	case "totp":
@@ -46,7 +66,7 @@ func Parse(uri string) (account.Account, error) {
 	case "steam":
 		a.Type = account.Steam
 	default:
-		return a, fmt.Errorf("otpauth: unsupported type %q", u.Host)
+		return a, fmt.Errorf("otpauth: unsupported type %s", QuoteValue(u.Host))
 	}
 
 	issuer, acct, err := splitLabel(u.EscapedPath())
@@ -87,7 +107,7 @@ func Parse(uri string) (account.Account, error) {
 		case "SHA1", "SHA256", "SHA512":
 			a.Algorithm = strings.ToUpper(alg)
 		default:
-			return a, fmt.Errorf("otpauth: unsupported algorithm %q", alg)
+			return a, fmt.Errorf("otpauth: unsupported algorithm %s", QuoteValue(alg))
 		}
 	}
 
@@ -102,7 +122,7 @@ func Parse(uri string) (account.Account, error) {
 			bad = err != nil || n != 5
 		}
 		if bad {
-			return a, fmt.Errorf("otpauth: invalid digits %q", d)
+			return a, fmt.Errorf("otpauth: invalid digits %s", QuoteValue(d))
 		}
 		a.Digits = n
 	}
@@ -111,7 +131,7 @@ func Parse(uri string) (account.Account, error) {
 	if p := q.Get("period"); p != "" {
 		n, err := strconv.Atoi(p)
 		if err != nil || n <= 0 {
-			return a, fmt.Errorf("otpauth: invalid period %q", p)
+			return a, fmt.Errorf("otpauth: invalid period %s", QuoteValue(p))
 		}
 		a.Period = n
 	}
@@ -123,7 +143,7 @@ func Parse(uri string) (account.Account, error) {
 		}
 		n, err := strconv.ParseInt(c, 10, 64)
 		if err != nil || n < 0 || n > account.MaxCounter {
-			return a, fmt.Errorf("otpauth: invalid counter %q", c)
+			return a, fmt.Errorf("otpauth: invalid counter %s", QuoteValue(c))
 		}
 		a.Counter = n
 	}

@@ -86,7 +86,8 @@ An account a format cannot store is named on stderr and left out. Proton
 Authenticator has no HOTP entry. Google Authenticator's transfer format has no
 Steam entry and stores only 6- and 8-digit codes and, for TOTP, a 30-second
 period. Those accounts are never rewritten to fit: a changed period or digit
-count generates wrong codes.
+count generates wrong codes. The transfer codes also leave out an account with
+an empty secret.
 
 `google-migration` writes one QR PNG per batch (ten accounts at most, and fewer
 when they are large), named `google-migration-1-of-N.png`. Scan them one at a
@@ -154,13 +155,19 @@ Each account in the source lands in one of these outcomes:
   vault's copy, including a move to the Trash or a restore. This vault keeps its
   own handle for it. Counted as moved to the Trash when it takes a live account
   into the Trash, and as updated otherwise.
-- Same account in both, source copy not newer: nothing changes. Two copies
-  edited in the same second count as the same. Counted as unchanged.
+- Same account in both, source copy not newer: nothing changes, apart from the
+  HOTP counter rule below. Two copies edited in the same second count as the
+  same. Counted as unchanged.
 - An account this vault does not have, but a live account here has the same
   type, issuer, account name and secret: skipped and counted as already
   present. A trashed account never counts as a match.
 - A copy that fails validation, new or newer: left out and counted as invalid.
 - Anything else: added.
+
+An HOTP counter never moves back. When both copies are HOTP accounts with the
+same secret, the merged account keeps the larger counter: a newer source copy
+keeps this vault's counter when that is larger, and a source copy that is not
+newer but has a larger counter raises this vault's counter, counted as updated.
 
 The merge prints the counts that are not zero, such as
 `Merged backup.json: 1 added, 1 unchanged, 2 already present`. A two-way merge

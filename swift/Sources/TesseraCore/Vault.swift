@@ -424,8 +424,9 @@ public struct Envelope: Sendable {
     }
 
     /// Tries passphrase wraps in envelope order, skipping malformed ones and
-    /// deriving at most four keys. Returns the DEK and the index of the wrap
-    /// that opened.
+    /// deriving at most four keys. A key derivation that fails counts as an
+    /// attempt and moves on to the next wrap; its error is thrown only when no
+    /// wrap opened. Returns the DEK and the index of the wrap that opened.
     func unwrapWithPassphrase(_ passphrase: String, argon2: Argon2idProvider) throws -> (dek: Data, index: Int) {
         guard version == 1 || version == 2 else { throw VaultError.unsupportedVersion }
         guard Self.bytesEqual(aead, Self.aeadName) else { throw VaultError.unsupportedAEAD }
@@ -434,6 +435,7 @@ public struct Envelope: Sendable {
         var found = false
         var malformed = false
         var attempts = 0
+        var deriveFailure: Error?
         for (i, w) in wraps.enumerated() where Self.bytesEqual(w.type, Self.passphraseType) {
             found = true
             guard let m = w.passphraseMaterial else {
@@ -442,9 +444,15 @@ public struct Envelope: Sendable {
             }
             if attempts == Self.maxPassphraseAttempts { break }
             attempts += 1
-            var key = try argon2.deriveKey(passphrase: secret, salt: m.salt, memoryKiB: m.params.m,
+            var key: Data
+            do {
+                key = try argon2.deriveKey(passphrase: secret, salt: m.salt, memoryKiB: m.params.m,
                                            iterations: m.params.t, parallelism: m.params.p,
                                            keyLength: Self.dekLength)
+            } catch {
+                if deriveFailure == nil { deriveFailure = error }
+                continue
+            }
             defer { key.resetBytes(in: 0..<key.count) }
             if let dek = try? XChaCha.open(m.ct, key: key, nonce: m.nonce) { return (dek, i) }
         }
@@ -454,6 +462,7 @@ public struct Envelope: Sendable {
             }
             throw VaultError.noPassphraseWrap
         }
+        if let deriveFailure { throw deriveFailure }
         if attempts == 0 && malformed { throw VaultError.corrupt }
         throw VaultError.wrongPassphrase
     }
@@ -569,8 +578,8 @@ public struct Envelope: Sendable {
     /// builds for the new DEK. Unknown top-level keys are kept.
     ///
     /// `recreating` holds the indices of current wraps the new wraps stand in
-    /// for. `removed` lists, in envelope order and without merging repeats, the
-    /// type of every current wrap whose index it does not hold. Nothing changes
+    /// for. `removed` lists each type of the current wraps whose index it does
+    /// not hold once, in first-occurrence order. Nothing changes
     /// when the result would have no wraps or more than 16.
     @discardableResult
     public mutating func rotate(accounts: [Account], passphrases: [String], recreating: Set<Int> = [],
@@ -587,7 +596,11 @@ public struct Envelope: Sendable {
         next.append(contentsOf: enclave)
         if next.isEmpty { throw EnvelopeError.noWraps }
         if next.count > Self.maxWraps { throw EnvelopeError.tooManyWraps }
-        let removed = wraps.indices.filter { !recreating.contains($0) }.map { wraps[$0].type }
+        var removed: [String] = []
+        var seenTypes = Set<[UInt8]>()
+        for i in wraps.indices where !recreating.contains(i) && seenTypes.insert(Array(wraps[i].type.utf8)).inserted {
+            removed.append(wraps[i].type)
+        }
         version = Account.formatVersion(accounts)
         aead = Self.aeadName
         wraps = next

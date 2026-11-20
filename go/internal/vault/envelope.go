@@ -345,7 +345,12 @@ func compactRaw(raw json.RawMessage) json.RawMessage {
 	if err := json.Compact(&b, raw); err != nil {
 		return append(json.RawMessage(nil), raw...)
 	}
-	return b.Bytes()
+	return escapeLineSeparators(b.Bytes())
+}
+
+func escapeLineSeparators(b []byte) []byte {
+	b = bytes.ReplaceAll(b, []byte("\u2028"), []byte(`\u2028`))
+	return bytes.ReplaceAll(b, []byte("\u2029"), []byte(`\u2029`))
 }
 
 func decodeObject(what string, raw []byte) (map[string]json.RawMessage, error) {

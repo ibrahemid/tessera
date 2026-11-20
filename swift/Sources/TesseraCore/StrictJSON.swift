@@ -132,15 +132,25 @@ enum StrictJSON {
         }
     }
 
-    /// Removes insignificant whitespace and keeps string contents verbatim, as
-    /// Go's `json.Compact` does.
-    static func compact(_ src: some Collection<UInt8>) -> [UInt8] {
+    /// Removes insignificant whitespace and keeps string contents verbatim
+    /// apart from U+2028 and U+2029, which become their `\u` escapes, as the
+    /// Go core does after `json.Compact`.
+    static func compact(_ input: some Collection<UInt8>) -> [UInt8] {
+        let src = Array(input)
         var out: [UInt8] = []
         out.reserveCapacity(src.count)
         var inString = false
         var escaped = false
-        for c in src {
+        var i = 0
+        while i < src.count {
+            let c = src[i]
+            i += 1
             if inString {
+                if c == 0xE2, i + 1 < src.count, src[i] == 0x80, src[i + 1] == 0xA8 || src[i + 1] == 0xA9 {
+                    out.append(contentsOf: [0x5C, 0x75, 0x32, 0x30, 0x32, src[i + 1] == 0xA8 ? 0x38 : 0x39])
+                    i += 2
+                    continue
+                }
                 out.append(c)
                 if escaped { escaped = false } else if c == 0x5C { escaped = true } else if c == 0x22 { inString = false }
                 continue

@@ -26,6 +26,20 @@ func runExportChecks(_ root: JSONNode, _ check: (Bool, String) -> Void) {
             check(false, "export \(name): \(error)")
         }
     }
+    let empty = vnode(e, "migration_empty_secret")
+    guard let emptyAccounts = try? CanonicalJSON.decode(vbytes(empty, "canonical_json")) else {
+        check(false, "exports migration_empty_secret accounts decode")
+        return
+    }
+    do {
+        let r = try Exporters.render(.googleMigration, emptyAccounts, batchID: batchID)
+        let problems = exportMismatches(r, empty)
+        for p in problems { print("     migration_empty_secret: \(p)") }
+        check(problems.isEmpty && r.skipped.contains { $0.kind == .emptySecret },
+              "export migration_empty_secret matches Go")
+    } catch {
+        check(false, "export migration_empty_secret: \(error)")
+    }
 }
 
 private func exportMismatches(_ r: Exporters.Rendered, _ want: JSONNode) -> [String] {

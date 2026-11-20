@@ -223,6 +223,11 @@ extension AppModel {
         CodeTiming.remaining(account, at: time)
     }
 
+    func codeUnavailableReason(for account: Account) -> String? {
+        guard case .unrecognized(let type) = account.type else { return nil }
+        return OTP.UnknownTypeError(id: account.id, type: type).description
+    }
+
     private func memoizedCode(_ account: Account, key: String, at time: Date) -> String {
         let slot = periodSlot(account, at: time)
         if let hit = codeCache[key], hit.slot == slot, hit.updatedAt == account.updatedAt {
@@ -240,6 +245,7 @@ extension AppModel {
         case .hotp: return a.counter
         case .steam: return Int64(time.timeIntervalSince1970) / 30
         case .totp: return Int64(time.timeIntervalSince1970) / Int64(max(a.period, 1))
+        case .unrecognized: return 0
         }
     }
 }

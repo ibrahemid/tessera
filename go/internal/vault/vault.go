@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"unicode/utf8"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
 	"golang.org/x/crypto/argon2"
@@ -51,6 +52,7 @@ var (
 	ErrCorrupt            = errors.New("vault: corrupt or tampered vault")
 	ErrNoWraps            = errors.New("vault: envelope has no wraps (spec/vault-format.md requires at least one)")
 	ErrTooManyWraps       = errors.New("vault: envelope has more than 16 wraps")
+	ErrPassphraseEncoding = errors.New("vault: the new passphrase is not valid UTF-8; enter it again as UTF-8 text")
 )
 
 // Argon2Params are the versioned argon2id cost parameters. M is memory in KiB.
@@ -211,6 +213,9 @@ func Seal(accounts []account.Account, passphrase string) (*Envelope, error) {
 }
 
 func newPassphraseWrap(dek []byte, passphrase string) (wrap, error) {
+	if !utf8.ValidString(passphrase) {
+		return wrap{}, ErrPassphraseEncoding
+	}
 	salt, err := randBytes(saltLen)
 	if err != nil {
 		return wrap{}, err

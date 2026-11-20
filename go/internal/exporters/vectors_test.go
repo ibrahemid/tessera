@@ -31,9 +31,13 @@ type exportFormatVector struct {
 
 type exportVectors struct {
 	Exports struct {
-		BatchID       int32                `json:"batch_id"`
-		CanonicalJSON string               `json:"canonical_json"`
-		Formats       []exportFormatVector `json:"formats"`
+		BatchID              int32                `json:"batch_id"`
+		CanonicalJSON        string               `json:"canonical_json"`
+		Formats              []exportFormatVector `json:"formats"`
+		MigrationEmptySecret struct {
+			CanonicalJSON string `json:"canonical_json"`
+			exportFormatVector
+		} `json:"migration_empty_secret"`
 	} `json:"exports"`
 }
 
@@ -195,6 +199,36 @@ func TestMigrationCodesWithNothingEligible(t *testing.T) {
 	}
 }
 
+func TestMigrationEmptySecretVector(t *testing.T) {
+	v, _ := loadExportVectors(t)
+	w := v.Exports.MigrationEmptySecret
+	accts, err := account.ParseCanonicalJSON([]byte(w.CanonicalJSON))
+	if err != nil {
+		t.Fatalf("parse migration_empty_secret canonical_json: %v", err)
+	}
+	codes, skipped := MigrationCodes(accts, v.Exports.BatchID)
+	if len(codes) != len(w.Codes) || len(codes) == 0 {
+		t.Fatalf("%d codes, want %d", len(codes), len(w.Codes))
+	}
+	for i, c := range codes {
+		if c.Name != w.Codes[i].Name || c.URI != w.Codes[i].URI {
+			t.Fatalf("code %d = %s %s, want %s %s", i, c.Name, c.URI, w.Codes[i].Name, w.Codes[i].URI)
+		}
+	}
+	if len(skipped) != len(w.Skipped) {
+		t.Fatalf("skipped %+v, want %+v", skipped, w.Skipped)
+	}
+	for i, s := range skipped {
+		want := w.Skipped[i]
+		if s.Label != want.Label || string(s.Kind) != want.Kind || s.Reason != want.Reason {
+			t.Fatalf("skipped %d = %+v, want %+v", i, s, want)
+		}
+	}
+	if !slices.ContainsFunc(skipped, func(s Skipped) bool { return s.Kind == SkipEmptySecret }) {
+		t.Fatalf("no empty_secret skip in %+v", skipped)
+	}
+}
+
 func TestSkipKinds(t *testing.T) {
 	base := account.Account{ID: "k", Type: account.TOTP, Issuer: "Kind", Account: "x",
 		Secret: mustSecret(t, "JBSWY3DPEHPK3PXP"), Algorithm: "SHA1", Digits: 6, Period: 30}
@@ -216,6 +250,8 @@ func TestSkipKinds(t *testing.T) {
 		{"google-migration", with(func(a *account.Account) { a.Algorithm = "MD5" }), SkipUnsupportedAlgorithm},
 		{"google-migration", with(func(a *account.Account) { a.Digits = 7 }), SkipUnsupportedDigits},
 		{"google-migration", with(func(a *account.Account) { a.Period = 60 }), SkipUnsupportedPeriod},
+		{"google-migration", with(func(a *account.Account) { a.Secret = []byte{} }), SkipEmptySecret},
+		{"google-migration", with(func(a *account.Account) { a.Secret = nil }), SkipEmptySecret},
 	}
 	for _, c := range cases {
 		e, _ := Lookup(c.format)

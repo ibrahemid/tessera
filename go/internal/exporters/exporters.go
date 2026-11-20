@@ -53,6 +53,7 @@ const (
 	// SkipFormulaNote: the account's note starts like a spreadsheet formula, so
 	// the account is written without its note.
 	SkipFormulaNote SkipKind = "formula_note"
+	SkipEmptySecret SkipKind = "empty_secret"
 )
 
 // Exporter renders accounts into one or more files.

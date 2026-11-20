@@ -1,7 +1,7 @@
 import Foundation
 
 /// The `rotation_extra_passphrase` vector set, with stub-derived passphrase
-/// wraps: a rotation that recreates either passphrase wrap removes the other
+/// wraps: a rotation that recreates any passphrase wrap removes the other
 /// wraps and keeps unknown top-level keys, and the backup copy keeps only the
 /// passphrase wraps. XCTest reruns the rotation with argon2id.
 func runEnvelopeChecks(_ root: JSONNode, _ check: (Bool, String) -> Void) {
@@ -18,7 +18,7 @@ func runEnvelopeChecks(_ root: JSONNode, _ check: (Bool, String) -> Void) {
     check(CanonicalJSON.encode(accts) == expected, "rotation_extra_passphrase opens with its old DEK")
 
     let passphraseWraps = env.wraps.indices.filter { env.wraps[$0].type == "passphrase" }
-    var allOK = passphraseWraps.count == 2
+    var allOK = passphraseWraps.count == 3
     for index in passphraseWraps {
         var rotated = env
         do {
@@ -52,7 +52,7 @@ func runEnvelopeChecks(_ root: JSONNode, _ check: (Bool, String) -> Void) {
         let sameRest = try ["version", "aead", "payload", "x_future"].allSatisfy { k in
             try topLevel(out, k) == topLevel(original, k)
         }
-        let sameWraps = try copy.wrapTypes == ["passphrase", "passphrase"]
+        let sameWraps = try copy.wrapTypes == ["passphrase", "passphrase", "passphrase"]
             && wraps(out) == wraps(original).filter { w in
                 (try? StrictJSON.parse(w, rule: .finiteDouble).member("type")?.string) == Array("passphrase".utf8)
             }

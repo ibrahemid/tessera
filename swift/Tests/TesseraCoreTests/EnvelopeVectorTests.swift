@@ -80,6 +80,21 @@ final class EnvelopeVectorTests: XCTestCase {
         }
     }
 
+    func testLineSeparatorsInExtrasAndWrapMembersAreEscapedWhenWritten() throws {
+        let v = try VectorNode.root().get("envelope_strict").get("line_separators")
+        let input = try v.get("envelope_json").data
+        XCTAssertTrue(String(decoding: input, as: UTF8.self).contains("\u{2028}"))
+        XCTAssertTrue(String(decoding: input, as: UTF8.self).contains("\u{2029}"))
+        let out = try Envelope.decode(input).encoded()
+        XCTAssertEqual(String(decoding: out, as: UTF8.self), try v.get("expected_envelope_json").text)
+    }
+
+    func testCompactEscapesOnlyLineSeparatorsInsideStrings() {
+        let input = Array("{ \"a\" : \"x\u{2028}y\u{2029}z\\\"\u{2028}\" }".utf8)
+        XCTAssertEqual(String(decoding: StrictJSON.compact(input), as: UTF8.self),
+                       #"{"a":"x\u2028y\u2029z\"\u2028"}"#)
+    }
+
     func testUnwrapDEKUpgradesBelowDefaultWrap() throws {
         let es = try VectorNode.root().get("envelope_strict")
         let passphrase = try es.get("passphrase").text
@@ -146,8 +161,8 @@ final class EnvelopeVectorTests: XCTestCase {
         }
     }
 
-    /// A rotation of an envelope with a second passphrase wrap removes it with
-    /// the hardware wraps.
+    /// A rotation of an envelope with extra passphrase wraps removes them with
+    /// the hardware wraps and names each removed type once.
     func testRotationWithAnExtraPassphraseVector() throws {
         let r = try VectorNode.root().get("rotation_extra_passphrase")
         let passphrase = try r.get("passphrase").text
@@ -155,7 +170,7 @@ final class EnvelopeVectorTests: XCTestCase {
         let oldDEK = try XCTUnwrap(Data(base64Encoded: r.get("old_dek_b64").text))
         let original = try r.get("envelope").raw
         let expected = try r.get("expected_canonical_json").data
-        XCTAssertEqual(try envelopeWraps(original, ofType: "passphrase").count, 2)
+        XCTAssertEqual(try envelopeWraps(original, ofType: "passphrase").count, 3)
 
         for name in ["passwd", "rekey"] {
             var env = try Envelope.decode(Data(original))
@@ -189,7 +204,7 @@ final class EnvelopeVectorTests: XCTestCase {
         let original = try r.get("envelope").raw
         let env = try Envelope.decode(Data(original))
         let copy = try env.passphraseWrapsOnly()
-        XCTAssertEqual(copy.wrapTypes, ["passphrase", "passphrase"])
+        XCTAssertEqual(copy.wrapTypes, ["passphrase", "passphrase", "passphrase"])
 
         let out = [UInt8](try copy.encoded())
         XCTAssertEqual(try envelopeWraps(out, ofType: "passphrase"), try envelopeWraps(original, ofType: "passphrase"))
@@ -199,7 +214,7 @@ final class EnvelopeVectorTests: XCTestCase {
         let reopened = try Envelope.decode(Data(out))
         XCTAssertEqual(CanonicalJSON.encode(try reopened.open(passphrase: r.get("passphrase").text, argon2: argon2)),
                        try r.get("expected_canonical_json").data)
-        XCTAssertEqual(env.wrapTypes, ["passphrase", "passphrase", "secure-enclave", "hardware-key"])
+        XCTAssertEqual(env.wrapTypes, ["passphrase", "passphrase", "secure-enclave", "passphrase", "hardware-key"])
     }
 
     func testBackupCopyRefusesAnEnvelopeWithoutAPassphraseWrap() throws {

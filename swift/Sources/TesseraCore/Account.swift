@@ -1,10 +1,45 @@
 import Foundation
 
-/// The OTP scheme of an account.
-public enum OTPType: String, Sendable {
+/// The OTP scheme of an account. A stored `type` this build does not know,
+/// including a missing one, is carried as `unrecognized` with its text kept
+/// exactly: the account round-trips, produces no code and fails validation.
+public enum OTPType: Sendable, Hashable {
     case totp
     case hotp
     case steam
+    case unrecognized(String)
+
+    /// The scheme a recognized stored name denotes; nil for any other text.
+    public init?(rawValue: String) {
+        let b = rawValue.utf8
+        if b.elementsEqual("totp".utf8) {
+            self = .totp
+        } else if b.elementsEqual("hotp".utf8) {
+            self = .hotp
+        } else if b.elementsEqual("steam".utf8) {
+            self = .steam
+        } else {
+            return nil
+        }
+    }
+
+    init(stored s: String) { self = OTPType(rawValue: s) ?? .unrecognized(s) }
+
+    /// The stored name.
+    public var rawValue: String {
+        switch self {
+        case .totp: return "totp"
+        case .hotp: return "hotp"
+        case .steam: return "steam"
+        case .unrecognized(let s): return s
+        }
+    }
+
+    /// Whether this build generates codes for the scheme.
+    public var isRecognized: Bool {
+        if case .unrecognized = self { return false }
+        return true
+    }
 }
 
 /// One stored credential. `secret` is the RAW key bytes.
@@ -96,16 +131,11 @@ public struct Account: Sendable, Equatable {
         }.map(\.element)
     }
 
-    private static func normalized(_ fields: [ExtensionField]) -> [ExtensionField] {
-        var out: [ExtensionField] = []
-        for f in fields {
-            if let i = out.firstIndex(where: { $0.keyBytes == f.keyBytes }) {
-                out[i] = f
-            } else {
-                out.append(f)
-            }
-        }
-        return out.sorted { StrictJSON.bytesLess($0.keyBytes, $1.keyBytes) }
+    static func normalized(_ fields: [ExtensionField]) -> [ExtensionField] {
+        var byKey: [[UInt8]: ExtensionField] = [:]
+        byKey.reserveCapacity(fields.count)
+        for f in fields { byKey[f.keyBytes] = f }
+        return byKey.values.sorted { StrictJSON.bytesLess($0.keyBytes, $1.keyBytes) }
     }
 }
 
@@ -204,14 +234,19 @@ public struct CounterRangeError: Error, Equatable, Sendable, CustomStringConvert
 public enum AccountError: Error, CustomStringConvertible {
     case invalid(String)
     public var description: String {
-        switch self { case .invalid(let m): return "account: \(m)" }
+        switch self { case .invalid(let m): return m }
     }
 }
 
 public extension Account {
+    /// Checks the fields in the Go core's order, so the first failure reported
+    /// is the one Go reports, with the same text.
     func validate() throws {
         let q = GoQuote.quote(id)
-        if id.isEmpty { throw AccountError.invalid("empty id") }
+        if !type.isRecognized {
+            throw AccountError.invalid("account \(q): invalid type \(GoQuote.quote(type.rawValue))")
+        }
+        if id.isEmpty { throw AccountError.invalid("account: empty id") }
         if secret.isEmpty { throw AccountError.invalid("account \(q): empty secret") }
         switch algorithm { case "SHA1", "SHA256", "SHA512": break
         default: throw AccountError.invalid("account \(q): invalid algorithm \(GoQuote.quote(algorithm))") }
@@ -386,10 +421,7 @@ public enum CanonicalJSON {
             }
         }
         if f.counter < 0 || f.counter > Account.maxCounter { throw PayloadError.counterRange(f.counter) }
-        guard let type = OTPType(rawValue: f.type) else {
-            throw AccountError.invalid("account \(GoQuote.quote(f.id)): invalid type \(GoQuote.quote(f.type))")
-        }
-        return Account(id: f.id, type: type, issuer: f.issuer, account: f.account, secret: f.secret,
+        return Account(id: f.id, type: OTPType(stored: f.type), issuer: f.issuer, account: f.account, secret: f.secret,
                        algorithm: f.algorithm, digits: f.digits, period: f.period, counter: f.counter,
                        folder: f.folder, handle: f.handle, tags: f.tags, pinned: f.pinned,
                        createdAt: f.createdAt, updatedAt: f.updatedAt,
@@ -471,12 +503,7 @@ enum DisplayOrder {
     }
 
     /// Go's `unicode.ToLower`: the simple one-to-one lowercase mapping.
-    static func lower(_ r: Unicode.Scalar) -> UInt32 {
-        if r.value == 0x130 { return 0x69 }
-        let mapped = r.properties.lowercaseMapping.unicodeScalars
-        guard mapped.count == 1, let m = mapped.first else { return r.value }
-        return m.value
-    }
+    static func lower(_ r: Unicode.Scalar) -> UInt32 { CaseMap.lower(r.value) }
 }
 
 /// Go's `strconv.Quote`, used so error text matches the Go core.

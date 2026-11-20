@@ -124,6 +124,47 @@ final class MergeTests: XCTestCase {
         XCTAssertNotEqual(Merge.ContentKey(account("a")), Merge.ContentKey(hotp))
     }
 
+    func testContentKeyKeepsFieldBoundaries() {
+        XCTAssertNotEqual(Merge.ContentKey(account("a", issuer: "a|b", account: "c")),
+                          Merge.ContentKey(account("b", issuer: "a", account: "b|c")))
+        XCTAssertNotEqual(Merge.ContentKey(account("a", issuer: "ab", account: "")),
+                          Merge.ContentKey(account("b", issuer: "a", account: "b")))
+    }
+
+    private func hotp(_ id: String, counter: Int64, updatedAt: Int64, secret: String = "12345678901234567890") -> Account {
+        var a = account(id, secret: secret, updatedAt: updatedAt)
+        a.type = .hotp
+        a.counter = counter
+        return a
+    }
+
+    func testOlderHOTPCopyWithALargerCounterRaisesTheDestinationCounter() {
+        let cur = hotp("a", counter: 3, updatedAt: 200)
+        let r = Merge.into([cur], [hotp("a", counter: 9, updatedAt: 100)])
+        XCTAssertEqual(r.counts, Merge.Counts(updated: 1))
+        var want = cur
+        want.counter = 9
+        XCTAssertEqual(r.accounts, [want])
+    }
+
+    func testNewerHOTPCopyKeepsTheLargerDestinationCounter() {
+        let newer = hotp("a", counter: 2, updatedAt: 300)
+        let r = Merge.into([hotp("a", counter: 7, updatedAt: 100)], [newer])
+        XCTAssertEqual(r.counts, Merge.Counts(updated: 1))
+        XCTAssertEqual(r.accounts.map(\.counter), [7])
+        XCTAssertEqual(r.accounts.map(\.updatedAt), [300])
+    }
+
+    func testHOTPCounterRuleNeedsEqualSecrets() {
+        let cur = hotp("a", counter: 3, updatedAt: 200)
+        let older = Merge.into([cur], [hotp("a", counter: 9, updatedAt: 100, secret: "another secret value")])
+        XCTAssertEqual(older.counts, Merge.Counts(unchanged: 1))
+        XCTAssertEqual(older.accounts, [cur])
+        let newer = Merge.into([hotp("a", counter: 9, updatedAt: 100)],
+                               [hotp("a", counter: 3, updatedAt: 200, secret: "another secret value")])
+        XCTAssertEqual(newer.accounts.map(\.counter), [3])
+    }
+
     func testChangedCountsOnlyWrites() {
         XCTAssertFalse(Merge.Counts(unchanged: 1, duplicate: 1, invalid: 1).changed)
         XCTAssertTrue(Merge.Counts(added: 1).changed)

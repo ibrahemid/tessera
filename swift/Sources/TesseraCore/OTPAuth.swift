@@ -14,33 +14,34 @@ public enum OTPAuth {
             throw AccountError.invalid("otpauth: invalid URI")
         }
         guard u.scheme == "otpauth" else {
-            throw AccountError.invalid("otpauth: not an otpauth uri (scheme \(GoText.quote(u.scheme)))")
+            throw AccountError.invalid("otpauth: not an otpauth uri (scheme \(GoText.quoteValue(u.scheme)))")
         }
-        let host = GoText.string(u.host)
         var type: OTPType
-        switch GoText.toLower(host) {
+        switch GoText.toLower(GoText.string(u.host)) {
         case "totp": type = .totp
         case "hotp": type = .hotp
         case "steam": type = .steam
-        default: throw AccountError.invalid("otpauth: unsupported type \(GoText.quote(host))")
+        default: throw AccountError.invalid("otpauth: unsupported type \(GoText.quoteValue(bytes: u.host))")
         }
 
         let (labelIssuer, account) = try splitLabel(u.escapedPath)
         var issuer = labelIssuer
         let q = try parseQuery(u.rawQuery)
 
-        let secretParam = q["secret"] ?? ""
+        func param(_ key: String) -> [UInt8] { q[Array(key.utf8)] ?? [] }
+
+        let secretParam = GoText.string(param("secret"))
         if secretParam.isEmpty { throw AccountError.invalid("otpauth: missing secret") }
         let secret: Data
         do { secret = try Base32.decode(secretParam) } catch let AccountError.invalid(m) {
             throw AccountError.invalid("otpauth: bad secret: \(m)")
         }
 
-        let iss = TextClean.text(q["issuer"] ?? "")
+        let iss = TextClean.text(GoText.string(param("issuer")))
         if !iss.isEmpty {
             if !issuer.isEmpty && issuer != iss {
                 throw AccountError.invalid(
-                    "otpauth: issuer mismatch (label \(GoText.quote(issuer)), param \(GoText.quote(iss)))")
+                    "otpauth: issuer mismatch (label \(GoText.quoteValue(issuer)), param \(GoText.quoteValue(iss)))")
             }
             issuer = iss
         }
@@ -48,36 +49,39 @@ public enum OTPAuth {
         if type == .totp && GoText.equalFold(issuer, ascii: "Steam") { type = .steam }
 
         var algorithm = "SHA1"
-        if let alg = q["algorithm"], !alg.isEmpty {
-            let upper = GoText.toUpper(alg)
+        let alg = param("algorithm")
+        if !alg.isEmpty {
+            let upper = GoText.toUpper(GoText.string(alg))
             guard ["SHA1", "SHA256", "SHA512"].contains(upper) else {
-                throw AccountError.invalid("otpauth: unsupported algorithm \(GoText.quote(alg))")
+                throw AccountError.invalid("otpauth: unsupported algorithm \(GoText.quoteValue(bytes: alg))")
             }
             algorithm = upper
         }
 
         var digits = type == .steam ? 5 : 6
-        if let d = q["digits"], !d.isEmpty {
-            let n = GoText.atoi(d)
+        let d = param("digits")
+        if !d.isEmpty {
+            let n = GoText.atoi(GoText.string(d))
             let bad = type == .steam ? n != 5 : (n.map { $0 < 6 || $0 > 8 } ?? true)
-            if bad { throw AccountError.invalid("otpauth: invalid digits \(GoText.quote(d))") }
+            if bad { throw AccountError.invalid("otpauth: invalid digits \(GoText.quoteValue(bytes: d))") }
             digits = n!
         }
 
         var period = 30
-        if let p = q["period"], !p.isEmpty {
-            guard let n = GoText.atoi(p), n > 0 else {
-                throw AccountError.invalid("otpauth: invalid period \(GoText.quote(p))")
+        let p = param("period")
+        if !p.isEmpty {
+            guard let n = GoText.atoi(GoText.string(p)), n > 0 else {
+                throw AccountError.invalid("otpauth: invalid period \(GoText.quoteValue(bytes: p))")
             }
             period = n
         }
 
         var counter: Int64 = 0
         if type == .hotp {
-            let c = q["counter"] ?? ""
+            let c = param("counter")
             if c.isEmpty { throw AccountError.invalid("otpauth: hotp requires counter") }
-            guard let n = GoText.parseInt64(c), n >= 0, n <= maxCounter else {
-                throw AccountError.invalid("otpauth: invalid counter \(GoText.quote(c))")
+            guard let n = GoText.parseInt64(GoText.string(c)), n >= 0, n <= maxCounter else {
+                throw AccountError.invalid("otpauth: invalid counter \(GoText.quoteValue(bytes: c))")
             }
             counter = n
         }
@@ -91,7 +95,7 @@ public enum OTPAuth {
         switch a.type {
         case .hotp: typ = "hotp"
         case .steam: typ = "steam"
-        case .totp: typ = "totp"
+        case .totp, .unrecognized: typ = "totp"
         }
         var label = escapeLabelPart(a.account)
         if !a.issuer.isEmpty { label = escapeLabelPart(a.issuer) + ":" + label }
@@ -142,9 +146,9 @@ public enum OTPAuth {
     /// The query as Go `otpauth.parseQuery` reads it: pairs split on '&', empty
     /// pairs skipped, every key and value query-unescaped (one bad escape
     /// anywhere rejects the link), and the first occurrence of a key wins.
-    private static func parseQuery(_ rawQuery: [UInt8]) throws -> [String: String] {
-        var q: [String: String] = [:]
-        var rest = rawQuery
+    private static func parseQuery(_ rawQuery: [UInt8]) throws -> [[UInt8]: [UInt8]] {
+        var q: [[UInt8]: [UInt8]] = [:]
+        var rest = rawQuery[...]
         while !rest.isEmpty {
             let (pair, after, _) = GoURL.cut(rest, UInt8(ascii: "&"))
             rest = after
@@ -152,13 +156,12 @@ public enum OTPAuth {
             let (rawKey, rawValue, _) = GoURL.cut(pair, UInt8(ascii: "="))
             let key: [UInt8], value: [UInt8]
             do {
-                key = try GoURL.unescape(rawKey, .queryComponent)
-                value = try GoURL.unescape(rawValue, .queryComponent)
+                key = try GoURL.unescape(Array(rawKey), .queryComponent)
+                value = try GoURL.unescape(Array(rawValue), .queryComponent)
             } catch {
                 throw AccountError.invalid("otpauth: invalid percent-encoding in query")
             }
-            let k = GoText.string(key)
-            if q[k] == nil { q[k] = GoText.string(value) }
+            if q[key] == nil { q[key] = value }
         }
         return q
     }

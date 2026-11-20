@@ -239,6 +239,63 @@ func TestContentKeyIgnoresCaseOfNamesButNotOfTheSecret(t *testing.T) {
 	}
 }
 
+func TestContentKeyKeepsFieldsApart(t *testing.T) {
+	a := acct("a", "a|b", "c", "", 1)
+	b := acct("b", "a", "b|c", "", 1)
+	b.Secret = a.Secret
+	if ContentKey(a) == ContentKey(b) {
+		t.Fatal("issuer a|b with account c gave the same key as issuer a with account b|c")
+	}
+	got, c := Into([]account.Account{a}, []account.Account{b})
+	if c != (Counts{Added: 1}) || len(got) != 2 {
+		t.Fatalf("counts %+v len %d, want the second account added", c, len(got))
+	}
+}
+
+func hotp(id string, counter, updated int64) account.Account {
+	a := acct(id, "Bank", "token", "tok", updated)
+	a.Type, a.Counter = account.HOTP, counter
+	return a
+}
+
+func TestIntoNeverMovesAnHOTPCounterBackwards(t *testing.T) {
+	cases := []struct {
+		name          string
+		local, source account.Account
+		want          Counts
+		counter       int64
+		updated       int64
+		issuer        string
+	}{
+		{"older copy with a larger counter", hotp("a", 7, 20), hotp("a", 12, 10), Counts{Updated: 1}, 12, 20, "Bank"},
+		{"equal copy with a larger counter", hotp("a", 7, 20), hotp("a", 12, 20), Counts{Updated: 1}, 12, 20, "Bank"},
+		{"older copy with a smaller counter", hotp("a", 7, 20), hotp("a", 3, 10), Counts{Unchanged: 1}, 7, 20, "Bank"},
+		{"newer copy with a smaller counter", hotp("a", 7, 10), func() account.Account { a := hotp("a", 3, 20); a.Issuer = "Renamed"; return a }(), Counts{Updated: 1}, 7, 20, "Renamed"},
+		{"newer copy with a larger counter", hotp("a", 7, 10), hotp("a", 9, 20), Counts{Updated: 1}, 9, 20, "Bank"},
+		{"older copy with another secret", hotp("a", 7, 20), func() account.Account { a := hotp("a", 12, 10); a.Secret = []byte("other"); return a }(), Counts{Unchanged: 1}, 7, 20, "Bank"},
+		{"newer copy with another secret", hotp("a", 7, 10), func() account.Account { a := hotp("a", 3, 20); a.Secret = []byte("other"); return a }(), Counts{Updated: 1}, 3, 20, "Bank"},
+	}
+	for _, tc := range cases {
+		got, c := Into([]account.Account{tc.local}, []account.Account{tc.source})
+		if c != tc.want || got[0].Counter != tc.counter || got[0].UpdatedAt != tc.updated || got[0].Issuer != tc.issuer {
+			t.Errorf("%s: counts %+v counter %d updated_at %d issuer %q, want %+v %d %d %q",
+				tc.name, c, got[0].Counter, got[0].UpdatedAt, got[0].Issuer, tc.want, tc.counter, tc.updated, tc.issuer)
+		}
+	}
+}
+
+func TestTwoWayCounterSettlesWithoutPingPong(t *testing.T) {
+	local, source := []account.Account{hotp("a", 5, 100)}, []account.Account{hotp("a", 7, 90)}
+	localOut, sourceOut, here, there := TwoWay(local, source)
+	if localOut[0].Counter != 7 || sourceOut[0].Counter != 7 || !here.Changed() || !there.Changed() {
+		t.Fatalf("first run: counters %d/%d changed %v/%v, want 7 on both sides and both written", localOut[0].Counter, sourceOut[0].Counter, here.Changed(), there.Changed())
+	}
+	_, _, here, there = TwoWay(localOut, sourceOut)
+	if here.Changed() || there.Changed() {
+		t.Fatalf("second run wrote again: %+v / %+v", here, there)
+	}
+}
+
 func ids(accts []account.Account) []string {
 	out := make([]string, len(accts))
 	for i, a := range accts {

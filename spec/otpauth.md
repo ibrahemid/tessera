@@ -5,6 +5,8 @@ Both cores MUST implement these identically. Vectors in `testvectors.json`.
 ## TOTP (RFC 6238)
 `T = floor((unixNow - T0) / period)`, T0 = 0, default period 30s. `code = HOTP(K, T)`. HMAC = SHA1 (default) | SHA256 | SHA512. Digits 6 (default) | 7 | 8, zero-padded. Remaining seconds = `period - (unixNow mod period)`.
 
+`unixNow` is whole seconds, rounded down, and MUST be in `0 ..= 2^63 - 1`; the step arithmetic is 64-bit signed and cannot overflow. A time before the epoch, or one beyond that range or not finite in a core whose clock is floating point, is refused with an error and produces no code, for TOTP and Steam alike. Algorithm names are matched after trimming white space, case-insensitively; Steam ignores the algorithm field.
+
 ## HOTP (RFC 4226)
 `HOTP(K, C) = Truncate(HMAC(K, C_8byte_bigendian))`. Dynamic truncation:
 ```
@@ -13,7 +15,7 @@ binCode = (HMAC[offset]&0x7f)<<24 | (HMAC[offset+1]&0xff)<<16
         | (HMAC[offset+2]&0xff)<<8 | (HMAC[offset+3]&0xff)
 code    = binCode mod 10^digits        // zero-padded
 ```
-Counter persisted; incremented on copy/view (CLI flag controls). The stored counter is in `0 ..= 2^63 - 2`: a parser MUST reject a larger value, and an implementation MUST refuse to advance a counter that is already at the maximum instead of overflowing.
+Counter persisted; incremented on copy/view (CLI flag controls). The stored counter is in `0 ..= 2^63 - 2`: a parser MUST reject a larger value, and an implementation MUST refuse to advance a counter that is already at the maximum instead of overflowing, and MUST refuse to generate a code for a counter outside that range.
 
 ## Steam Guard
 RFC 6238 base (HMAC-SHA1, period 30, T0 0). Differences:
@@ -80,6 +82,10 @@ The label is a path component, not a query value: `+` there is a literal plus in
 
 Emit (export): label per the rules above, `issuer` param percent-encoded; secret base32 no-pad; include issuer param.
 
+### Error text (both cores MUST match)
+
+An error never repeats the `secret` parameter. A value an error quotes (the scheme, the type, an issuer, `algorithm`, `digits`, `period`, `counter`) is written with Go `strconv.Quote` rules over its bytes, so each byte of an invalid UTF-8 sequence is `\xNN`. A value longer than 16 bytes is cut after the last whole character that fits in 16 bytes (a byte of an invalid sequence counts as one character), followed by `…` and its length in bytes: `"0otpauth://hotp/"… (43 bytes)`.
+
 ## otpauth-migration:// (Google Authenticator export)
 `otpauth-migration://offline?data=<URL-encoded base64 of protobuf>`. Decode: URL-decode -> base64-decode -> protobuf `MigrationPayload`.
 
@@ -105,6 +111,8 @@ Strictness (both cores MUST match; the Go core is the reference):
 - A TOTP entry whose issuer is `Steam` (case-insensitive) becomes a Steam account. An HOTP entry never does.
 - `counter` follows the range under § HOTP; a negative or larger value rejects the entry.
 - Protobuf decoding is strict: a field with the wrong wire type, a varint longer than 10 bytes or whose tenth byte exceeds 1, and a length that runs past the end of the buffer each reject the payload. Lengths are compared as unsigned 64-bit values before any narrowing.
+- A host other than `offline` is refused without quoting it: `migration: unexpected host; the link must start with otpauth-migration://offline?`. The scheme is quoted as § Error text says.
+- A protobuf failure has a fixed text, whatever build of the protobuf library reads it: `unexpected EOF`, `proto: invalid field number`, `proto: variable length integer overflow`, `proto: cannot parse reserved wire type`, `proto: mismatching end group marker`, and `proto: parse error` for any other failure, the nesting limit included.
 
 ## Input detection
 Both cores classify a text payload by the first matching rule, in order (Go `internal/detect`, Swift `InputDetect`, byte-identical):
@@ -253,7 +261,7 @@ Canonical classification cases. Both suites port these; `kind` is one of `migrat
 ## Export formats
 The CLI writes other apps' import formats. The CLI and the app write identical bytes for each format, except the QR image encoding of otpauth-migration, whose payload URI is identical. These are third-party files: the canonical-JSON rules in `vault-format.md` do NOT apply, JSON is indented two spaces with a trailing newline, and account order is vault order.
 
-- **otpauth-migration** — payload per § otpauth-migration://. Eligible accounts only: type `totp` or `hotp`, algorithm SHA1/SHA256/SHA512, digits 6 or 8, and period 30 for `totp`. Steam accounts, 7-digit accounts and non-30s periods have no representation in `OtpParameters` and are reported as skipped, never downgraded. `OtpParameters` fields are emitted in ascending field number: `secret` raw bytes always; `name` as `issuer:account` when the issuer is non-empty, else the account alone, omitted when both are empty; `issuer` omitted when empty; `algorithm`, `digits` and `type` always; `counter` only for hotp. The payload carries every `otp_parameters` submessage first, then `version = 1`, `batch_size`, `batch_index` (0-based) and `batch_id`, one signed int32 shared by every batch of a single export. Batches hold at most 10 accounts and at most 800 payload bytes, filled greedily in vault order. The URI is `otpauth-migration://offline?data=` + percent-encoded standard base64.
+- **otpauth-migration** — payload per § otpauth-migration://. Eligible accounts only: type `totp` or `hotp`, algorithm SHA1/SHA256/SHA512, digits 6 or 8, and period 30 for `totp`. Steam accounts, 7-digit accounts and non-30s periods have no representation in `OtpParameters` and are reported as skipped, never downgraded. An account that passes those checks with an empty secret is skipped with kind `empty_secret`. `OtpParameters` fields are emitted in ascending field number: `secret` raw bytes always; `name` as `issuer:account` when the issuer is non-empty, else the account alone, omitted when both are empty; `issuer` omitted when empty; `algorithm`, `digits` and `type` always; `counter` only for hotp. The payload carries every `otp_parameters` submessage first, then `version = 1`, `batch_size`, `batch_index` (0-based) and `batch_id`, one signed int32 shared by every batch of a single export. Batches hold at most 10 accounts and at most 800 payload bytes, filled greedily in vault order. The URI is `otpauth-migration://offline?data=` + percent-encoded standard base64.
 - **Aegis** — `version 1`, `header {"slots":null,"params":null}`, `db.version 3`; entries carry `type`/`uuid`/`name`/`issuer`/`note`/`favorite`/`icon`/`info`/`groups`; `info.secret` unpadded base32; `info.period` for totp and steam only; `info.counter` for hotp only. `db.groups` follows `db.entries`: one `{uuid,name}` per folder, `[]` with none; an entry's `groups` is `[<its folder's uuid>]`, or `[]` with no folder.
 - **2FAS** — `schemaVersion 4`, `services[].{name,secret,updatedAt,otp{link,label,account,issuer,digits,period,algorithm,tokenType,counter,source},order{position},groupId}`, then `groups[].{id,name,isExpanded,updatedAt}`: one group per folder, `[]` with none, `isExpanded` always `true`, `updatedAt` the latest `updated_at` of its accounts in milliseconds. A service's `groupId` is its folder's id. Optional keys are emitted with an explicit `null`.
 - **Bitwarden Authenticator** — `{encrypted:false, folders:[{id,name}], items:[{id,name,folderId,organizationId,collectionIds,notes,type:1,favorite,login:{totp}}]}`; `totp` is always a full `otpauth://` URI (`otpauth://steam/...` for Steam). `folders` holds one entry per folder and is left out when no account has one; an item's `folderId` is its folder's id, else `null`.

@@ -124,7 +124,7 @@ final class AccountFormatTests: XCTestCase {
             let a = Account(id: "h", type: .hotp, issuer: "", account: "x", secret: Data("12345678901234567890".utf8),
                             counter: counter)
             XCTAssertEqual(message { _ = try OTP.code(for: a, at: Date()) },
-                           "account: account \"h\": counter outside 0..9223372036854775806, got \(counter)")
+                           "account \"h\": counter outside 0..9223372036854775806, got \(counter)")
         }
     }
 
@@ -171,20 +171,40 @@ final class AccountFormatTests: XCTestCase {
         var a = account("x\"y")
         a.deletedAt = -1
         XCTAssertEqual(message { try a.validate() },
-                       "account: account \"x\\\"y\": deleted_at must not be negative, got -1")
+                       "account \"x\\\"y\": deleted_at must not be negative, got -1")
         a.deletedAt = 0
         a.order = -2
         XCTAssertEqual(message { try a.validate() },
-                       "account: account \"x\\\"y\": order must not be negative, got -2")
+                       "account \"x\\\"y\": order must not be negative, got -2")
         a.order = 0
         XCTAssertNoThrow(try a.validate())
     }
 
-    func testDecodeRefusesUnknownOrMissingType() {
-        XCTAssertEqual(message { _ = try CanonicalJSON.decode(Data(#"[{"id":"1","type":"push"}]"#.utf8)) },
-                       "account: account \"1\": invalid type \"push\"")
-        XCTAssertEqual(message { _ = try CanonicalJSON.decode(Data(#"[{"id":"1"}]"#.utf8)) },
-                       "account: account \"1\": invalid type \"\"")
+    func testDecodeKeepsUnknownOrMissingTypeAndValidateRefusesIt() throws {
+        let push = try CanonicalJSON.decode(Data(#"[{"id":"1","type":"push"}]"#.utf8))
+        XCTAssertEqual(push.map(\.type), [.unrecognized("push")])
+        XCTAssertEqual(message { try push[0].validate() }, "account \"1\": invalid type \"push\"")
+        let missing = try CanonicalJSON.decode(Data(#"[{"id":"1"}]"#.utf8))
+        XCTAssertEqual(missing.map(\.type), [.unrecognized("")])
+        XCTAssertEqual(message { try missing[0].validate() }, "account \"1\": invalid type \"\"")
+    }
+
+    func testValidateChecksTypeBeforeID() {
+        let a = Account(id: "", type: .unrecognized("push"), issuer: "", account: "", secret: Data())
+        XCTAssertEqual(message { try a.validate() }, "account \"\": invalid type \"push\"")
+        let b = Account(id: "", type: .totp, issuer: "", account: "", secret: Data())
+        XCTAssertEqual(message { try b.validate() }, "account: empty id")
+    }
+
+    func testOTPTypeRawValuesCompareBytes() {
+        XCTAssertEqual(OTPType(rawValue: "totp"), .totp)
+        XCTAssertEqual(OTPType(rawValue: "hotp"), .hotp)
+        XCTAssertEqual(OTPType(rawValue: "steam"), .steam)
+        XCTAssertNil(OTPType(rawValue: "TOTP"))
+        XCTAssertNil(OTPType(rawValue: ""))
+        XCTAssertEqual(OTPType.unrecognized("future-otp").rawValue, "future-otp")
+        XCTAssertFalse(OTPType.unrecognized("totp\u{301}").isRecognized)
+        XCTAssertTrue(OTPType.steam.isRecognized)
     }
 
     func testHandleUniquenessMessagesQuoteLikeGo() {
@@ -193,10 +213,10 @@ final class AccountFormatTests: XCTestCase {
         var b = account("2")
         b.handle = "gh"
         XCTAssertEqual(message { try Handles.checkUniqueness([a, b]) },
-                       "account: duplicate handle \"gh\" on accounts \"1\" and \"2\"")
+                       "duplicate handle \"gh\" on accounts \"1\" and \"2\"")
         b.handle = "Bad Handle"
         XCTAssertEqual(message { try Handles.checkUniqueness([a, b]) },
-                       "account: account \"2\": invalid handle \"Bad Handle\"")
+                       "account \"2\": invalid handle \"Bad Handle\"")
     }
 
     func testPayloadErrorDescriptions() {
@@ -258,6 +278,25 @@ final class AccountFormatTests: XCTestCase {
         let viaInit = Account(id: "1", type: .totp, issuer: "", account: "", secret: Data("x".utf8),
                               extensions: a.extensions.reversed())
         XCTAssertEqual(viaInit.extensions, a.extensions)
+    }
+
+    func testFortyThousandExtensionKeysNormalizeInUnderASecond() throws {
+        let one = try value("1")
+        let fields = try (0..<40_000).map { try ExtensionField(key: "x_\($0)", value: one) }
+        let start = Date()
+        let a = Account(id: "1", type: .totp, issuer: "", account: "", secret: Data("x".utf8),
+                        extensions: fields + fields.prefix(1000))
+        XCTAssertLessThan(Date().timeIntervalSince(start), 1.0)
+        XCTAssertEqual(a.extensions.count, 40_000)
+        XCTAssertEqual(a.extensions.first?.key, "x_0")
+    }
+
+    func testExtensionKeysThatAreCanonicallyEquivalentStayApart() throws {
+        var a = account("1")
+        a.extensions = [try ExtensionField(key: "x_\u{E9}", value: value("1")),
+                        try ExtensionField(key: "x_e\u{301}", value: value("2"))]
+        XCTAssertEqual(a.extensions.map { Array($0.key.utf8) },
+                       [Array("x_e\u{301}".utf8), Array("x_\u{E9}".utf8)])
     }
 
     func testExtensionsRoundTripThroughPayload() throws {

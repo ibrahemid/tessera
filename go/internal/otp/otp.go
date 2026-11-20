@@ -11,12 +11,17 @@ import (
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash"
 	"math"
 	"strings"
 	"time"
 )
+
+// ErrTimeRange reports a clock outside the times a code can be generated for:
+// before the Unix epoch.
+var ErrTimeRange = errors.New("otp: the system clock is out of range; set the correct date and time")
 
 // Algorithm selects the HMAC hash used by HOTP/TOTP.
 type Algorithm int
@@ -100,8 +105,19 @@ func TOTP(secret []byte, t time.Time, period, digits int, alg Algorithm) (string
 	if period <= 0 {
 		return "", fmt.Errorf("otp: period must be positive, got %d", period)
 	}
-	counter := uint64(t.Unix() / int64(period))
-	return HOTP(secret, counter, digits, alg)
+	step, err := timeStep(t, int64(period))
+	if err != nil {
+		return "", err
+	}
+	return HOTP(secret, step, digits, alg)
+}
+
+func timeStep(t time.Time, period int64) (uint64, error) {
+	unix := t.Unix()
+	if unix < 0 {
+		return 0, ErrTimeRange
+	}
+	return uint64(unix / period), nil
 }
 
 // RemainingSeconds returns how many seconds the current TOTP step is still valid.
@@ -128,8 +144,11 @@ func Steam(secret []byte, t time.Time) (string, error) {
 	if len(secret) == 0 {
 		return "", fmt.Errorf("otp: empty secret")
 	}
-	counter := uint64(t.Unix() / 30)
-	full := truncate(dt(secret, counter, SHA1))
+	step, err := timeStep(t, 30)
+	if err != nil {
+		return "", err
+	}
+	full := truncate(dt(secret, step, SHA1))
 	var b [5]byte
 	for i := 0; i < 5; i++ {
 		b[i] = steamAlphabet[full%uint32(len(steamAlphabet))]

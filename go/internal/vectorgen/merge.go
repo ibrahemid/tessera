@@ -67,6 +67,19 @@ func mergeCases() []mergeCase {
 	editedInTrash := trashed(mail, 2000)
 	editedInTrash.Note = "edited in the Trash"
 
+	counterLocal := mergeAccount("04", "Bank", "token", "tok", 1000)
+	counterLocal.Type, counterLocal.Counter = account.HOTP, 7
+	counterOlder := touched(counterLocal, 500)
+	counterOlder.Counter = 12
+	counterNewer := touched(counterLocal, 2000)
+	counterNewer.Issuer, counterNewer.Counter = "Bank Renamed", 3
+	counterOtherSecret := counterOlder
+	counterOtherSecret.Secret = []byte("another hotp secret!")
+
+	pipeLeft := mergeAccount("05", "a|b", "c", "pa", 1000)
+	pipeRight := mergeAccount("06", "a", "b|c", "pb", 1000)
+	pipeRight.Secret = pipeLeft.Secret
+
 	return []mergeCase{
 		{
 			name:   "strictly-newer-wins-both-ways",
@@ -117,6 +130,26 @@ func mergeCases() []mergeCase {
 			name:   "source-receives-the-pre-run-local",
 			local:  []account.Account{mail},
 			source: []account.Account{otherBank},
+		},
+		{
+			name:   "hotp-counter-kept-from-older-copy",
+			local:  []account.Account{counterLocal},
+			source: []account.Account{counterOlder},
+		},
+		{
+			name:   "hotp-counter-kept-under-newer-copy",
+			local:  []account.Account{counterLocal},
+			source: []account.Account{counterNewer},
+		},
+		{
+			name:   "hotp-counter-needs-equal-secret",
+			local:  []account.Account{counterLocal},
+			source: []account.Account{counterOtherSecret},
+		},
+		{
+			name:   "content-fields-compared-separately",
+			local:  []account.Account{pipeLeft},
+			source: []account.Account{pipeRight},
 		},
 	}
 }

@@ -27,10 +27,24 @@ func For(a account.Account, t time.Time) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		if a.Counter < 0 || a.Counter > account.MaxCounter {
+			return "", fmt.Errorf("account %q: %w, got %d", a.ID, account.ErrCounterRange, a.Counter)
+		}
 		return otp.HOTP(a.Secret, uint64(a.Counter), a.Digits, alg)
 	default:
-		return "", fmt.Errorf("code: unknown account type %q", a.Type)
+		return "", &UnknownTypeError{ID: a.ID, Type: a.Type}
 	}
+}
+
+// UnknownTypeError reports an account whose type this build generates no code
+// for: a type from a newer Tessera, or none at all.
+type UnknownTypeError struct {
+	ID   string
+	Type account.Type
+}
+
+func (e *UnknownTypeError) Error() string {
+	return fmt.Sprintf("account %q: unknown type %q; update Tessera to generate its codes", e.ID, string(e.Type))
 }
 
 // Remaining returns the seconds left in the current time-step (0 for HOTP).

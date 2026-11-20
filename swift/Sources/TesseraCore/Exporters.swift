@@ -54,6 +54,7 @@ public enum Exporters {
         /// The note starts like a spreadsheet formula, so the account is written
         /// without its note.
         case formulaNote = "formula_note"
+        case emptySecret = "empty_secret"
     }
 
     /// One account, or one field of it, a format cannot carry. `label` never
@@ -113,22 +114,6 @@ public enum Exporters {
         }
     }
 
-    /// A rendering failure. Carries no account data.
-    public enum ExportError: Error, Equatable, Sendable, CustomStringConvertible, LocalizedError {
-        /// The transfer encoder skipped a different set of accounts than the
-        /// google-migration skip rules name.
-        case transferSkipsDisagree
-
-        public var description: String {
-            switch self {
-            case .transferSkipsDisagree:
-                return "google-migration: the transfer encoder and the skip rules disagree on which accounts to leave out"
-            }
-        }
-
-        public var errorDescription: String? { description }
-    }
-
     /// Renders `accounts`, in vault order, as `format`. `batchID` is the id
     /// every transfer batch of a google-migration export shares; the other
     /// formats ignore it.
@@ -147,7 +132,7 @@ public enum Exporters {
         case .bitwarden:
             return Rendered(format: format, output: .files([renderBitwarden(accounts)]), skipped: [])
         case .googleMigration:
-            let (codes, skipped) = try renderTransferCodes(accounts, batchID: batchID)
+            let (codes, skipped) = renderTransferCodes(accounts, batchID: batchID)
             return Rendered(format: format, output: .transferCodes(codes), skipped: skipped)
         case .proton:
             let (file, skipped) = renderProton(accounts)

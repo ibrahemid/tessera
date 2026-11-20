@@ -13,11 +13,14 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf16"
 	"unicode/utf8"
 
 	"github.com/ibrahemid/tessera/go/internal/account"
+	"github.com/ibrahemid/tessera/go/internal/code"
 	"github.com/ibrahemid/tessera/go/internal/otp"
+	"github.com/ibrahemid/tessera/go/internal/vault"
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/chacha20poly1305"
 	"google.golang.org/protobuf/encoding/protowire"
@@ -175,6 +178,8 @@ func v2Blocks() []member {
 		{"rotation_extra_passphrase", rotationExtraPassphraseBlock()},
 		{"exports", exportsBlock()},
 		{"merge", mergeBlock()},
+		{"unknown_type", unknownTypeBlock()},
+		{"otp_time_range", otpTimeRangeBlock()},
 	}
 }
 
@@ -525,6 +530,16 @@ func envelopeStrictBlock() object {
 	}
 
 	preserve := env(good, seWrapObject().with("x_hint", "kept"), unknownWrap(1)).with("x_future", future)
+	separators := env(good.with("x_hint", "g\u2029h"), seWrapObject().with("x_hint", "e\u2028f"), unknownWrap(1).with("note", "c\u2029d")).with("x_note", "a\u2028b")
+	separatorsText := strings.NewReplacer(`\u2028`, "\u2028", `\u2029`, "\u2029").Replace(text(separators))
+	separatorsEnv, err := vault.Unmarshal([]byte(separatorsText))
+	if err != nil {
+		panic(err)
+	}
+	separatorsOut, err := separatorsEnv.Marshal()
+	if err != nil {
+		panic(err)
+	}
 	return object{
 		{"_note", "error classes: corrupt (malformed, duplicate, non-canonical or out-of-bounds input), auth_failed (no passphrase wrap or payload authenticates), no_wraps, too_many_wraps, unsupported_version, unsupported_aead, app_only (secure-enclave wraps only), no_passphrase_wrap (no passphrase or secure-enclave wrap)"},
 		{"passphrase", v2Passphrase},
@@ -535,6 +550,10 @@ func envelopeStrictBlock() object {
 			{"envelope_json", text(preserve)},
 			{"unknown_top_level", []string{"x_future"}},
 			{"unknown_wrap_types", []string{"hardware-key"}},
+		}},
+		{"line_separators", object{
+			{"envelope_json", separatorsText},
+			{"expected_envelope_json", string(separatorsOut)},
 		}},
 	}
 }
@@ -828,9 +847,19 @@ func hotpCounterRangeBlock() object {
 		advance = append(advance, object{{"from", c}, {"to", c + 1}})
 	}
 	secret := []byte("12345678901234567890")
-	code, err := otp.HOTP(secret, uint64(account.MaxCounter), 6, otp.SHA1)
+	atMax, err := otp.HOTP(secret, uint64(account.MaxCounter), 6, otp.SHA1)
 	if err != nil {
 		panic(err)
+	}
+	refused := make([]object, 0, 2)
+	for _, c := range []int64{-1, math.MaxInt64} {
+		a := hotpAccount(0)
+		a.Counter = c
+		_, err := code.For(a, time.Unix(v2Created, 0))
+		if !errors.Is(err, account.ErrCounterRange) {
+			panic(fmt.Sprintf("vectorgen: code at counter %d: %v", c, err))
+		}
+		refused = append(refused, object{{"counter", c}, {"error", "counter_range"}, {"message", err.Error()}})
 	}
 	return object{
 		{"max_counter", account.MaxCounter},
@@ -840,8 +869,75 @@ func hotpCounterRangeBlock() object {
 		{"advance_refused", []int64{account.MaxCounter}},
 		{"code_at_max", object{
 			{"secret_b64", b64(secret)}, {"counter", account.MaxCounter}, {"digits", 6},
-			{"algorithm", "SHA1"}, {"code", code},
+			{"algorithm", "SHA1"}, {"code", atMax},
 		}},
+		{"code_refused", object{
+			{"_note", "the payload_accept account with each counter; code generation is refused"},
+			{"cases", refused},
+		}},
+	}
+}
+
+func unknownTypeBlock() object {
+	future := accountObject(v2Account("60")).set("type", "future-otp").with("x_future", object{{"kept", true}})
+	missing := accountObject(v2Account("61")).drop("type")
+	payload := string(marshal([]object{future, missing}))
+	accts, err := account.ParseCanonicalJSON([]byte(payload))
+	if err != nil {
+		panic(err)
+	}
+	cases := make([]object, 0, len(accts))
+	for _, a := range accts {
+		verr := a.Validate()
+		_, cerr := code.For(a, time.Unix(v2Created, 0))
+		var unknown *code.UnknownTypeError
+		if verr == nil || !errors.As(cerr, &unknown) {
+			panic(fmt.Sprintf("vectorgen: account %q of type %q: validate %v, code %v", a.ID, a.Type, verr, cerr))
+		}
+		cases = append(cases, object{
+			{"id", a.ID}, {"type", string(a.Type)},
+			{"validate_error", verr.Error()}, {"code_error", "unknown_type"}, {"code_message", cerr.Error()},
+		})
+	}
+	return object{
+		{"_note", "the payload decodes; re-encoding gives expected_canonical_json (a missing type is written as an empty string); validation and code generation refuse each account"},
+		{"payload", payload},
+		{"expected_canonical_json", string(mustCanonical(accts...))},
+		{"accounts", cases},
+	}
+}
+
+func otpTimeRangeBlock() object {
+	secret := []byte("12345678901234567890")
+	accepted := make([]object, 0, 5)
+	for _, at := range []int64{0, 29, 30, v2Created, 9223372036854774784} {
+		t := time.Unix(at, 0)
+		totp, err := otp.TOTP(secret, t, 30, 6, otp.SHA1)
+		if err != nil {
+			panic(err)
+		}
+		steam, err := otp.Steam(secret, t)
+		if err != nil {
+			panic(err)
+		}
+		accepted = append(accepted, object{{"time", at}, {"totp", totp}, {"steam", steam}})
+	}
+	refused := []int64{-1, -30, math.MinInt64}
+	for _, at := range refused {
+		if _, err := otp.TOTP(secret, time.Unix(at, 0), 30, 6, otp.SHA1); !errors.Is(err, otp.ErrTimeRange) {
+			panic(fmt.Sprintf("vectorgen: totp at %d: %v", at, err))
+		}
+		if _, err := otp.Steam(secret, time.Unix(at, 0)); !errors.Is(err, otp.ErrTimeRange) {
+			panic(fmt.Sprintf("vectorgen: steam at %d: %v", at, err))
+		}
+	}
+	return object{
+		{"_note", "time is Unix seconds; 9223372036854774784 is the largest value both an int64 and a double hold exactly; each refused time gives error time_range for TOTP and Steam"},
+		{"secret_b64", b64(secret)}, {"algorithm", "SHA1"}, {"digits", 6}, {"period", 30},
+		{"accepted", accepted},
+		{"refused", refused},
+		{"error", "time_range"},
+		{"message", otp.ErrTimeRange.Error()},
 	}
 }
 
@@ -910,6 +1006,7 @@ func rotationExtraPassphraseBlock() object {
 		passWrap(dek, "another passphrase that also opens", v2LowCost, pattern(16, 0x90), pattern(24, 0x3a)),
 		passWrap(dek, v2Passphrase, v2LowCost, v2Salt, pattern(24, 0x39)),
 		seWrapObject(),
+		passWrap(dek, "a third passphrase that also opens", v2LowCost, pattern(16, 0x91), pattern(24, 0x3b)),
 		unknownWrap(1),
 	}
 	env := envelopeObject(2, wraps, nonce, xseal(dek, nonce, canonical)).with("x_future", object{{"note", "kept"}})

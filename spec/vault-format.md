@@ -36,7 +36,7 @@ The envelope is untrusted input until the payload authenticates. Both cores MUST
 - Every `b64` field is canonical standard base64 (see *Base64*): the decoded bytes MUST re-encode to the same string. Whitespace and line breaks inside a value are rejected.
 - Nonces are exactly 24 bytes.
 - Arrays and objects nest at most 64 levels, the envelope object being level 1. A deeper file is rejected as corrupt before anything else is read from it.
-- Keys the implementation does not recognize, at the top level or inside a wrap, and wraps whose `type` it does not recognize, are kept and written back unchanged. A writer replaces or removes only the wraps it owns.
+- Keys the implementation does not recognize, at the top level or inside a wrap, and wraps whose `type` it does not recognize, are kept and written back unchanged apart from insignificant whitespace, with U+2028 and U+2029 written as `\u2028` and `\u2029` wherever they occur in a string (canonical JSON rule 3). The same applies to the members of every wrap a writer did not create. A writer replaces or removes only the wraps it owns.
 
 - `wraps` MUST be non-empty on disk (and at most 16). An implementation may hold a zero-wrap envelope in memory while assembling one (Swift `Envelope.createUnwrapped`), but MUST attach at least one wrap before persisting; a zero-wrap file is permanently unopenable.
 - `aead` is always `xchacha20poly1305`. Nonces are 24 bytes, fresh per encryption (192-bit space removes nonce-reuse risk). `ct` = ciphertext with the 16-byte Poly1305 tag appended (libsodium/`chacha20poly1305` combined-mode layout).
@@ -53,7 +53,7 @@ The envelope is untrusted input until the payload authenticates. Both cores MUST
   "ct":    "<seal(DEK), b64>"
 }
 ```
-`wrapKey = argon2id(passphrase_utf8, salt, t, m, p, keyLen=32)`. `ct = XChaCha20-Poly1305(seal(DEK, wrapKey, nonce))`. `params.v` is the param-version of the writer.
+`wrapKey = argon2id(passphrase_utf8, salt, t, m, p, keyLen=32)`. A passphrase MUST be valid UTF-8: creating a wrap from one that is not is refused. `ct = XChaCha20-Poly1305(seal(DEK, wrapKey, nonce))`. `params.v` is the param-version of the writer.
 
 Checks before any derivation runs (a wrap that fails one is corrupt and is skipped; if no passphrase wrap survives, the error names the first failed check):
 
@@ -146,6 +146,10 @@ This canonical form is the SEALED-BEFORE-ENCRYPTION bytes. It is NOT a stable on
 
 **Extension fields (forward compatibility).** A reader MUST keep every account key it does not recognize and write it back unchanged, in canonical form, sorted among the known keys. Extension values are canonical JSON values: string, integer (rule 4), boolean, null, array, or object, with duplicate keys rejected at every depth. An account that carries an extension field makes the vault version 2. The payload is AEAD-authenticated, so carrying an unknown field after a successful decrypt is safe. Implementations before 1.2.0 dropped unknown fields on write; that is why any key outside the v1 set forces version 2, which those implementations refuse to open. A change that an older reader could not carry safely (one that alters the meaning of existing fields) still needs a new version number.
 
+**Unrecognized type.** An account whose `type` is missing, or is a string other than `totp`, `hotp` and `steam`, still decodes, and the vault opens. Its `type` is kept as read and re-encodes unchanged (a missing `type` re-encodes as `""`). No code is generated for it. A write that changes only the wraps leaves the payload as it is, so the account survives byte for byte. Every write that validates the account list (any change to the accounts, a DEK rotation) is refused with the validation error, which names the account: `account "<id>": invalid type "<type>"`.
+
+**Validation.** Before a write, each account is checked in this order and the first failure is reported: `type`, `id`, `secret` (non-empty), `algorithm`, `digits` (6 to 8, except Steam), `period` (positive, except HOTP), `counter`, `handle`, `deleted_at`, `order`, extension fields. An empty or absent secret fails validation, so a writer never writes one.
+
 A writer never invents keys: it emits the fields this spec defines plus the extension fields it read.
 
 ## Trash
@@ -156,7 +160,7 @@ A **trashed** account has `deleted_at > 0`.
 - A trashed account is excluded from code generation, lists, search, account resolution, exports, and duplicate detection. It is reachable only through the Trash views (`tess trash`, the app's Trash).
 - It keeps its `handle`. Handle uniqueness covers trashed accounts, so a restore never collides.
 - Nothing purges automatically. Emptying the Trash is an explicit action on both surfaces.
-- Merging two vaults needs no extra rule: where an account exists on both sides the copy with the newer `updated_at` wins, and that copy carries its `deleted_at`. After a purge the other vault's copy returns on the next merge and is reported as added.
+- Merging two vaults needs no rule of its own for the Trash: where an account exists on both sides the copy with the newer `updated_at` wins, and that copy carries its `deleted_at`. After a purge the other vault's copy returns on the next merge and is reported as added.
 
 ## Display order
 
@@ -183,13 +187,15 @@ A **handle** is a short, unique, user-typeable identifier for an account (e.g. `
 
 Deterministic; both cores MUST produce identical handles for identical input.
 
-**Assignment order.** When multiple accounts lack a handle, assign them in ascending `created_at`, then ascending `id` (lexicographic). This makes migration order-independent of vault storage order.
+**Assignment order.** When multiple accounts lack a handle, assign them in ascending `created_at`, then ascending `id` compared by UTF-8 bytes. This makes migration order-independent of vault storage order.
 
 For each account needing a handle:
 
-1. **Base source string.** Normalize the `issuer`: lowercase, keep only `[a-z0-9 ]` (drop everything else), collapse runs of whitespace to a single space, trim. If the result is empty, normalize the local part of `account` (the substring before the first `@`) the same way. If that is also empty, the base is the literal `acct` used **verbatim** (skip step 2 — do NOT re-derive it to first-two-chars; the base is `acct`, not `ac`), and proceed to step 3.
+1. **Base source string.** Normalize the `issuer`: lowercase, keep only `[a-z0-9 ]` (drop everything else), collapse runs of whitespace to a single space, trim. If the result is empty, normalize the local part of `account` (the bytes before the first `@` byte) the same way. If that is also empty, the base is the literal `acct` used **verbatim** (skip step 2 — do NOT re-derive it to first-two-chars; the base is `acct`, not `ac`), and proceed to step 3.
 2. **Base.** Split the base source on spaces into words. A single word yields its first two characters (or its one character, if the word is a single char). Two or more words yield the first character of each of the first two words. If the resulting base begins with a digit, prefix it with `x`.
 3. **Uniqueness.** If the bare base is not already taken by any existing handle in the vault, assign it. Otherwise assign `base` + `N`, where `N` is the smallest integer ≥ 2 such that `base`+`N` is not taken by ANY existing handle (including original and user-edited ones). Each newly assigned handle immediately counts as taken for the accounts assigned after it. Existing handles are NEVER renumbered when accounts are added or removed.
+
+Lowercasing, here and wherever this spec compares text case-insensitively, is the simple per-scalar mapping of Unicode 17.0.0 (Go `unicode.ToLower`); `case_mapping.json` pins it for every scalar.
 
 Examples: issuer `ACME` → `ac`; issuer `GitHub` (single word, first two chars) → `gi`; issuer `Google Cloud` → `gc`; issuer `1Password` (base `1p`, digit-leading) → `x1p`; empty issuer, account `alice@example.com` → local part `alice` → `al`; empty issuer and empty account → `acct`. A second `GitHub` when `gi` is taken → `gi2`; a third → `gi3`; if a user already edited some handle to `gi2`, the auto-assigned third `GitHub` skips to `gi3`.
 
@@ -229,9 +235,11 @@ Every writer, on every write:
 
 A merge folds the accounts of a source vault into a destination list. Account identity is the `id`. Each source account, in source order, lands in exactly one count:
 
-1. **Same `id`, equal or older `updated_at`:** nothing changes. Counted as unchanged.
-2. **Same `id`, strictly newer `updated_at`:** the source copy is to replace the destination copy, `deleted_at` included, so a trash or a restore carries over. The destination handle is kept; the incoming handle is used only when the destination copy has none. The copy is validated with that handle first; one that fails validation is not applied and is counted as invalid. Otherwise it replaces the destination copy and is counted as trashed when the destination copy was live and the new copy is in the Trash, and as updated in every other case (a restore, or a newer copy on the same side of the Trash).
-3. **New `id`, live, and a live destination account has the same content** (type, issuer and account name compared case-insensitively, and the secret bytes): not added. Counted as duplicate. A trashed account is never a duplicate and never makes one. Accounts added or replaced earlier in the same merge count as destination accounts.
+**HOTP counters never move backwards.** When both copies of an `id` are `hotp` with equal secret bytes, the result carries the larger of the two counters, whichever copy wins.
+
+1. **Same `id`, equal or older `updated_at`:** the destination copy stays. When the HOTP counter rule gives it a larger counter, it takes that counter, keeps its own `updated_at` (the larger of the two) and is counted as updated. Otherwise nothing changes and it is counted as unchanged.
+2. **Same `id`, strictly newer `updated_at`:** the source copy is to replace the destination copy, `deleted_at` included, so a trash or a restore carries over, with the counter the HOTP counter rule gives. The destination handle is kept; the incoming handle is used only when the destination copy has none. The copy is validated with that handle first; one that fails validation is not applied and is counted as invalid. Otherwise it replaces the destination copy and is counted as trashed when the destination copy was live and the new copy is in the Trash, and as updated in every other case (a restore, or a newer copy on the same side of the Trash).
+3. **New `id`, live, and a live destination account has the same content** (type, issuer and account name compared case-insensitively, and the secret bytes, each field on its own, so issuer `a|b` with account `c` differs from issuer `a` with account `b|c`): not added. Counted as duplicate. A trashed account is never a duplicate and never makes one. Accounts added or replaced earlier in the same merge count as destination accounts.
 4. **New `id` that fails account validation:** not added. Counted as invalid.
 5. **Otherwise:** appended. Counted as added.
 
@@ -250,7 +258,7 @@ Rotation generates a new random DEK, reseals the payload under it, and rebuilds 
 - A passphrase change rotates (`tess vault passwd`, the app's Change recovery passphrase). Without rotation, an old copy of the file plus the old passphrase would decrypt every later version of the vault.
 - `tess vault rekey` rotates and keeps the passphrase.
 - The legacy Secure Enclave migration rotates (see *Secure Enclave wrap*).
-- The caller re-creates every wrap it can: the passphrase wrap from the passphrase it was given, its own Secure Enclave wrap from a fresh key. A wrap it cannot re-create (the app's Secure Enclave wrap, from the CLI; a wrap type it does not know) is removed, because it would wrap the old DEK. The surface that lost its wrap adds a new one at its next passphrase unlock. The caller reports which wraps were removed.
+- The caller re-creates every wrap it can: the passphrase wrap from the passphrase it was given, its own Secure Enclave wrap from a fresh key. A wrap it cannot re-create (the app's Secure Enclave wrap, from the CLI; a wrap type it does not know) is removed, because it would wrap the old DEK. The surface that lost its wrap adds a new one at its next passphrase unlock. The caller reports the type of each removed wrap once, in the order of that type's first wrap in the file.
 - Rotation never proceeds if it would leave the vault with no wrap.
 - Adding an unlock method wraps the current DEK and does not rotate. Removing one deletes the wrap, and for a keychain-held Secure Enclave key also deletes the key item, which makes any copy of that wrap useless.
 
@@ -289,6 +297,8 @@ A backup folder is optional and configured per surface: `$TESSERA_BACKUP_DIR` (a
 - Empty issuer with an email account → base from the local part (e.g. issuer `""`, account `alice@example.com` → `al`).
 - Collision chain producing `base`, `base2`, `base3` from three accounts with the same base.
 - A user-edited handle occupying `base2` so the next auto-assignment skips to `base3` (proves auto-assign avoids taken handles and never renumbers).
+- An account `x@` + U+0301 + `y.com` with no issuer: the local part ends at the `@` byte, so the base is `x`.
+- Ids U+00E9 and `e` + U+0301 with equal `created_at`: the byte-smaller id (`e` + U+0301) is assigned first.
 
 ## Version 2 test vectors
 
@@ -306,4 +316,9 @@ A backup folder is optional and configured per surface: `$TESSERA_BACKUP_DIR` (a
 - Nesting at level 64 accepted and level 65 rejected, in an unknown envelope key and in an extension value.
 - `rotation_extra_passphrase`: a rotation of an envelope holding a second passphrase wrap, a Secure Enclave wrap and a wrap of unknown type. The result keeps one passphrase wrap under the new passphrase, reports the three removed wraps, keeps the unknown top-level key and opens to the expected canonical JSON.
 - `exports`: the vault in each format under *Export formats* in `otpauth.md`, byte for byte, with the accounts each format skips. The accounts include folders, tags, notes and names with characters from the escaping rules.
-- `merge`: the cases under *Merging vaults*.
+- `merge`: the cases under *Merging vaults*, including the HOTP counter rule on both paths and the field-by-field content comparison.
+- `unknown_type`: a payload with an account of unknown type and one without `type`, its canonical re-encoding, the validation error for each, and that no code is generated for either.
+- `otp_time_range`: TOTP and Steam codes at the epoch and at the largest time both cores represent exactly, and the refusal of times before the epoch.
+- `hotp_counter_range.code_refused`: no HOTP code for a counter outside `0..9223372036854775806`.
+- `envelope_strict.line_separators`: U+2028 and U+2029 in an unknown top-level key, an unknown wrap and an extra Secure Enclave wrap member, written back escaped.
+- `case_mapping.json`: the lowercase and uppercase mapping of every scalar that has one, with the Unicode version.

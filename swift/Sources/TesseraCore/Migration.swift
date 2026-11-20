@@ -5,16 +5,9 @@ import Foundation
 /// (no codegen) with the bounds, rejections and error text of the Go core.
 public enum Migration {
 
-    /// One account the transfer format cannot carry, and why. Carries no secret.
-    public struct Skipped: Equatable, Sendable {
-        public let label: String
-        public let reason: String
-
-        public init(label: String, reason: String) {
-            self.label = label
-            self.reason = reason
-        }
-    }
+    /// One account the transfer format cannot carry, why, and the kind of
+    /// reason. Carries no secret.
+    public typealias Skipped = Exporters.Skipped
 
     /// The batches of a transfer export: each payload is one QR code's
     /// MigrationPayload, and `uris[i]` is the link that encodes `payloads[i]`.
@@ -34,12 +27,11 @@ public enum Migration {
         }
         guard u.scheme == "otpauth-migration" else {
             throw AccountError.invalid(
-                "migration: not an otpauth-migration uri (scheme \(GoText.quote(u.scheme)))")
+                "migration: not an otpauth-migration uri (scheme \(GoText.quoteValue(u.scheme)))")
         }
-        let host = GoText.string(u.host)
-        guard GoText.equalFold(host, ascii: "offline") else {
+        guard GoText.equalFold(GoText.string(u.host), ascii: "offline") else {
             throw AccountError.invalid(
-                "migration: unexpected host \(GoText.quote(host)) (want \"offline\")")
+                "migration: unexpected host; the link must start with otpauth-migration://offline?")
         }
         guard let data = rawQueryValue(u.rawQuery, "data") else {
             throw AccountError.invalid("migration: missing data query parameter")
@@ -64,7 +56,7 @@ public enum Migration {
     /// Splits `accounts` into transfer batches: at most ten accounts and 800
     /// payload bytes each, every batch sharing `batchID`. Accounts the format
     /// cannot carry (Steam, MD5, a digit count other than 6 or 8, a TOTP period
-    /// other than 30 seconds) are listed in `skipped` instead.
+    /// other than 30 seconds, an empty secret) are listed in `skipped` instead.
     public static func export(_ accounts: [Account],
                               batchID: Int32 = Int32.random(in: .min ... .max)) -> Export {
         var encoded: [[UInt8]] = []
@@ -72,7 +64,8 @@ public enum Migration {
         for a in accounts {
             switch encodeOtpParameters(a) {
             case .success(let params): encoded.append(params)
-            case .failure(let reason): skipped.append(Skipped(label: label(a), reason: reason.message))
+            case .failure(let reason):
+                skipped.append(Skipped(label: Exporters.label(a), reason: reason.message, kind: reason.kind))
             }
         }
         let batches = partitionBatches(encoded)
@@ -100,14 +93,14 @@ public enum Migration {
     /// path-unescaped. A bad escape counts as absent.
     private static func rawQueryValue(_ rawQuery: [UInt8], _ name: String) -> [UInt8]? {
         let key = Array(name.utf8)
-        var rest = rawQuery
+        var rest = rawQuery[...]
         while !rest.isEmpty {
             let (pair, after, _) = GoURL.cut(rest, UInt8(ascii: "&"))
             rest = after
             if pair.isEmpty { continue }
             let (k, v, _) = GoURL.cut(pair, UInt8(ascii: "="))
-            if k != key { continue }
-            return try? GoURL.unescape(v, .pathSegment)
+            if !k.elementsEqual(key) { continue }
+            return try? GoURL.unescape(Array(v), .pathSegment)
         }
         return nil
     }
@@ -290,14 +283,18 @@ public enum Migration {
 
     // MARK: - Writing
 
-    private struct SkipReason: Error { let message: String }
+    private struct SkipReason: Error {
+        let message: String
+        let kind: Exporters.SkipKind
+    }
 
     private static func encodeOtpParameters(_ a: Account) -> Result<[UInt8], SkipReason> {
         let typ: UInt64
         switch a.type {
         case .totp: typ = 2
         case .hotp: typ = 1
-        case .steam: return .failure(SkipReason(message: "Google Authenticator has no Steam entry type"))
+        case .steam, .unrecognized:
+            return .failure(SkipReason(message: "Google Authenticator has no Steam entry type", kind: .unsupportedType))
         }
         let alg: UInt64
         switch a.algorithm {
@@ -305,7 +302,8 @@ public enum Migration {
         case "SHA256": alg = 2
         case "SHA512": alg = 3
         default:
-            return .failure(SkipReason(message: "Google Authenticator does not store the \(a.algorithm) algorithm"))
+            return .failure(SkipReason(message: "Google Authenticator does not store the \(a.algorithm) algorithm",
+                                       kind: .unsupportedAlgorithm))
         }
         let digits: UInt64
         switch a.digits {
@@ -313,11 +311,16 @@ public enum Migration {
         case 8: digits = 2
         default:
             return .failure(SkipReason(
-                message: "Google Authenticator stores only 6- and 8-digit codes, this one has \(a.digits)"))
+                message: "Google Authenticator stores only 6- and 8-digit codes, this one has \(a.digits)",
+                kind: .unsupportedDigits))
         }
         if a.type == .totp && a.period != 30 {
             return .failure(SkipReason(
-                message: "Google Authenticator stores only 30-second codes, this one uses \(a.period)s"))
+                message: "Google Authenticator stores only 30-second codes, this one uses \(a.period)s",
+                kind: .unsupportedPeriod))
+        }
+        if a.secret.isEmpty {
+            return .failure(SkipReason(message: "the account has no secret", kind: .emptySecret))
         }
         var b: [UInt8] = []
         Wire.appendTag(&b, 1, Wire.bytesType)
@@ -342,15 +345,6 @@ public enum Migration {
             Wire.appendVarint(&b, UInt64(bitPattern: a.counter))
         }
         return .success(b)
-    }
-
-    private static func label(_ a: Account) -> String {
-        switch (a.issuer.isEmpty, a.account.isEmpty) {
-        case (false, false): return "\(a.issuer) (\(a.account))"
-        case (false, true): return a.issuer
-        case (true, false): return a.account
-        case (true, true): return "unnamed account"
-        }
     }
 
     private static func partitionBatches(_ encoded: [[UInt8]]) -> [[[UInt8]]] {
