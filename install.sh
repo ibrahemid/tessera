@@ -119,9 +119,11 @@ verify_checksum() {
 }
 
 # verify_signature checks checksums.txt against the Sigstore bundle the release
-# workflow published for this tag. Releases before FIRST_SIGNED_VERSION have no
-# bundle: they install on their checksum alone, and only when pinned with
-# TESS_VERSION, so a newly published old-numbered release cannot pass as latest.
+# workflow published for this tag. Without cosign, every release installs on
+# its checksum alone and the script says so. Releases before
+# FIRST_SIGNED_VERSION have no bundle; with cosign present, one installs only
+# when pinned with TESS_VERSION, so a newly published old-numbered release
+# cannot pass as latest.
 verify_signature() {
 	version="$1"
 	base_url="$2"
