@@ -134,6 +134,19 @@ public struct VaultWrap: Sendable {
         return PassphraseMaterial(salt: saltBytes, params: p, nonce: n, ct: c)
     }
 
+    /// Same type and same value in every field, `kdf` included. Wraps of types
+    /// this version does not define compare as written.
+    public func isSameWrap(as other: VaultWrap) -> Bool {
+        guard Envelope.bytesEqual(type, other.type) else { return false }
+        guard Envelope.bytesEqual(type, Envelope.passphraseType) || Envelope.bytesEqual(type, Envelope.secureEnclaveType) else {
+            return marshal() == other.marshal()
+        }
+        return Envelope.bytesEqual(kdf ?? "", other.kdf ?? "") && params == other.params
+            && Envelope.bytesEqual(salt ?? "", other.salt ?? "")
+            && Envelope.bytesEqual(se_key ?? "", other.se_key ?? "")
+            && Envelope.bytesEqual(nonce, other.nonce) && Envelope.bytesEqual(ct, other.ct)
+    }
+
     func marshal() -> [UInt8] {
         if let raw { return raw }
         var o = JSONObjectWriter()
@@ -384,6 +397,14 @@ public struct Envelope: Sendable {
         try unwrapWithPassphrase(passphrase, argon2: argon2).dek
     }
 
+    /// Recover the raw DEK via a passphrase wrap and name the wrap that opened
+    /// by its `salt`, leaving the envelope unchanged.
+    public func recoverDEKAndSalt(passphrase: String, argon2: Argon2idProvider) throws -> (dek: Data, salt: String) {
+        let (dek, index) = try unwrapWithPassphrase(passphrase, argon2: argon2)
+        guard let salt = wraps[index].salt else { throw VaultError.corrupt }
+        return (dek, salt)
+    }
+
     /// Recover the raw DEK via a passphrase wrap. A wrap whose argon2 cost is
     /// below the default is replaced by a default-cost wrap under the same
     /// passphrase and DEK, and `needsPersist` becomes true.
@@ -469,6 +490,40 @@ public struct Envelope: Sendable {
         next.append(wrap)
         if next.count > Self.maxWraps { throw EnvelopeError.tooManyWraps }
         wraps = next
+    }
+
+    /// Appends a default-cost argon2id passphrase wrap for a DEK the caller
+    /// already holds, keeping every existing wrap, passphrase wraps included.
+    public mutating func addPassphraseWrap(dek: Data, passphrase: String, argon2: Argon2idProvider) throws {
+        if wraps.count >= Self.maxWraps { throw EnvelopeError.tooManyWraps }
+        wraps.append(try Self.makePassphraseWrap(dek: dek, passphrase: passphrase, argon2: argon2))
+    }
+
+    /// Whether a wrap equals `wrap` in type and every field, `kdf` included.
+    public func containsWrap(_ wrap: VaultWrap) -> Bool {
+        wraps.contains { $0.isSameWrap(as: wrap) }
+    }
+
+    /// Puts `new` in place of the first wrap equal to `old` in type and every
+    /// field, `kdf` included. Returns false, changing nothing, when none is.
+    @discardableResult
+    public mutating func replaceWrap(_ old: VaultWrap, with new: VaultWrap) throws -> Bool {
+        if Self.bytesEqual(new.type, Self.secureEnclaveType) && new.secureEnclaveForm == nil {
+            throw EnvelopeError.invalidSecureEnclaveWrap
+        }
+        guard let i = wraps.firstIndex(where: { $0.isSameWrap(as: old) }) else { return false }
+        wraps[i] = new
+        return true
+    }
+
+    /// Removes the first wrap equal to `wrap` in type and every field, `kdf`
+    /// included. Returns false when none is; refuses to remove the last wrap.
+    @discardableResult
+    public mutating func removeWrap(_ wrap: VaultWrap) throws -> Bool {
+        guard let i = wraps.firstIndex(where: { $0.isSameWrap(as: wrap) }) else { return false }
+        if wraps.count == 1 { throw EnvelopeError.noWraps }
+        wraps.remove(at: i)
+        return true
     }
 
     /// Re-seal the payload with a new account list, reusing the existing DEK so
