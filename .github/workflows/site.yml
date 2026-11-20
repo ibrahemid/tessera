@@ -24,5 +24,6 @@ jobs:
           cache: npm
           cache-dependency-path: site/package-lock.json
       - run: npm ci
+      - run: node --test scripts/release-model.test.mjs
       - run: npm run build
       - run: node scripts/check-dist.mjs dist

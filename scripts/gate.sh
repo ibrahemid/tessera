@@ -216,7 +216,9 @@ gate_shell() {
 }
 
 gate_site() {
+  run_check site-test sh -c "cd '$ROOT/site' && node --test scripts/release-model.test.mjs"
   run_check site-build sh -c "cd '$ROOT/site' && npm run build --silent"
+  run_check site-dist sh -c "cd '$ROOT/site' && node scripts/check-dist.mjs dist"
 }
 
 check_raycast_deps() (
